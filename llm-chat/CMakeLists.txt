@@ -19,6 +19,7 @@ add_library(llmchat
     src/config.cpp
     src/types.cpp
     src/tools.cpp
+    src/client.cpp
 )
 target_include_directories(llmchat PUBLIC src)
 target_link_libraries(llmchat PUBLIC
@@ -40,8 +41,12 @@ target_link_libraries(test_types PRIVATE llmchat Catch2::Catch2WithMain)
 add_executable(test_tools tests/test_tools.cpp)
 target_link_libraries(test_tools PRIVATE llmchat Catch2::Catch2WithMain)
 
+add_executable(test_client tests/test_client.cpp)
+target_link_libraries(test_client PRIVATE llmchat Catch2::Catch2WithMain)
+
 include(CTest)
 include(Catch)
 catch_discover_tests(test_config)
 catch_discover_tests(test_types)
 catch_discover_tests(test_tools)
+catch_discover_tests(test_client)
