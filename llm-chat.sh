@@ -130,9 +130,11 @@ chat() {
     local has_tool_calls tool_name tool_id tool_args
     local asst_msg tool_msg result tool_path
     local raw_path resolved pattern gpath content cmd
+    local _tmp _raw_debug
 
     while true; do
         full_response=""
+        reasoning=""
         has_tool_calls=false
         tool_name=""; tool_id=""; tool_args=""
         raw_path=""; resolved=""; pattern=""; gpath=""; content=""; cmd=""
@@ -147,6 +149,13 @@ chat() {
                 tools: $tools,
                 stream: true
             }')
+
+        local _tmp _raw_debug=""
+        _tmp=$(mktemp)
+        curl -N -s "$URL" \
+            -H "Content-Type: application/json" \
+            ${API_KEY:+-H "Authorization: Bearer ${API_KEY}"} \
+            -d "$payload" > "$_tmp" 2>/dev/null || true
 
         while IFS= read -r line; do
             [[ "$line" != data:* ]] && continue
@@ -168,20 +177,26 @@ chat() {
                     printf "%s" "$token"
                     full_response+="$token"
                 fi
+                reason=$(echo "$data" | jq -r '.choices[0].delta.reasoning_content // ""')
+                [[ -n "$reason" ]] && reasoning+="$reason"
             fi
-        done < <(curl -N -s "$URL" \
-            -H "Content-Type: application/json" \
-            ${API_KEY:+-H "Authorization: Bearer ${API_KEY}"} \
-            -d "$payload" 2>/dev/null || true)
+        done < "$_tmp"
+
+        if [[ -z "$full_response" && "$has_tool_calls" != "true" ]]; then
+            _raw_debug=$(head -3 "$_tmp" | tr '\n' ';' | head -c 500)
+        fi
+        rm -f "$_tmp"
 
         if [[ "$has_tool_calls" == "true" ]]; then
             asst_msg=$(jq -nc \
                 --arg id "$tool_id" \
                 --arg name "$tool_name" \
                 --arg args "$tool_args" \
+                --arg reasoning "$reasoning" \
                 '{
                     "role": "assistant",
                     "content": null,
+                    "reasoning_content": $reasoning,
                     "tool_calls": [{
                         "id": $id,
                         "type": "function",
@@ -280,10 +295,19 @@ chat() {
 
         echo
         if [[ -z "$full_response" ]]; then
-            echo "(no response — is llama.cpp running on ${HOST}?)" >&2
+            local _err="${API_BASE}"
+            [[ -n "$_raw_debug" ]] && _err+="  raw: ${_raw_debug}"
+            echo "(no response — ${_err})" >&2
             return 1
         fi
-        messages=$(echo "$messages" | jq -c --arg content "$full_response" '. + [{"role": "assistant", "content": $content}]')
+        if [[ -n "$reasoning" ]]; then
+            messages=$(echo "$messages" | jq -c \
+                --arg content "$full_response" \
+                --arg reasoning "$reasoning" \
+                '. + [{"role": "assistant", "content": $content, "reasoning_content": $reasoning}]')
+        else
+            messages=$(echo "$messages" | jq -c --arg content "$full_response" '. + [{"role": "assistant", "content": $content}]')
+        fi
         break
     done
 }
