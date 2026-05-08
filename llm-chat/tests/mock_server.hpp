@@ -7,6 +7,8 @@
 #include <unistd.h>
 
 #include <atomic>
+#include <chrono>
+#include <cstring>
 #include <functional>
 #include <string>
 #include <thread>
@@ -74,10 +76,40 @@ private:
                 continue;
 
             char buf[8192] = {};
+            // Read request headers + body.  Parse Content-Length to
+            // determine how many body bytes we still need.
             ssize_t n = read(client, buf, sizeof(buf) - 1);
             if (n > 0) {
                 buf[n] = '\0';
-                std::string request(buf);
+                std::string req(buf, n);
+
+                // Find Content-Length
+                long body_len = 0;
+                auto cl_pos = req.find("Content-Length: ");
+                if (cl_pos != std::string::npos) {
+                    char* end = nullptr;
+                    body_len = std::strtol(
+                        req.c_str() + cl_pos + 16, &end, 10);
+                }
+                // Find start of body (after \r\n\r\n)
+                auto hdr_end = req.find("\r\n\r\n");
+                if (hdr_end != std::string::npos) {
+                    hdr_end += 4;  // skip past \r\n\r\n
+                    long have = static_cast<long>(n) -
+                                static_cast<long>(hdr_end);
+                    while (have < body_len &&
+                           static_cast<size_t>(n) < sizeof(buf) - 1) {
+                        ssize_t more =
+                            read(client, buf + n, sizeof(buf) - 1 - n);
+                        if (more <= 0)
+                            break;
+                        n += more;
+                        have += more;
+                    }
+                }
+
+                buf[n] = '\0';
+                std::string request(buf, n);
                 std::string body = handler_(request);
 
                 std::string response;
@@ -96,6 +128,10 @@ private:
                         std::to_string(body.size()) + "\r\n" + "\r\n" + body;
                 }
                 write(client, response.data(), response.size());
+                // flush + ensure data is transmitted before close
+                shutdown(client, SHUT_WR);
+                char discard[1024];
+                while (read(client, discard, sizeof(discard)) > 0) {}
             }
             close(client);
         }
