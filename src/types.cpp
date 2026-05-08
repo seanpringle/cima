@@ -63,6 +63,7 @@ std::vector<ToolCall> ToolAccumulator::finalize() const {
 SSEParser::SSEParser(Callbacks cb) : cb_(std::move(cb)) {}
 
 void SSEParser::feed(const char* data, size_t len) {
+    raw_.append(data, len);
     buf_.append(data, len);
 
     while (true) {
@@ -153,6 +154,12 @@ void Conversation::add_tool(const std::string& tool_call_id,
                             const std::string& content) {
     messages_.push_back(Message{
         .role = "tool", .content = content, .tool_call_id = tool_call_id});
+}
+
+void Conversation::truncate(size_t n) {
+    if (n < messages_.size()) {
+        messages_.resize(n);
+    }
 }
 
 void Conversation::clear() {

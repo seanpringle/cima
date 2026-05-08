@@ -18,11 +18,10 @@
 // Signal handling
 // ---------------------------------------------------------------------------
 
-static std::atomic<bool> g_interrupted{false};
+extern std::atomic<bool> g_interrupted;
 
 extern "C" void handle_sigint(int /*sig*/) {
     g_interrupted = true;
-    _exit(130);
 }
 
 // ---------------------------------------------------------------------------
@@ -39,8 +38,14 @@ static std::string history_file() {
 
 static std::string read_input() {
     char* line = readline("> ");
-    if (!line)
+    if (!line) {
+        if (g_interrupted) {
+            g_interrupted = false;
+            std::cout << std::endl;
+            return {};
+        }
         return "/exit";
+    }
     std::string result(line);
     free(line);
     if (!result.empty())
@@ -84,8 +89,14 @@ static void save_console() {
 static std::string read_input() {
     std::string line;
     std::cout << "> " << std::flush;
-    if (!std::getline(std::cin, line))
+    if (!std::getline(std::cin, line)) {
+        if (g_interrupted) {
+            g_interrupted = false;
+            std::cout << std::endl;
+            return {};
+        }
         return "/exit";
+    }
     return line;
 }
 
@@ -115,8 +126,6 @@ static void print_banner(const Config& cfg) {
 
 int main(int argc, char* argv[]) {
     try {
-        std::signal(SIGINT, handle_sigint);
-
         // CLI overrides
         for (int i = 1; i < argc; i++) {
             std::string arg = argv[i];
@@ -204,6 +213,7 @@ int main(int argc, char* argv[]) {
                 continue;
             }
 
+            std::signal(SIGINT, handle_sigint);
             g_interrupted = false;
             in_reasoning = false;
 

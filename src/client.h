@@ -3,7 +3,10 @@
 #include "config.h"
 #include "types.h"
 
+#include <atomic>
 #include <string>
+
+extern std::atomic<bool> g_interrupted;
 
 #include <nlohmann/json.hpp>
 

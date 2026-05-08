@@ -13,6 +13,7 @@ void ChatSession::clear() {
 }
 
 Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
+    auto snapshot = conversation_.size();
     conversation_.add_user(user_input);
 
     for (int iter = 0; iter < 10; iter++) {
@@ -67,6 +68,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
             });
 
         if (!stream_result) {
+            conversation_.truncate(snapshot);
             auto msg = stream_result.error();
             auto raw = client_.last_raw_response();
             if (!raw.empty()) {
@@ -76,6 +78,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
         }
 
         if (stream_errored && content.empty()) {
+            conversation_.truncate(snapshot);
             return std::unexpected(stream_error);
         }
 
@@ -100,6 +103,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
         return ChatResult{std::move(content), std::move(reasoning)};
     }
 
+    conversation_.truncate(snapshot);
     return std::unexpected(
         std::string("Maximum tool call iterations reached"));
 }

@@ -206,7 +206,7 @@ static Tool make_grep_files_tool(const std::string& safe_dir) {
 
         if (std::filesystem::is_regular_file(status)) {
             search_file(*resolved);
-        } else         if (std::filesystem::is_directory(status)) {
+        } else if (std::filesystem::is_directory(status)) {
             auto it = std::filesystem::recursive_directory_iterator(
                 *resolved,
                 std::filesystem::directory_options::skip_permission_denied,

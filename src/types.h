@@ -68,12 +68,14 @@ public:
     explicit SSEParser(Callbacks cb);
     void feed(const char* data, size_t len);
     void reset();
+    const std::string& raw() const { return raw_; }
 
 private:
     void process_line(std::string line);
 
     Callbacks cb_;
     std::string buf_;
+    std::string raw_;
 };
 
 // ---------------------------------------------------------------------------
@@ -87,6 +89,8 @@ public:
     void add_assistant(std::string content, std::string reasoning = {},
                        std::vector<ToolCall> tool_calls = {});
     void add_tool(const std::string& tool_call_id, const std::string& content);
+    size_t size() const { return messages_.size(); }
+    void truncate(size_t n);
     void clear();
     json to_openai_messages() const;
     const std::string& system_prompt() const { return system_prompt_; }

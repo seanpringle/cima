@@ -1,8 +1,6 @@
 # llm-chat
 
 Interactive LLM chat client with tool calling, streaming, and reasoning display.
-Drop-in C++ replacement for `llm-chat.sh`.
-
 ## Dependencies
 
 ```bash
@@ -19,7 +17,6 @@ sudo apt install build-essential cmake libcurl4-openssl-dev libreadline-dev catc
 ## Build
 
 ```bash
-cd llm-chat
 cmake -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
