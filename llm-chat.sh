@@ -132,7 +132,7 @@ chat() {
     local has_tool_calls tool_name tool_id tool_args
     local asst_msg tool_msg result tool_path
     local raw_path resolved pattern gpath content cmd
-    local _tmp _raw_debug
+    local _tmp _raw_debug _nlen2 _gray
 
     while true; do
         full_response=""
@@ -140,6 +140,7 @@ chat() {
         has_tool_calls=false
         tool_name=""; tool_id=""; tool_args=""
         raw_path=""; resolved=""; pattern=""; gpath=""; content=""; cmd=""
+        _gray=false
 
         payload=$(jq -nc \
             --arg model "$MODEL" \
@@ -174,6 +175,15 @@ chat() {
                 [[ -n "$id" ]] && tool_id="$id"
                 tool_args+="$a"
             else
+                reason=$(echo "$data" | jq -r '.choices[0].delta.reasoning_content // ""')
+                if [[ -n "$reason" ]]; then
+                    if [[ "$_gray" == false ]]; then
+                        printf "\033[90m"
+                        _gray=true
+                    fi
+                    printf "%s" "$reason"
+                    reasoning+="$reason"
+                fi
                 token=$(echo "$data" | jq -r '.choices[0].delta.content // ""')
                 if [[ -z "$token" ]]; then
                     _nlen2=$(echo "$data" | jq -r '.choices[0].delta.content // "" | length' 2>/dev/null || echo 0)
@@ -182,13 +192,21 @@ chat() {
                     fi
                 fi
                 if [[ -n "$token" ]]; then
+                    if [[ "$_gray" == true ]]; then
+                        printf "\033[0m\n"
+                        _gray=false
+                    fi
                     printf "%s" "$token"
                     full_response+="$token"
                 fi
-                reason=$(echo "$data" | jq -r '.choices[0].delta.reasoning_content // ""')
-                [[ -n "$reason" ]] && reasoning+="$reason"
             fi
         done < "$_tmp"
+
+        if [[ "$_gray" == true ]]; then
+            printf "\033[0m"
+            [[ -z "$full_response" ]] && printf "\n"
+            _gray=false
+        fi
 
         if [[ -z "$full_response" && "$has_tool_calls" != "true" ]]; then
             _raw_debug=$(head -3 "$_tmp" | tr '\n' ';' | head -c 500)
