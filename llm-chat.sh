@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-[[ -f .env ]] && source .env
+_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "$_script_dir/.env" ]]; then
+    source "$_script_dir/.env"
+elif [[ -f .env ]]; then
+    source .env
+fi
 
 API_BASE="${API_BASE:-http://127.0.0.1:11000/v1}"
 API_KEY="${API_KEY:-}"
