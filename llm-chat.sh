@@ -3,9 +3,9 @@ set -uo pipefail
 
 _script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "$_script_dir/.env" ]]; then
-    source "$_script_dir/.env"
+    set -a; source "$_script_dir/.env"; set +a
 elif [[ -f .env ]]; then
-    source .env
+    set -a; source .env; set +a
 fi
 
 API_BASE="${API_BASE:-http://127.0.0.1:11000/v1}"
