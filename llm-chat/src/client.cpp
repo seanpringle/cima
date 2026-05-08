@@ -61,6 +61,11 @@ static CURL* setup_curl(const std::string& url, struct curl_slist* headers,
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "llm-chat/0.1");
     curl_easy_setopt(curl, CURLOPT_HTTP_VERSION,
                      CURL_HTTP_VERSION_1_1);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 30L);
+    curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1L);
+    curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
+    curl_easy_setopt(curl, CURLOPT_TCP_KEEPIDLE, 60L);
+    curl_easy_setopt(curl, CURLOPT_TCP_KEEPINTVL, 30L);
 
     return curl;
 }

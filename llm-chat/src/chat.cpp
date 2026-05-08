@@ -25,6 +25,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
         std::string reasoning;
         ToolAccumulator tool_acc;
         bool stream_errored = false;
+        std::string stream_error;
 
         auto stream_result = client_.stream_chat(
             payload,
@@ -61,16 +62,21 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                 .on_error =
                     [&](const std::string& err) {
                         stream_errored = true;
-                        reasoning = err;
+                        stream_error = err;
                     },
             });
 
         if (!stream_result) {
-            return std::unexpected(stream_result.error());
+            auto msg = stream_result.error();
+            auto raw = client_.last_raw_response();
+            if (!raw.empty()) {
+                msg += " | raw: " + raw.substr(0, 500);
+            }
+            return std::unexpected(std::move(msg));
         }
 
         if (stream_errored && content.empty()) {
-            return std::unexpected(reasoning);
+            return std::unexpected(stream_error);
         }
 
         auto calls = tool_acc.finalize();

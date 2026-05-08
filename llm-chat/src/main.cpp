@@ -114,112 +114,119 @@ static void print_banner(const Config& cfg) {
 // ---------------------------------------------------------------------------
 
 int main(int argc, char* argv[]) {
-    std::signal(SIGINT, handle_sigint);
+    try {
+        std::signal(SIGINT, handle_sigint);
 
-    // CLI overrides
-    for (int i = 1; i < argc; i++) {
-        std::string arg = argv[i];
-        if (arg == "--model" && i + 1 < argc) {
-            setenv("MODEL", argv[++i], 1);
-        } else if (arg == "--api-base" && i + 1 < argc) {
-            setenv("LLM_API", argv[++i], 1);
-        }
-    }
-
-    auto cfg = Config::from_env_with_dotenv(argc, argv);
-    print_banner(cfg);
-    ChatSession session(std::move(cfg));
-
-    // Streaming output
-    bool in_reasoning = false;
-    session.set_output_callback(
-        [&](const std::string& text, OutputType type) {
-            if (type == OutputType::Reasoning) {
-                if (!in_reasoning) {
-                    std::cout << "\033[90m";
-                    in_reasoning = true;
-                }
-                std::cout << text << std::flush;
-            } else if (type == OutputType::Content) {
-                if (in_reasoning) {
-                    std::cout << "\033[0m\n";
-                    in_reasoning = false;
-                }
-                std::cout << text << std::flush;
-            } else { // ToolInvocation
-                std::cerr << text << std::endl;
+        // CLI overrides
+        for (int i = 1; i < argc; i++) {
+            std::string arg = argv[i];
+            if (arg == "--help" || arg == "-h") {
+                std::cout
+                    << "Usage: llm-chat [--model <name>] [--api-base <url>]\n\n"
+                       "Environment variables:\n"
+                       "  LLM_API / API_BASE   API endpoint (default: "
+                       "http://127.0.0.1:11000/v1)\n"
+                       "  LLM_KEY / API_KEY   API key (optional)\n"
+                       "  MODEL               Model name\n"
+                       "  SYSTEM_PROMPT       System prompt\n"
+                       "  SAFE_DIR            Tool sandbox directory\n"
+                    << std::flush;
+                return 0;
             }
-        });
-
-    init_console();
-
-    bool running = true;
-    while (running && !g_interrupted) {
-        auto line = read_input();
-
-        if (line.empty())
-            continue;
-
-        if (line == "/exit" || line == "/quit") {
-            running = false;
-            break;
-        }
-
-        if (line == "/clear") {
-            session.clear();
-            std::cout << "cleared" << std::endl;
-            continue;
-        }
-
-        if (line == "/help") {
-            std::cout << "Commands:\n"
-                         "  /exit           Exit\n"
-                         "  /quit           Exit\n"
-                         "  /clear          Clear conversation\n"
-                         "  /model <name>   Switch model\n"
-                         "  /help           This help\n";
-            continue;
-        }
-
-        if (line.rfind("/model ", 0) == 0) {
-            auto name = line.substr(7);
-            if (!name.empty()) {
-                session.set_model(name);
-                std::cout << "model: " << session.model() << std::endl;
-            } else {
-                std::cout << "usage: /model <name>" << std::endl;
+            if (arg == "--model" && i + 1 < argc) {
+                setenv("MODEL", argv[++i], 1);
+            } else if (arg == "--api-base" && i + 1 < argc) {
+                setenv("LLM_API", argv[++i], 1);
             }
-            continue;
         }
 
-        if (line[0] == '/') {
-            std::cout << "unknown command: " << line << std::endl;
-            continue;
+        auto cfg = Config::from_env_with_dotenv(argc, argv);
+        print_banner(cfg);
+        ChatSession session(std::move(cfg));
+
+        bool in_reasoning = false;
+        session.set_output_callback(
+            [&](const std::string& text, OutputType type) {
+                if (type == OutputType::Reasoning) {
+                    if (!in_reasoning) {
+                        std::cout << "\033[90m";
+                        in_reasoning = true;
+                    }
+                    std::cout << text << std::flush;
+                } else if (type == OutputType::Content) {
+                    if (in_reasoning) {
+                        std::cout << "\033[0m\n";
+                        in_reasoning = false;
+                    }
+                    std::cout << text << std::flush;
+                } else {
+                    std::cerr << text << std::endl;
+                }
+            });
+
+        init_console();
+
+        bool running = true;
+        while (running && !g_interrupted) {
+            auto line = read_input();
+            if (line.empty()) continue;
+
+            if (line == "/exit" || line == "/quit") {
+                running = false;
+                break;
+            }
+            if (line == "/clear") {
+                session.clear();
+                std::cout << "cleared" << std::endl;
+                continue;
+            }
+            if (line == "/help") {
+                std::cout << "Commands:\n"
+                             "  /exit           Exit\n"
+                             "  /quit           Exit\n"
+                             "  /clear          Clear conversation\n"
+                             "  /model <name>   Switch model\n"
+                             "  /help           This help\n";
+                continue;
+            }
+            if (line.rfind("/model ", 0) == 0) {
+                auto name = line.substr(7);
+                if (!name.empty()) {
+                    session.set_model(name);
+                    std::cout << "model: " << session.model() << std::endl;
+                } else {
+                    std::cout << "usage: /model <name>" << std::endl;
+                }
+                continue;
+            }
+            if (line[0] == '/') {
+                std::cout << "unknown command: " << line << std::endl;
+                continue;
+            }
+
+            g_interrupted = false;
+            in_reasoning = false;
+
+            auto result = session.run_once(line);
+
+            if (in_reasoning) std::cout << "\033[0m";
+            if (g_interrupted) {
+                std::cout << "\ninterrupted" << std::endl;
+                continue;
+            }
+            if (!result) {
+                std::cerr << "error: " << result.error() << std::endl;
+                continue;
+            }
+            std::cout << std::endl;
         }
 
-        g_interrupted = false;
-        in_reasoning = false;
+        save_console();
+        std::cout << "bye!" << std::endl;
+        return 0;
 
-        auto result = session.run_once(line);
-
-        if (in_reasoning) {
-            std::cout << "\033[0m";
-        }
-
-        if (g_interrupted) {
-            std::cout << "\ninterrupted" << std::endl;
-            continue;
-        }
-
-        if (!result) {
-            std::cerr << "error: " << result.error() << std::endl;
-            continue;
-        }
-
-        std::cout << std::endl;
+    } catch (const std::exception& e) {
+        std::cerr << "fatal: " << e.what() << std::endl;
+        return 1;
     }
-
-    save_console();
-    std::cout << "bye!" << std::endl;
-    return 0;
 }
