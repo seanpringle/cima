@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-HOST="${HOST:-127.0.0.1:11000}"
-MODEL="${MODEL:-gpt-3.5-turbo}"
+API_BASE="${API_BASE:-http://127.0.0.1:11000/v1}"
+API_KEY="${API_KEY:-}"
+MODEL="${MODEL:-deepseek-v4-flash}"
 SYSTEM_PROMPT="${SYSTEM_PROMPT:-You are a helpful assistant.}"
 SAFE_DIR="${SAFE_DIR:-$(pwd)}"
-URL="http://${HOST}/v1/chat/completions"
+URL="${API_BASE}/chat/completions"
 
 command -v jq &>/dev/null || {
     echo "Error: jq is required. Install with: sudo apt install jq (or brew install jq)" >&2
@@ -168,7 +169,10 @@ chat() {
                     full_response+="$token"
                 fi
             fi
-        done < <(curl -N -s "$URL" -H "Content-Type: application/json" -d "$payload" 2>/dev/null || true)
+        done < <(curl -N -s "$URL" \
+            -H "Content-Type: application/json" \
+            ${API_KEY:+-H "Authorization: Bearer ${API_KEY}"} \
+            -d "$payload" 2>/dev/null || true)
 
         if [[ "$has_tool_calls" == "true" ]]; then
             asst_msg=$(jq -nc \
@@ -284,7 +288,9 @@ chat() {
     done
 }
 
-echo "llm-chat — ${URL}  model: ${MODEL}  tools: list_files, read_file, grep_files, write_file, run_bash"
+auth_info=""
+[[ -n "$API_KEY" ]] && auth_info="  [auth: bearer]"
+echo "llm-chat — ${URL}  model: ${MODEL}  tools: list_files, read_file, grep_files, write_file, run_bash${auth_info}"
 echo "/exit  /clear  /model <name>"
 while IFS= read -e -r -p "> " input; do
     case "$input" in
