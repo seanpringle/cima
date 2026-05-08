@@ -175,6 +175,12 @@ chat() {
                 tool_args+="$a"
             else
                 token=$(echo "$data" | jq -r '.choices[0].delta.content // ""')
+                if [[ -z "$token" ]]; then
+                    _nlen2=$(echo "$data" | jq -r '.choices[0].delta.content // "" | length' 2>/dev/null || echo 0)
+                    if [[ "$_nlen2" -gt 0 ]]; then
+                        token=$(printf '\n%.0s' $(seq 1 "$_nlen2") && printf 'x'); token="${token%x}"
+                    fi
+                fi
                 if [[ -n "$token" ]]; then
                     printf "%s" "$token"
                     full_response+="$token"
