@@ -10,6 +10,11 @@ struct ChatResult {
     std::string reasoning;
 };
 
+enum class OutputType { Reasoning, Content, ToolInvocation };
+
+using OutputCallback =
+    std::function<void(const std::string& text, OutputType type)>;
+
 class ChatSession {
 public:
     explicit ChatSession(Config config);
@@ -23,6 +28,7 @@ public:
     void set_model(const std::string& m) { model_ = m; }
     void clear();
     const std::string& model() const { return model_; }
+    void set_output_callback(OutputCallback cb) { output_cb_ = std::move(cb); }
 
 private:
     std::string model_;
@@ -30,4 +36,5 @@ private:
     Conversation conversation_;
     ChatClient client_;
     ToolRegistry tools_;
+    OutputCallback output_cb_;
 };

@@ -12,8 +12,19 @@ FetchContent_Declare(nlohmann_json
 FetchContent_MakeAvailable(nlohmann_json)
 
 find_package(CURL REQUIRED)
-find_package(Readline QUIET)
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+    pkg_check_modules(READLINE readline)
+endif()
 find_package(Catch2 REQUIRED)
+
+if(READLINE_FOUND)
+    message(STATUS "Readline found — REPL will have history & tab-completion")
+endif()
+
+if(Readline_FOUND)
+    message(STATUS "Readline found — REPL will have history & tab-completion")
+endif()
 
 add_library(llmchat
     src/config.cpp
@@ -28,9 +39,12 @@ target_link_libraries(llmchat PUBLIC
     CURL::libcurl
 )
 
-if(Readline_FOUND)
-    target_compile_definitions(llmchat PRIVATE USE_READLINE=1)
-    target_link_libraries(llmchat PRIVATE Readline::Readline)
+add_executable(llm-chat src/main.cpp)
+target_link_libraries(llm-chat PRIVATE llmchat)
+if(READLINE_FOUND)
+    target_compile_definitions(llm-chat PRIVATE USE_READLINE=1)
+    target_include_directories(llm-chat PRIVATE ${READLINE_INCLUDE_DIRS})
+    target_link_libraries(llm-chat PRIVATE ${READLINE_LIBRARIES})
 endif()
 
 add_executable(test_config tests/test_config.cpp)

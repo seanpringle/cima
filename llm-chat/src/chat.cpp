@@ -38,7 +38,10 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
 
                         auto rc_it = delta.find("reasoning_content");
                         if (rc_it != delta.end() && rc_it->is_string()) {
-                            reasoning += rc_it->get<std::string>();
+                            auto text = rc_it->get<std::string>();
+                            reasoning += text;
+                            if (output_cb_)
+                                output_cb_(text, OutputType::Reasoning);
                         }
 
                         auto tc_it = delta.find("tool_calls");
@@ -48,7 +51,10 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
 
                         auto c_it = delta.find("content");
                         if (c_it != delta.end() && c_it->is_string()) {
-                            content += c_it->get<std::string>();
+                            auto text = c_it->get<std::string>();
+                            content += text;
+                            if (output_cb_)
+                                output_cb_(text, OutputType::Content);
                         }
                     },
                 .on_done = []() {},
@@ -72,6 +78,11 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
             conversation_.add_assistant("", reasoning, calls);
 
             for (const auto& call : calls) {
+                if (output_cb_) {
+                    output_cb_("\xE2\x86\x92 " + call.name + "(" +
+                                   call.arguments + ")",
+                               OutputType::ToolInvocation);
+                }
                 auto tr = tools_.execute(call.name, call.arguments);
                 conversation_.add_tool(call.id,
                                        tr ? *tr : tr.error());
