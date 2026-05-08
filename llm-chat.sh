@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
+[[ -f .env ]] && source .env
+
 API_BASE="${API_BASE:-http://127.0.0.1:11000/v1}"
 API_KEY="${API_KEY:-}"
 MODEL="${MODEL:-deepseek-v4-flash}"
