@@ -3,6 +3,8 @@
 #include "config.h"
 #include "types.h"
 
+#include <curl/curl.h>
+
 #include <atomic>
 #include <string>
 
@@ -29,11 +31,16 @@ public:
   std::string url() const { return api_base_ + "/chat/completions"; }
 
 private:
+  static constexpr int kMaxRetries = 3;
+  static constexpr double kBaseDelaySec = 1.0;
+
+  struct curl_slist* make_headers() const;
+  bool should_retry(long http_code) const;
+  CURLcode perform_with_retry(CURL* curl, long& http_code, std::string& body);
+
   std::string api_base_;
   std::string api_key_;
   std::string raw_response_;
-
-  struct curl_slist* make_headers() const;
 
   static size_t write_body(char* ptr, size_t size, size_t nmemb, void* userdata);
   static size_t write_stream(char* ptr, size_t size, size_t nmemb, void* userdata);

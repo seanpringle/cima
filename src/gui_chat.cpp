@@ -327,7 +327,11 @@ static void cancel_chat(AsyncChatState& chat) {
   g_interrupted = true;
   if (chat.future.valid()) {
     chat.future.wait();
-    chat.future.get();
+    try {
+      chat.future.get();
+    } catch (const std::exception& e) {
+      std::cerr << "chat error during cancel: " << e.what() << std::endl;
+    }
   }
   chat.running = false;
   g_interrupted = false;
@@ -360,7 +364,12 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
 
   // ── check if chat just finished ──
   if (chat.running && chat.future.valid() && chat.future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-    auto result = chat.future.get();
+    Result<ChatResult> result = std::unexpected(std::string("unknown error"));
+    try {
+      result = chat.future.get();
+    } catch (const std::exception& e) {
+      result = std::unexpected(std::string(e.what()));
+    }
     chat.running = false;
     if (!ui.entries.empty() && ui.entries.back().is_streaming) {
       ui.entries.back().is_streaming = false;

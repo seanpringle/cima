@@ -6,6 +6,8 @@
 #include <unordered_map>
 #include <vector>
 
+std::string sanitize_utf8(const std::string& s);
+
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;

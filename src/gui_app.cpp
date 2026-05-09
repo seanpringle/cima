@@ -132,7 +132,11 @@ int gui_main(Config cfg) {
 
   if (chat_state.future.valid()) {
     chat_state.future.wait();
-    chat_state.future.get();
+    try {
+      chat_state.future.get();
+    } catch (const std::exception& e) {
+      std::cerr << "chat error on shutdown: " << e.what() << std::endl;
+    }
   }
 
   ImGui_ImplSDLRenderer2_Shutdown();

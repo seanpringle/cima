@@ -1,6 +1,58 @@
 #include "types.h"
 
 // ---------------------------------------------------------------------------
+// UTF-8 sanitization — replace invalid byte sequences with U+FFFD
+// ---------------------------------------------------------------------------
+
+std::string sanitize_utf8(const std::string& s) {
+  std::string result;
+  result.reserve(s.size());
+  size_t i = 0;
+  while (i < s.size()) {
+    auto b = static_cast<unsigned char>(s[i]);
+    if (b <= 0x7F) {
+      result += s[i];
+      i += 1;
+    } else if (b >= 0xC2 && b <= 0xDF && i + 1 < s.size() &&
+               static_cast<unsigned char>(s[i + 1]) >= 0x80 && static_cast<unsigned char>(s[i + 1]) <= 0xBF) {
+      result += s.substr(i, 2);
+      i += 2;
+    } else if (b >= 0xE0 && b <= 0xEF && i + 2 < s.size()) {
+      auto c1 = static_cast<unsigned char>(s[i + 1]);
+      auto c2 = static_cast<unsigned char>(s[i + 2]);
+      bool ok = (c1 >= 0x80 && c1 <= 0xBF && c2 >= 0x80 && c2 <= 0xBF);
+      if (b == 0xE0) ok = ok && (c1 >= 0xA0);
+      if (b == 0xED) ok = ok && (c1 <= 0x9F);
+      if (ok) {
+        result += s.substr(i, 3);
+        i += 3;
+      } else {
+        result += "\xEF\xBF\xBD";
+        i += 1;
+      }
+    } else if (b >= 0xF0 && b <= 0xF4 && i + 3 < s.size()) {
+      auto c1 = static_cast<unsigned char>(s[i + 1]);
+      auto c2 = static_cast<unsigned char>(s[i + 2]);
+      auto c3 = static_cast<unsigned char>(s[i + 3]);
+      bool ok = (c1 >= 0x80 && c1 <= 0xBF && c2 >= 0x80 && c2 <= 0xBF && c3 >= 0x80 && c3 <= 0xBF);
+      if (b == 0xF0) ok = ok && (c1 >= 0x90);
+      if (b == 0xF4) ok = ok && (c1 <= 0x8F);
+      if (ok) {
+        result += s.substr(i, 4);
+        i += 4;
+      } else {
+        result += "\xEF\xBF\xBD";
+        i += 1;
+      }
+    } else {
+      result += "\xEF\xBF\xBD";
+      i += 1;
+    }
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
 // ToolCall JSON serialization
 // ---------------------------------------------------------------------------
 
@@ -105,9 +157,9 @@ void SSEParser::process_line(std::string line) {
       if (cb_.on_data) {
         cb_.on_data(j);
       }
-    } catch (const json::parse_error& e) {
+    } catch (const json::exception& e) {
       if (cb_.on_error) {
-        cb_.on_error(std::string("JSON parse error: ") + e.what() + " | payload: " + payload);
+        cb_.on_error(std::string("JSON error: ") + e.what() + " | payload: " + payload);
       }
     }
     return;
@@ -166,22 +218,21 @@ json Conversation::to_openai_messages() const {
       j["content"] = nullptr;
       json arr = json::array();
       for (const auto& tc : msg.tool_calls) {
-        arr.push_back({{"id", tc.id}, {"type", "function"}, {"function", {{"name", tc.name}, {"arguments", tc.arguments}}}});
+        arr.push_back({{"id", sanitize_utf8(tc.id)}, {"type", "function"}, {"function", {{"name", sanitize_utf8(tc.name)}, {"arguments", sanitize_utf8(tc.arguments)}}}});
       }
       j["tool_calls"] = std::move(arr);
 
-      // always include reasoning_content for tool_call messages
-      j["reasoning_content"] = msg.reasoning_content;
+      j["reasoning_content"] = sanitize_utf8(msg.reasoning_content);
     } else {
-      j["content"] = msg.content.value_or("");
+      j["content"] = sanitize_utf8(msg.content.value_or(""));
 
       if (!msg.reasoning_content.empty()) {
-        j["reasoning_content"] = msg.reasoning_content;
+        j["reasoning_content"] = sanitize_utf8(msg.reasoning_content);
       }
     }
 
     if (!msg.tool_call_id.empty()) {
-      j["tool_call_id"] = msg.tool_call_id;
+      j["tool_call_id"] = sanitize_utf8(msg.tool_call_id);
     }
 
     arr.push_back(std::move(j));
