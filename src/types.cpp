@@ -62,6 +62,16 @@ std::string sanitize_utf8(const std::string& s) {
 }
 
 // ---------------------------------------------------------------------------
+// Usage JSON deserialization
+// ---------------------------------------------------------------------------
+
+void from_json(const json& j, Usage& u) {
+    u.prompt_tokens = j.value("prompt_tokens", 0);
+    u.completion_tokens = j.value("completion_tokens", 0);
+    u.total_tokens = j.value("total_tokens", 0);
+}
+
+// ---------------------------------------------------------------------------
 // ToolCall JSON serialization
 // ---------------------------------------------------------------------------
 

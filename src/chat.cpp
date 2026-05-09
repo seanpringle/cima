@@ -53,6 +53,16 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
         std::string stream_error;
 
         auto on_data = [&](const json& data) {
+            // Capture token usage if present (may appear in the final chunk).
+            auto usage_it = data.find("usage");
+            if (usage_it != data.end() && usage_it->is_object()) {
+                try {
+                    last_usage_ = usage_it->get<Usage>();
+                } catch (...) {
+                    // Ignore malformed usage data.
+                }
+            }
+
             if (!data.contains("choices") || data["choices"].empty())
                 return;
             const auto& delta = data["choices"][0]["delta"];
@@ -157,5 +167,6 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
 
     conversation_.truncate(snapshot);
     return std::unexpected(
-        "Maximum tool call iterations (" + std::to_string(max_iterations_) + ") reached");
+        "Maximum tool call iterations (" + std::to_string(max_iterations_) +
+            ") reached. Increase via LLM_MAX_TOOL_ITERATIONS env var.");
 }

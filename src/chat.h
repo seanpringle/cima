@@ -32,16 +32,18 @@ class ChatSession {
     void set_output_callback(OutputCallback cb) { output_cb_ = std::move(cb); }
     void set_mode(Mode m);
     Mode mode() const { return mode_; }
+    const Usage& last_usage() const { return last_usage_; }
 
   private:
     std::string model_;
     std::string safe_dir_;
     std::string base_system_prompt_;
-    int max_iterations_ = 100;
+    int max_iterations_ = 100;  // overridden by config.max_tool_iterations
     Mode mode_ = Mode::Plan;
     void inject_mode_instruction();
     Conversation conversation_;
     ChatClient client_;
     ToolRegistry tools_;
     OutputCallback output_cb_;
+    Usage last_usage_;
 };

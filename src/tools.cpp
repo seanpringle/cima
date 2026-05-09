@@ -98,7 +98,7 @@ static Tool make_list_files_tool(const std::string& safe_dir) {
 static Tool make_read_file_tool(const std::string& safe_dir) {
     Tool t;
     t.name = "read_file";
-    t.description = "Read lines from a file (max 200 lines at a time, use offset to "
+    t.description = "Read lines from a file (max 400 lines at a time, use offset to "
                     "paginate)";
     t.parameters = {{"type", "object"},
         {"properties",
@@ -121,7 +121,7 @@ static Tool make_read_file_tool(const std::string& safe_dir) {
         }
 
         int offset = args.value("offset", 0);
-        int max_lines = args.value("max_lines", 200);
+        int max_lines = args.value("max_lines", 400);
         if (offset < 0)
             offset = 0;
         if (max_lines < 1)
@@ -163,7 +163,7 @@ static Tool make_read_file_tool(const std::string& safe_dir) {
 static Tool make_grep_files_tool(const std::string& safe_dir) {
     Tool t;
     t.name = "grep_files";
-    t.description = "Search file contents using a regex pattern (max 50 results)";
+    t.description = "Search file contents using a regex pattern (max 200 results)";
     t.timeout_sec = 10;
     t.parameters = {{"type", "object"},
         {"properties",
@@ -187,7 +187,7 @@ static Tool make_grep_files_tool(const std::string& safe_dir) {
         std::regex re(pattern);
         std::string result;
         int count = 0;
-        const int max_results = 50;
+        const int max_results = 200;
 
         auto search_file = [&](const std::filesystem::path& p) {
             std::ifstream file(p);
@@ -375,7 +375,7 @@ static Tool make_run_bash_tool(const std::string& safe_dir) {
     Tool t;
     t.name = "run_bash";
     t.description = "Run a bash command in the project directory "
-                    "(e.g. build, test, lint). Output is capped at 100 lines / 4000 chars.";
+                    "(e.g. build, test, lint). Output is capped at 500 lines / 16000 chars.";
     t.timeout_sec = 30;
     t.parameters = {{"type", "object"},
         {"properties",
@@ -443,8 +443,8 @@ static Tool make_run_bash_tool(const std::string& safe_dir) {
         };
 
         auto truncate_output = [](std::string& out) {
-            if (out.size() > 4000) {
-                out = out.substr(0, 4000) + "...(truncated, >4000 chars)";
+            if (out.size() > 16000) {
+                out = out.substr(0, 16000) + "...(truncated, >16000 chars)";
             }
         };
 
@@ -469,10 +469,10 @@ static Tool make_run_bash_tool(const std::string& safe_dir) {
             if (n > 0) {
                 buf[n] = '\0';
                 output += buf;
-                if (output.size() > 4000) {
+                if (output.size() > 16000) {
                     kill_child();
                     close(pipefd[0]);
-                    output = output.substr(0, 4000) + "...(truncated, >4000 chars)";
+                    output = output.substr(0, 16000) + "...(truncated, >16000 chars)";
                     return output;
                 }
             } else if (n == 0) {
@@ -498,12 +498,12 @@ static Tool make_run_bash_tool(const std::string& safe_dir) {
         for (char c : output)
             if (c == '\n')
                 nl++;
-        if (nl > 100) {
+        if (nl > 500) {
             size_t pos = 0;
-            for (int i = 0; i < 100; i++) {
+            for (int i = 0; i < 500; i++) {
                 pos = output.find('\n', pos) + 1;
             }
-            output = output.substr(0, pos) + "...(truncated, >100 lines)";
+            output = output.substr(0, pos) + "...(truncated, >500 lines)";
         }
 
         // Final size cap
@@ -546,7 +546,7 @@ static Tool make_web_search_tool(const std::string& api_key,
     t.parameters = {{"type", "object"},
         {"properties",
             {{"query",
-                {{"type", "string"}, {"description", "Search query (max 200 characters)"}}}}},
+                {{"type", "string"}, {"description", "Search query (max 500 characters)"}}}}},
         {"required", {"query"}}};
     t.execute = [api_key, engine_id, endpoint_override](
                     const json& args) -> Result<std::string> {
@@ -554,8 +554,8 @@ static Tool make_web_search_tool(const std::string& api_key,
         if (query.empty())
             return std::unexpected("query is required");
 
-        if (query.size() > 200)
-            query = query.substr(0, 200);
+        if (query.size() > 500)
+            query = query.substr(0, 500);
 
         // Determine which backend to use
         bool use_google = !api_key.empty() && !engine_id.empty();

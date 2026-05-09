@@ -496,9 +496,9 @@ TEST_CASE("run_bash output line truncation", "[tools][run_bash]") {
     ToolRegistry reg;
     reg.add_defaults(sd);
 
-    // Generate 150 lines
+    // Generate 600 lines (exceeds new 500-line limit)
     auto result = reg.execute(
-        "run_bash", R"({"command": "for i in $(seq 1 150); do echo line $i; done"})");
+        "run_bash", R"({"command": "for i in $(seq 1 600); do echo line $i; done"})");
     REQUIRE(result);
     CHECK(result->find("truncated") != std::string::npos);
 
@@ -507,8 +507,8 @@ TEST_CASE("run_bash output line truncation", "[tools][run_bash]") {
     for (char c : *result)
         if (c == '\n')
             nl++;
-    // Should be 100 + 1 (the truncation message)
-    CHECK(nl <= 101);
+    // Should be 500 + 1 (the truncation message)
+    CHECK(nl <= 501);
 
     fs::remove_all(sd);
 }
@@ -518,13 +518,13 @@ TEST_CASE("run_bash output size truncation", "[tools][run_bash]") {
     ToolRegistry reg;
     reg.add_defaults(sd);
 
-    // Generate output larger than 4000 chars
+    // Generate output larger than 16000 chars
     auto result = reg.execute(
         "run_bash",
-        R"({"command": "python3 -c 'print(\"x\" * 5000)'"})");
+        R"({"command": "python3 -c 'print(\"x\" * 20000)'"})");
     REQUIRE(result);
     CHECK(result->find("truncated") != std::string::npos);
-    CHECK(result->size() <= 4100);  // a bit over due to truncation message
+    CHECK(result->size() <= 16100);  // a bit over due to truncation message
 
     fs::remove_all(sd);
 }
@@ -758,7 +758,7 @@ TEST_CASE("web_search respects max query length", "[tools][web_search]") {
 
     ToolRegistry reg;
     reg.add_defaults("/tmp", "test-key", "", server.url());
-    // 250 character query should be truncated to 200
+    // 250 character query is below the 500-char limit, so no truncation
     std::string long_query(250, 'x');
     auto result = reg.execute("web_search",
         R"({"query": ")" + long_query + R"("})");

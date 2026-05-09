@@ -708,5 +708,14 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
     SameLine(0, 16);
     TextColored(ImColor(mode_color), "%s", mode_str);
 
+    // ── token usage indicator (after mode) ──
+    {
+        const auto& usage = session.last_usage();
+        if (usage.total_tokens > 0) {
+            SameLine(0, 8);
+            TextColored(ImColor(IM_COL32(180, 180, 180, 255)), "[%d tokens]", usage.total_tokens);
+        }
+    }
+
     End(); // main window
 }

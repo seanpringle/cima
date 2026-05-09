@@ -13,6 +13,18 @@ std::string sanitize_utf8(const std::string& s);
 using json = nlohmann::json;
 
 // ---------------------------------------------------------------------------
+// Usage — token usage reported by the API
+// ---------------------------------------------------------------------------
+
+struct Usage {
+    int prompt_tokens = 0;
+    int completion_tokens = 0;
+    int total_tokens = 0;
+};
+
+void from_json(const json& j, Usage& u);
+
+// ---------------------------------------------------------------------------
 // ToolCall — represents a function call requested by the model
 // ---------------------------------------------------------------------------
 
