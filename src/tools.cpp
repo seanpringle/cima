@@ -1132,6 +1132,157 @@ static Tool make_git_status_tool(const std::string& safe_dir) {
 }
 
 // ===================================================================
+// git_diff tool
+// ===================================================================
+
+static Tool make_git_diff_tool(const std::string& safe_dir) {
+    Tool t;
+    t.name = "git_diff";
+    t.description =
+        "Return a unified diff of unstaged (or staged) changes.\n"
+        "Output is capped at 500 lines / 16000 chars.\n"
+        "Use git_status first to see which files have changed, "
+        "then git_diff to inspect the actual changes.\n"
+        "If 'staged' is true, shows the diff that would be committed "
+        "(index vs HEAD). If false (default), shows unstaged changes "
+        "(working tree vs index).";
+    t.timeout_sec = 10;
+    t.parameters = {{"type", "object"},
+        {"properties",
+            {{"staged",
+                {{"type", "boolean"},
+                    {"description",
+                        "If true, show staged changes (diff of index vs HEAD). "
+                        "If false (default), show unstaged changes "
+                        "(diff of working tree vs index)."}}},
+                {"path",
+                    {{"type", "string"},
+                        {"description",
+                            "Optional file path to limit the diff to a specific file. "
+                            "If provided, only this file's changes are shown. "
+                            "Must be under the safe directory."}}}}},
+        {"required", json::array()}};
+
+    t.execute = [safe_dir](const json& args) -> Result<std::string> {
+        // Open git repository
+        auto repo_res = open_git_repo(safe_dir);
+        if (!repo_res) {
+            return std::unexpected(repo_res.error());
+        }
+        git_repository* repo = *repo_res;
+        auto cleanup = std::unique_ptr<git_repository, decltype(&git_repository_free)>(
+            repo, git_repository_free);
+
+        bool staged = args.value("staged", false);
+        std::string filter_path = args.value("path", std::string());
+
+        // Validate path if provided
+        if (!filter_path.empty()) {
+            auto resolved = resolve_path(filter_path, safe_dir);
+            if (!resolved) {
+                return std::unexpected(resolved.error());
+            }
+            // resolve_path gives an absolute path; for libgit2 pathspec we need
+            // a path relative to the repo working directory. We try to make it
+            // relative, but absolute paths also work as long as they're under
+            // the workdir. We'll use the raw user input as-is; libgit2 handles
+            // normalization relative to the workdir root.
+        }
+
+        // Build diff options with optional pathspec
+        git_diff_options diff_opts = GIT_DIFF_OPTIONS_INIT;
+        const char* paths_arr[1];
+        if (!filter_path.empty()) {
+            paths_arr[0] = filter_path.c_str();
+            diff_opts.pathspec.strings = const_cast<char**>(paths_arr);
+            diff_opts.pathspec.count = 1;
+        }
+
+        git_diff* diff = nullptr;
+        int err = 0;
+
+        if (staged) {
+            // Staged changes: diff HEAD tree vs index
+            git_object* head_tree_obj = nullptr;
+            err = git_revparse_single(&head_tree_obj, repo, "HEAD^{tree}");
+            if (err) {
+                const git_error* e = git_error_last();
+                return std::unexpected("git_diff error resolving HEAD: " +
+                    (e ? std::string(e->message) : std::string("unknown error")));
+            }
+            git_tree* head_tree = reinterpret_cast<git_tree*>(head_tree_obj);
+
+            err = git_diff_tree_to_index(&diff, repo, head_tree, nullptr, &diff_opts);
+            git_tree_free(head_tree);
+        } else {
+            // Unstaged changes: diff index vs working directory
+            err = git_diff_index_to_workdir(&diff, repo, nullptr, &diff_opts);
+        }
+
+        if (err) {
+            const git_error* e = git_error_last();
+            return std::unexpected("git_diff error: " +
+                (e ? std::string(e->message) : std::string("unknown error")));
+        }
+
+        auto diff_cleanup = std::unique_ptr<git_diff, decltype(&git_diff_free)>(
+            diff, git_diff_free);
+
+        // Print unified diff into a string, capped at 500 lines / 16000 chars
+        std::string result;
+        const int max_lines = 500;
+        const size_t max_chars = 16000;
+
+        struct DiffCtx {
+            std::string* output;
+            int line_count = 0;
+            bool truncated = false;
+        };
+        DiffCtx ctx{&result, 0, false};
+
+        auto print_cb = [](const git_diff_delta* /*delta*/,
+                           const git_diff_hunk* /*hunk*/,
+                           const git_diff_line* line,
+                           void* payload) -> int {
+            auto* c = static_cast<DiffCtx*>(payload);
+            if (c->truncated) return 1;
+            if (c->line_count >= max_lines || c->output->size() >= max_chars) {
+                c->truncated = true;
+                return 1;
+            }
+            // Prepend origin character for +/-/context lines
+            if (line->origin == '+' || line->origin == '-' || line->origin == ' ') {
+                c->output->push_back(line->origin);
+            }
+            c->output->append(line->content, line->content_len);
+            c->line_count++;
+            return 0;
+        };
+
+        err = git_diff_print(diff, GIT_DIFF_FORMAT_PATCH, print_cb, &ctx);
+        if (err && !ctx.truncated) {
+            // Only report as error if we didn't intentionally stop via truncation
+            const git_error* e = git_error_last();
+            return std::unexpected("git_diff print error: " +
+                (e ? std::string(e->message) : std::string("unknown error")));
+        }
+
+        // Append truncation trailer if needed
+        if (ctx.truncated) {
+            result += "\n...(diff truncated at " + std::to_string(max_lines) +
+                " lines / " + std::to_string(max_chars) + " chars)";
+        }
+
+        if (result.empty()) {
+            result = staged ? "(no staged changes)" : "(no unstaged changes)";
+        }
+
+        return result;
+    };
+    return t;
+}
+
+// ===================================================================
 // project_tree tool
 // ===================================================================
 
@@ -1784,6 +1935,7 @@ void ToolRegistry::add_defaults(const std::string& safe_dir,
     add(make_project_tree_tool(safe_dir));
     add(make_web_fetch_tool());
     add(make_git_status_tool(safe_dir));
+    add(make_git_diff_tool(safe_dir));
 }
 
 json ToolRegistry::to_openai_tools() const {
@@ -1808,7 +1960,8 @@ Result<std::string> ToolRegistry::execute(const std::string& name, const std::st
             name == "apply_patch")) {
         return std::unexpected("Tool '" + name +
             "' is not available in Plan mode (read-only). "
-            "Available tools: list_files, read_file, grep_files, project_tree, web_search, web_fetch.");
+            "Available tools: list_files, read_file, read_file_lines, grep_files, "
+            "project_tree, web_search, web_fetch, git_status, git_diff.");
     }
 
     json args;

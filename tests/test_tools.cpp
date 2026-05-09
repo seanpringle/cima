@@ -111,7 +111,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
 
     json tools = reg.to_openai_tools();
     REQUIRE(tools.is_array());
-    REQUIRE(tools.size() == 12);
+    REQUIRE(tools.size() == 13);
 
     // Check structure of first tool
     CHECK(tools[0]["type"] == "function");
@@ -129,7 +129,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
     CHECK(names == std::set<std::string>{
                        "list_files", "read_file", "read_file_lines", "grep_files", "write_file",
                        "edit_file", "apply_patch", "run_bash", "web_search", "web_fetch",
-                       "project_tree", "git_status"});
+                       "project_tree", "git_status", "git_diff"});
 }
 
 // ===================================================================
@@ -464,6 +464,168 @@ TEST_CASE("git_status available in plan mode", "[tools][git_status]") {
     auto result = reg.execute("git_status", "{}");
     // Should succeed in Plan mode (read-only tool)
     REQUIRE(result);
+
+    fs::remove_all(sd);
+}
+
+// ===================================================================
+// git_diff
+// ===================================================================
+
+TEST_CASE("git_diff unstaged modifications", "[tools][git_diff]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    // Modify tracked file
+    std::ofstream(sd + "/README.md") << "# Modified content\n";
+
+    auto result = reg.execute("git_diff", "{}");
+    REQUIRE(result);
+    // Expected diff: -# Test\n +# Modified content\n
+    CHECK(result->find("-#") != std::string::npos);
+    CHECK(result->find("+#") != std::string::npos);
+    CHECK(result->find("Modified content") != std::string::npos);
+    // Should not say "no changes"
+    CHECK(result->find("no unstaged changes") == std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_diff staged changes", "[tools][git_diff]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    // Modify and stage
+    std::ofstream(sd + "/README.md") << "# Staged change\n";
+    reg.execute("run_bash", R"({"command": "git add README.md"})");
+
+    auto result = reg.execute("git_diff", R"({"staged": true})");
+    REQUIRE(result);
+    CHECK(result->find("-#") != std::string::npos);
+    CHECK(result->find("+#") != std::string::npos);
+    CHECK(result->find("Staged change") != std::string::npos);
+    CHECK(result->find("no staged changes") == std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_diff no unstaged changes", "[tools][git_diff]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    auto result = reg.execute("git_diff", "{}");
+    REQUIRE(result);
+    CHECK(*result == "(no unstaged changes)");
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_diff no staged changes", "[tools][git_diff]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    auto result = reg.execute("git_diff", R"({"staged": true})");
+    REQUIRE(result);
+    CHECK(*result == "(no staged changes)");
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_diff with path filter", "[tools][git_diff]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    // Create a second tracked file
+    std::ofstream(sd + "/other.txt") << "original\n";
+    reg.execute("run_bash", R"({"command": "git add other.txt && git commit -m 'add other'"})");
+
+    // Modify both tracked files
+    std::ofstream(sd + "/README.md") << "# README changed\n";
+    std::ofstream(sd + "/other.txt") << "modified\n";
+
+    // Filter to only other.txt
+    auto result = reg.execute("git_diff", R"({"path": "other.txt"})");
+    REQUIRE(result);
+    CHECK(result->find("other.txt") != std::string::npos);
+    CHECK(result->find("modified") != std::string::npos);
+    // README.md should NOT appear in the diff
+    CHECK(result->find("README.md") == std::string::npos);
+    // README content should not appear
+    CHECK(result->find("README changed") == std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_diff not a git repo", "[tools][git_diff]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    auto result = reg.execute("git_diff", "{}");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("not a git repository") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_diff available in plan mode", "[tools][git_diff]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+    reg.set_mode(Mode::Plan);
+
+    std::ofstream(sd + "/README.md") << "# Plan mode change\n";
+
+    auto result = reg.execute("git_diff", "{}");
+    // Should succeed in Plan mode (read-only tool)
+    REQUIRE(result);
+    CHECK(result->find("# Plan mode change") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_diff untracked files not shown by default", "[tools][git_diff]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    // Create an untracked file — git diff does NOT show untracked files
+    std::ofstream(sd + "/untracked.txt") << "new untracked\n";
+
+    auto result = reg.execute("git_diff", "{}");
+    REQUIRE(result);
+    // Should show no unstaged changes (untracked files are not in the diff)
+    CHECK(*result == "(no unstaged changes)");
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_diff output truncation", "[tools][git_diff]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    // Create a tracked file with a single line
+    std::ofstream(sd + "/bigfile.txt") << "original line\n";
+    reg.execute("run_bash", R"({"command": "git add bigfile.txt && git commit -m 'add bigfile'"})");
+
+    // Now overwrite with many lines (each line ~15 chars, total > 500 lines)
+    std::ofstream ofs2(sd + "/bigfile.txt");
+    for (int i = 0; i < 600; i++) {
+        ofs2 << "modified line " << i << "\n";
+    }
+    ofs2.close();
+
+    auto result = reg.execute("git_diff", "{}");
+    REQUIRE(result);
+    // The diff will show all 599 new lines as additions (since we replaced 1 line with 600)
+    // Plus context. Should hit the 500-line limit.
+    CHECK(result->find("truncated") != std::string::npos);
 
     fs::remove_all(sd);
 }
