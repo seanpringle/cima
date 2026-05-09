@@ -18,7 +18,7 @@ struct Config {
     std::string search_api_key;
     std::string search_engine_id;
     std::string search_endpoint;
-    int max_tool_iterations = 50;
+    int max_tool_iterations = 100;
     int context_limit = 131072;       // model context window (tokens)
     int compact_threshold = 80;        // % that triggers compaction
 
