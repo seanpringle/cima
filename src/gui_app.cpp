@@ -35,6 +35,8 @@ int gui_main(Config cfg) {
         return 1;
     }
 
+    SDL_SetRenderVSync(renderer, 1);
+
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
