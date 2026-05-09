@@ -54,6 +54,20 @@ string dump(const string_view s) {
     return ss.str();
 };
 
+void text_unformatted_ellipsis(const string& text) {
+    auto canvas = GetContentRegionAvail();
+    auto size = CalcTextSize(text.c_str());
+    if (size.x < canvas.x) {
+        TextUnformatted(text.c_str());
+        return;
+    }
+    auto glyph = CalcTextSize("_");
+    int cols = std::max(0, std::min(int(text.size()), int(canvas.x/glyph.x)-4));
+    stringstream ss;
+    ss << string_view(text.data(), cols) << "...";
+    TextUnformatted(ss.str().c_str());
+}
+
 void render_content(const string& text) {
     string copy = text;
     copy.erase(
@@ -573,11 +587,11 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
                 case EntryType::ToolCall:
                     PushStyleColor(ImGuiCol_Text, IM_COL32(255, 165, 0, 255));
                     PushTextWrapPos(0);
-                    TextUnformatted(entry.text.c_str());
+                    text_unformatted_ellipsis(entry.text);
                     for (;
                         i + 1 < ui.entries.size() && ui.entries[i + 1].type == EntryType::ToolCall;
                         i++) {
-                        TextUnformatted(ui.entries[i + 1].text.c_str());
+                        text_unformatted_ellipsis(ui.entries[i + 1].text);
                     }
                     PopTextWrapPos();
                     PopStyleColor();
