@@ -2,3 +2,5 @@
 build/
 Testing/
 chat.log
+.cache/
+.vscode/
