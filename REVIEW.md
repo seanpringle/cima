@@ -29,7 +29,7 @@
 
 **Tertiary finding:** The request-handling layer has minor inefficiencies (uncached tool schemas, no gzip, fragile retry logic) but these are not the primary driver of context-window bloat.
 
-**Status:** 🟡 **Partially addressed.** `reasoning_content` no longer round-tripped. Core inefficiencies remain.
+**Status:** 🟡 **Partially addressed.** `reasoning_content` no longer round-tripped. HTTP compression added (gzip/deflate/brotli). Core inefficiencies remain.
 
 ---
 
@@ -255,7 +255,7 @@ The curl handle does not set `Accept-Encoding: gzip`. Many LLM API providers sup
 
 **Impact:** Moderate. Adds unnecessary network transfer and memory pressure.
 
-**Status:** ❌ **Not addressed.**
+**Status:** ✅ **Addressed.** `CURLOPT_ACCEPT_ENCODING` set to `""` in `setup_curl()` and `http_get()` — libcurl handles transparent decompression for gzip, deflate, brotli, etc. (commit `b67c7d1`).
 
 ### 4.3 Fragile Retry Logic for Streaming
 
@@ -453,7 +453,7 @@ Running tests with structured output (pass/fail counts, test names). Currently r
 | 4 | **Add `apply_patch` tool** — Accept unified diff input. | `tools.cpp` | 1 day | **High** | ❌ |
 | 5 | **Add `project_tree` tool** — Recursive directory listing. | `tools.cpp` | 0.5 day | **High** | ❌ |
 | 6 | **Add git tools** — `git_status`, `git_diff`, `git_log`, `git_commit`. | `tools.cpp` (new) | 2 days | **High** | ❌ |
-| 7 | **Add Accept-Encoding: gzip** — HTTP compression. | `client.cpp` | 15 min | **Medium** | ❌ |
+| 7 | **Add Accept-Encoding: gzip** — HTTP compression. | `client.cpp` | 15 min | **Medium** | ✅ **Done.** `b67c7d1` |
 | — | **Discover context limit from API** — Query /v1/models for context window. | `client.h/cpp` | 0.5 day | **Medium** | ✅ **Done.** `fetch_model_context_limit()` checks multiple field names. |
 | — | **Stop round-tripping reasoning_content** — Don't send old thinking back. | `types.cpp` | 5 min | **Medium** | ✅ **Done.** Removed from `to_openai_messages()`. |
 
