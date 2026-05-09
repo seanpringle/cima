@@ -9,11 +9,17 @@
 #include <iostream>
 #include <string>
 
+using namespace ImGui;
+using std::string;
+using std::string_view;
+using std::stringstream;
+using std::vector;
+
 extern std::atomic<bool> g_interrupted;
 
-std::string dump(const std::string_view s) {
+string dump(const string_view s) {
     std::span<const uint8_t> buf((const uint8_t*)s.data(), s.size());
-    std::stringstream ss;
+    stringstream ss;
     for (size_t row = 0, lim = s.size() / 16 + std::min(size_t(1u), s.size() % 16); row < lim;
         row++) {
         for (size_t col = 0; col < 16; col++) {
@@ -48,12 +54,7 @@ std::string dump(const std::string_view s) {
     return ss.str();
 };
 
-void render_content(ImFont* normal_font, ImFont* bold_font, const std::string& text) {
-    using namespace ImGui;
-    using std::string;
-    using std::string_view;
-    using std::vector;
-
+void render_content(const string& text) {
     string copy = text;
     copy.erase(
         std::remove_if(copy.begin(), copy.end(), [](auto c) { return c == '\r' || c == '\0'; }),
@@ -68,10 +69,10 @@ void render_content(ImFont* normal_font, ImFont* bold_font, const std::string& t
         bool code = false;
         int colors = 0;
 
-        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(200, 200, 200, 255));
+        PushStyleColor(ImGuiCol_Text, IM_COL32(200, 200, 200, 255));
         colors++;
 
-        std::stringstream fragment;
+        stringstream fragment;
 
         auto flush = [&]() {
             string str = fragment.str();
@@ -101,7 +102,7 @@ void render_content(ImFont* normal_font, ImFont* bold_font, const std::string& t
                 flush();
                 txt.remove_prefix(2);
                 bold = true;
-                ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
+                PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
                 colors++;
                 continue;
             }
@@ -118,7 +119,7 @@ void render_content(ImFont* normal_font, ImFont* bold_font, const std::string& t
                 flush();
                 txt.remove_prefix(1);
                 code = true;
-                ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(200, 200, 255, 255));
+                PushStyleColor(ImGuiCol_Text, IM_COL32(200, 200, 255, 255));
                 colors++;
                 continue;
             }
@@ -333,7 +334,7 @@ void render_content(ImFont* normal_font, ImFont* bold_font, const std::string& t
     }
 }
 
-static void render_code_block(const std::string& text) {
+static void render_code_block(const string& text) {
     if (text.empty())
         return;
 
@@ -342,38 +343,37 @@ static void render_code_block(const std::string& text) {
         if (c == '\n')
             lines++;
 
-    float line_height = ImGui::GetTextLineHeightWithSpacing();
+    float line_height = GetTextLineHeightWithSpacing();
     float height = lines * line_height;
 
-    ImVec2 start_pos = ImGui::GetCursorScreenPos();
-    float width = ImGui::GetContentRegionAvail().x;
+    ImVec2 start_pos = GetCursorScreenPos();
+    float width = GetContentRegionAvail().x;
 
-    ImDrawList* dl = ImGui::GetWindowDrawList();
+    ImDrawList* dl = GetWindowDrawList();
     dl->AddRectFilled(ImVec2(start_pos.x, start_pos.y),
         ImVec2(start_pos.x + width, start_pos.y + height + 8),
         IM_COL32(30, 30, 40, 255));
 
-    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(200, 200, 200, 255));
-    ImGui::SetCursorScreenPos(ImVec2(start_pos.x + 8, start_pos.y + 4));
+    PushStyleColor(ImGuiCol_Text, IM_COL32(200, 200, 200, 255));
+    SetCursorScreenPos(ImVec2(start_pos.x + 8, start_pos.y + 4));
 
     size_t pos = 0;
     while (pos < text.size()) {
         size_t nl = text.find('\n', pos);
-        std::string line =
-            (nl == std::string::npos) ? text.substr(pos) : text.substr(pos, nl - pos);
-        ImGui::TextUnformatted(line.c_str());
-        if (nl == std::string::npos)
+        string line = (nl == string::npos) ? text.substr(pos) : text.substr(pos, nl - pos);
+        TextUnformatted(line.c_str());
+        if (nl == string::npos)
             break;
         pos = nl + 1;
-        ImGui::SetCursorScreenPos(ImVec2(start_pos.x + 8, ImGui::GetCursorScreenPos().y));
+        SetCursorScreenPos(ImVec2(start_pos.x + 8, GetCursorScreenPos().y));
     }
 
-    ImGui::PopStyleColor();
+    PopStyleColor();
 
-    ImGui::SetCursorScreenPos(ImVec2(start_pos.x, start_pos.y + height + 8));
+    SetCursorScreenPos(ImVec2(start_pos.x, start_pos.y + height + 8));
 }
 
-static void start_chat(AsyncChatState& chat, ChatSession& session, std::string input) {
+static void start_chat(AsyncChatState& chat, ChatSession& session, string input) {
     chat.running = true;
     chat.future = std::async(std::launch::async,
         [&session, input = std::move(input)]() { return session.run_once(input); });
@@ -393,7 +393,7 @@ static void cancel_chat(AsyncChatState& chat) {
     g_interrupted = false;
 }
 
-static void push_entry(ChatUIState& ui, EntryType type, const std::string& text, bool streaming) {
+static void push_entry(ChatUIState& ui, EntryType type, const string& text, bool streaming) {
     ui.entries.push_back({type, text, streaming, ui.next_seq++});
 }
 
@@ -425,13 +425,13 @@ static void drain_pending(ChatUIState& ui, AsyncChatState& chat) {
 void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session, bool& done) {
     // ── check if chat finished (before drain, so the drain catches any last items) ──
     bool stream_ended = false;
-    Result<ChatResult> result = std::unexpected(std::string("unknown error"));
+    Result<ChatResult> result = std::unexpected(string("unknown error"));
     if (chat.running && chat.future.valid() &&
         chat.future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         try {
             result = chat.future.get();
         } catch (const std::exception& e) {
-            result = std::unexpected(std::string(e.what()));
+            result = std::unexpected(string(e.what()));
         }
         chat.running = false;
         stream_ended = true;
@@ -453,15 +453,15 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
     // ── mode toggle (Tab key, debounced to 500ms) ──
     {
         static std::chrono::steady_clock::time_point last_mode_toggle;
-        if (!chat.running && ImGui::IsKeyPressed(ImGuiKey_Tab, false)) {
+        if (!chat.running && IsKeyPressed(ImGuiKey_Tab, false)) {
             auto now = std::chrono::steady_clock::now();
             if (now - last_mode_toggle > std::chrono::milliseconds(500)) {
                 last_mode_toggle = now;
                 Mode new_mode = (ui.mode == Mode::Plan) ? Mode::Build : Mode::Plan;
                 ui.mode = new_mode;
                 session.set_mode(new_mode);
-                auto msg = "Switched to " + std::string(new_mode == Mode::Plan ? "Plan" : "Build") +
-                    " mode";
+                auto msg =
+                    "Switched to " + string(new_mode == Mode::Plan ? "Plan" : "Build") + " mode";
                 if (!ui.entries.empty() && ui.entries.back().type == EntryType::ModeSwitch) {
                     ui.entries.back().text = msg;
                 } else {
@@ -472,36 +472,35 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
     }
 
     // ── main window ──
-    ImGui::SetNextWindowPos(ImVec2(0, 0));
-    ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
-    ImGui::Begin("llm-chat",
+    SetNextWindowPos(ImVec2(0, 0));
+    SetNextWindowSize(GetIO().DisplaySize);
+    Begin("llm-chat",
         nullptr,
         ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
             ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus);
 
     // ── menu bar ──
-    if (ImGui::BeginMenuBar()) {
-        if (ImGui::BeginMenu("File")) {
-            if (ImGui::MenuItem("Exit", "Alt+F4"))
+    if (BeginMenuBar()) {
+        if (BeginMenu("File")) {
+            if (MenuItem("Exit", "Alt+F4"))
                 done = true;
-            ImGui::EndMenu();
+            EndMenu();
         }
-        if (ImGui::BeginMenu("Edit")) {
-            if (ImGui::MenuItem("Clear conversation")) {
+        if (BeginMenu("Edit")) {
+            if (MenuItem("Clear conversation")) {
                 session.clear();
                 ui.entries.clear();
             }
-            ImGui::EndMenu();
+            EndMenu();
         }
-        if (ImGui::BeginMenu("Mode")) {
-            ImGui::Text("Current: %s", ui.mode == Mode::Plan ? "Plan" : "Build");
-            ImGui::Separator();
-            if (ImGui::MenuItem(
-                    "Switch to Build (full access)", "Tab", false, ui.mode != Mode::Build)) {
+        if (BeginMenu("Mode")) {
+            Text("Current: %s", ui.mode == Mode::Plan ? "Plan" : "Build");
+            Separator();
+            if (MenuItem("Switch to Build (full access)", "Tab", false, ui.mode != Mode::Build)) {
                 ui.mode = Mode::Build;
                 session.set_mode(Mode::Build);
                 {
-                    std::string msg = "Switched to Build mode";
+                    string msg = "Switched to Build mode";
                     if (!ui.entries.empty() && ui.entries.back().type == EntryType::ModeSwitch) {
                         ui.entries.back().text = msg;
                     } else {
@@ -509,12 +508,11 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
                     }
                 }
             }
-            if (ImGui::MenuItem(
-                    "Switch to Plan (read-only)", "Tab", false, ui.mode != Mode::Plan)) {
+            if (MenuItem("Switch to Plan (read-only)", "Tab", false, ui.mode != Mode::Plan)) {
                 ui.mode = Mode::Plan;
                 session.set_mode(Mode::Plan);
                 {
-                    std::string msg = "Switched to Plan mode";
+                    string msg = "Switched to Plan mode";
                     if (!ui.entries.empty() && ui.entries.back().type == EntryType::ModeSwitch) {
                         ui.entries.back().text = msg;
                     } else {
@@ -522,32 +520,32 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
                     }
                 }
             }
-            ImGui::EndMenu();
+            EndMenu();
         }
-        if (ImGui::BeginMenu("Model")) {
-            bool changed = ImGui::InputText(
+        if (BeginMenu("Model")) {
+            bool changed = InputText(
                 "Name", ui.model_buf, sizeof(ui.model_buf), ImGuiInputTextFlags_EnterReturnsTrue);
-            ImGui::SameLine();
-            if (ImGui::Button("Apply") || changed) {
+            SameLine();
+            if (Button("Apply") || changed) {
                 session.set_model(ui.model_buf);
             }
-            ImGui::Text("Current: %s", session.model().c_str());
-            ImGui::EndMenu();
+            Text("Current: %s", session.model().c_str());
+            EndMenu();
         }
-        ImGui::EndMenuBar();
+        EndMenuBar();
     }
 
     // ── tabs (Chat / Debug) ──
-    float input_height = ImGui::GetFrameHeightWithSpacing() * 3 +
-        ImGui::GetStyle().ItemSpacing.y * 2 + ImGui::GetFrameHeightWithSpacing() + 8;
+    float input_height = GetFrameHeightWithSpacing() * 3 + GetStyle().ItemSpacing.y * 2 +
+        GetFrameHeightWithSpacing() + 8;
 
     if (ui.mono_font)
-        ImGui::PushFont(ui.mono_font);
+        PushFont(ui.mono_font);
 
-    if (ImGui::BeginTabBar("##tabs")) {
+    if (BeginTabBar("##tabs")) {
         // ── Chat tab ──
-        if (ImGui::BeginTabItem("Chat")) {
-            ImGui::BeginChild("##chat",
+        if (BeginTabItem("Chat")) {
+            BeginChild("##chat",
                 ImVec2(0, -input_height),
                 false,
                 ImGuiWindowFlags_AlwaysVerticalScrollbar);
@@ -556,8 +554,8 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
 
             if (ui.entries.size() > 30) {
                 i = ui.entries.size() - 30;
-                ImGui::TextWrapped("%d old entries", int(i));
-                ImGui::Separator();
+                TextWrapped("%d old entries", int(i));
+                Separator();
             }
 
             for (; i < ui.entries.size(); i++) {
@@ -567,73 +565,83 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
                     continue;
 
                 if (i > 0)
-                    ImGui::NewLine();
-                ImGui::PushID(std::string("entry-" + std::to_string(i)).c_str());
+                    NewLine();
+                PushID(string("entry-" + std::to_string(i)).c_str());
 
-                std::stringstream ss;
+                stringstream ss;
 
                 switch (entry.type) {
                 case EntryType::UserText:
-                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(100, 180, 255, 255));
-                    ImGui::PushTextWrapPos(0);
+                    PushStyleColor(ImGuiCol_Text, IM_COL32(100, 180, 255, 255));
+                    PushTextWrapPos(0);
                     ss << "You: " << entry.text;
-                    ImGui::TextUnformatted(ss.str().c_str());
-                    ImGui::PopTextWrapPos();
-                    ImGui::PopStyleColor();
+                    TextUnformatted(ss.str().c_str());
+                    PopTextWrapPos();
+                    PopStyleColor();
                     break;
                 case EntryType::Reasoning:
-                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(160, 160, 160, 255));
-                    render_content(ui.mono_font, ui.mono_font, "Thinking: " + entry.text);
-                    ImGui::PopStyleColor();
+                    PushStyleColor(ImGuiCol_Text, IM_COL32(160, 160, 160, 255));
+                    render_content("Thinking: " + entry.text);
+                    PopStyleColor();
                     break;
                 case EntryType::Content:
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_Text));
-                    render_content(ui.mono_font, ui.mono_font, entry.text);
-                    ImGui::PopStyleColor();
+                    PushStyleColor(ImGuiCol_Text, GetColorU32(ImGuiCol_Text));
+                    render_content(entry.text);
+                    PopStyleColor();
                     break;
                 case EntryType::ToolCall:
-                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 165, 0, 255));
-                    ImGui::PushTextWrapPos(0);
-                    ImGui::TextUnformatted(entry.text.c_str());
+                    PushStyleColor(ImGuiCol_Text, IM_COL32(255, 165, 0, 255));
+                    PushTextWrapPos(0);
+                    TextUnformatted(entry.text.c_str());
                     for (;
                         i + 1 < ui.entries.size() && ui.entries[i + 1].type == EntryType::ToolCall;
                         i++) {
-                        ImGui::TextUnformatted(ui.entries[i + 1].text.c_str());
+                        TextUnformatted(ui.entries[i + 1].text.c_str());
                     }
-                    ImGui::PopTextWrapPos();
-                    ImGui::PopStyleColor();
+                    PopTextWrapPos();
+                    PopStyleColor();
                     break;
                 case EntryType::ModeSwitch:
-                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
-                    ImGui::TextUnformatted(entry.text.c_str());
-                    ImGui::PopStyleColor();
+                    PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
+                    TextUnformatted(entry.text.c_str());
+                    PopStyleColor();
                     break;
                 }
 
-                ImGui::PopID();
+                PopID();
             }
 
             // auto-scroll
-            float scroll_y = ImGui::GetScrollY();
-            float scroll_max = ImGui::GetScrollMaxY();
+            float scroll_y = GetScrollY();
+            float scroll_max = GetScrollMaxY();
             if (scroll_y >= scroll_max - 10.0f)
                 ui.auto_scroll = true;
             else
                 ui.auto_scroll = false;
             if (ui.auto_scroll)
-                ImGui::SetScrollHereY(1.0f);
+                SetScrollHereY(1.0f);
 
-            ImGui::EndChild();
-            ImGui::EndTabItem();
+            EndChild();
+            EndTabItem();
         }
 
         // ── Raw tab ──
-        if (ImGui::BeginTabItem("Raw")) {
-            ImGui::BeginChild(
+        if (BeginTabItem("Raw")) {
+            BeginChild(
                 "##raw", ImVec2(0, -input_height), false, ImGuiWindowFlags_AlwaysVerticalScrollbar);
 
-            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(180, 180, 180, 255));
-            for (const auto& entry : ui.entries) {
+            PushStyleColor(ImGuiCol_Text, IM_COL32(180, 180, 180, 255));
+
+            size_t i = 0;
+
+            if (ui.entries.size() > 30) {
+                i = ui.entries.size() - 30;
+                TextWrapped("%d old entries", int(i));
+                Separator();
+            }
+
+            for (; i < ui.entries.size(); i++) {
+                const auto& entry = ui.entries[i];
                 const char* prefix = "";
                 switch (entry.type) {
                 case EntryType::UserText:
@@ -652,133 +660,80 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
                     prefix = "[Mode] ";
                     break;
                 }
-                ImGui::PushTextWrapPos(0);
-                std::stringstream ss;
+                PushTextWrapPos(0);
+                stringstream ss;
                 ss << prefix << entry.text;
-                ImGui::TextUnformatted(ss.str().c_str());
-                ImGui::PopTextWrapPos();
+                TextUnformatted(ss.str().c_str());
+                PopTextWrapPos();
             }
-            ImGui::PopStyleColor();
+            PopStyleColor();
 
-            ImGui::EndChild();
-            ImGui::EndTabItem();
+            EndChild();
+            EndTabItem();
         }
 
-        // ── Raw tab ──
-        if (ImGui::BeginTabItem("Dump")) {
-            ImGui::BeginChild("##dump",
-                ImVec2(0, -input_height),
-                false,
-                ImGuiWindowFlags_AlwaysVerticalScrollbar);
-
-            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(180, 180, 180, 255));
-            for (const auto& entry : ui.entries) {
-                const char* prefix = "";
-                switch (entry.type) {
-                case EntryType::UserText:
-                    prefix = "[User] ";
-                    break;
-                case EntryType::Reasoning:
-                    prefix = "[Reasoning] ";
-                    break;
-                case EntryType::Content:
-                    prefix = "[Assistant] ";
-                    break;
-                case EntryType::ToolCall:
-                    prefix = "[Tool] ";
-                    break;
-                case EntryType::ModeSwitch:
-                    prefix = "[Mode] ";
-                    break;
-                }
-                ImGui::TextWrapped("[%d] %s", entry.seq, prefix);
-                ImGui::TextUnformatted(dump(entry.text).c_str());
-            }
-            ImGui::PopStyleColor();
-
-            ImGui::EndChild();
-            ImGui::EndTabItem();
-        }
-
-        ImGui::EndTabBar();
+        EndTabBar();
     }
 
     if (ui.mono_font)
-        ImGui::PopFont();
+        PopFont();
 
     // ── input area ──
-    ImGui::Separator();
+    Separator();
 
     bool running_snapshot = chat.running;
 
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+    SetNextItemWidth(GetContentRegionAvail().x);
 
     if (running_snapshot)
-        ImGui::BeginDisabled();
+        BeginDisabled();
     if (ui.mono_font)
-        ImGui::PushFont(ui.mono_font);
+        PushFont(ui.mono_font);
 
-    if (ImGui::InputTextMultiline("##input",
+    if (InputTextMultiline("##input",
             ui.input_buf,
             sizeof(ui.input_buf),
-            ImVec2(0, ImGui::GetFrameHeightWithSpacing() * 3),
+            ImVec2(0, GetFrameHeightWithSpacing() * 3),
             ImGuiInputTextFlags_CtrlEnterForNewLine | ImGuiInputTextFlags_EnterReturnsTrue |
                 ImGuiInputTextFlags_WordWrap)) {
-        std::string input(ui.input_buf);
+        string input(ui.input_buf);
         ui.input_buf[0] = '\0';
         if (!input.empty()) {
-            if (input == "/clear") {
-                session.clear();
-                ui.entries.clear();
-                ui.next_seq = 1;
-            } else if (input == "/exit" || input == "/quit") {
-                done = true;
-            } else {
+            ui.entries.push_back({EntryType::UserText, input, false, ui.next_seq++});
+            start_chat(chat, session, std::move(input));
+        }
+    }
+
+    if (ui.mono_font)
+        PopFont();
+    if (running_snapshot)
+        EndDisabled();
+
+    if (chat.running) {
+        if (Button("Cancel")) {
+            cancel_chat(chat);
+        }
+    } else {
+        if (ui.input_buf[0] == '\0')
+            BeginDisabled();
+        if (Button("Send")) {
+            string input(ui.input_buf);
+            ui.input_buf[0] = '\0';
+            if (!input.empty()) {
                 ui.entries.push_back({EntryType::UserText, input, false, ui.next_seq++});
                 start_chat(chat, session, std::move(input));
             }
         }
-    }
-
-    if (ui.mono_font)
-        ImGui::PopFont();
-    if (running_snapshot)
-        ImGui::EndDisabled();
-
-    if (chat.running) {
-        if (ImGui::Button("  Cancel  "))
-            cancel_chat(chat);
-    } else {
         if (ui.input_buf[0] == '\0')
-            ImGui::BeginDisabled();
-        if (ImGui::Button("  Send  ")) {
-            std::string input(ui.input_buf);
-            ui.input_buf[0] = '\0';
-            if (!input.empty()) {
-                if (input == "/clear") {
-                    session.clear();
-                    ui.entries.clear();
-                    ui.next_seq = 1;
-                } else if (input == "/exit" || input == "/quit") {
-                    done = true;
-                } else {
-                    ui.entries.push_back({EntryType::UserText, input, false, ui.next_seq++});
-                    start_chat(chat, session, std::move(input));
-                }
-            }
-        }
-        if (ui.input_buf[0] == '\0')
-            ImGui::EndDisabled();
+            EndDisabled();
     }
 
     // ── mode indicator (same line as Cancel/Send) ──
-    {
-        auto mode_str = (ui.mode == Mode::Plan) ? "[Plan]" : "[Build]";
-        auto mode_color =
-            (ui.mode == Mode::Plan) ? IM_COL32(100, 180, 255, 255) : IM_COL32(100, 255, 100, 255);
-        ImGui::SameLine(0, 16);
-        ImGui::TextColored(ImColor(mode_color), "%s", mode_str);
-    }
+    auto mode_str = (ui.mode == Mode::Plan) ? "[Plan]" : "[Build]";
+    auto mode_color =
+        (ui.mode == Mode::Plan) ? IM_COL32(100, 180, 255, 255) : IM_COL32(100, 255, 100, 255);
+    SameLine(0, 16);
+    TextColored(ImColor(mode_color), "%s", mode_str);
 
-    ImGui::End(); // main window
+    End(); // main window
 }
