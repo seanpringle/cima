@@ -2,6 +2,7 @@
 
 #include <curl/curl.h>
 #include <cstring>
+#include <iostream>
 #include <random>
 #include <thread>
 #include <chrono>
@@ -56,7 +57,7 @@ static CURL* setup_curl(const std::string& url, struct curl_slist* headers, cons
   curl_easy_setopt(curl, CURLOPT_TCP_KEEPIDLE, 60L);
   curl_easy_setopt(curl, CURLOPT_TCP_KEEPINTVL, 30L);
   curl_easy_setopt(curl, CURLOPT_USERAGENT, "llm-chat/0.1");
-  curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
+  curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2TLS);
 
   // Enable SSL/TLS verification when using HTTPS.
   curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
@@ -137,6 +138,10 @@ Result<json> ChatClient::chat(const json& payload) {
   }
 
   if (http_code != 200) {
+    // Log the full response body to stderr for debugging.
+    if (!body.empty()) {
+      std::cerr << "HTTP " << http_code << " response body:\n" << body << std::endl;
+    }
     std::string msg = "HTTP " + std::to_string(http_code);
     if (!body.empty()) {
       msg += ": " + body.substr(0, 500);
@@ -199,6 +204,10 @@ Result<void> ChatClient::stream_chat(const json& payload, SSEParser::Callbacks c
   raw_response_ = parser.raw();
 
   if (res != CURLE_OK) {
+    // Log the full raw response to stderr for debugging.
+    if (!raw_response_.empty()) {
+      std::cerr << "curl error raw response (" << curl_easy_strerror(res) << "):\n" << raw_response_ << std::endl;
+    }
     auto msg = std::string("curl error: ") + curl_easy_strerror(res);
     if (!raw_response_.empty()) {
       msg += " | raw: " + raw_response_.substr(0, 500);
@@ -207,6 +216,10 @@ Result<void> ChatClient::stream_chat(const json& payload, SSEParser::Callbacks c
   }
 
   if (http_code != 200) {
+    // Log the full raw response to stderr for debugging.
+    if (!raw_response_.empty()) {
+      std::cerr << "HTTP " << http_code << " response body:\n" << raw_response_ << std::endl;
+    }
     auto msg = "HTTP " + std::to_string(http_code);
     if (!raw_response_.empty()) {
       msg += ": " + raw_response_.substr(0, 500);
