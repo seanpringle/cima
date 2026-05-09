@@ -120,6 +120,7 @@ TEST_CASE("ChatSession max tool iterations", "[chat]") {
     cfg.model = "test";
     cfg.system_prompt = "You are helpful.";
     cfg.safe_dir = "/tmp";
+    cfg.max_tool_iterations = 10;
 
     ChatSession session(std::move(cfg));
     auto result = session.run_once("List files forever");
