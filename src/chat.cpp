@@ -5,12 +5,21 @@
 ChatSession::ChatSession(Config config)
     : model_(std::move(config.model)), safe_dir_(std::move(config.safe_dir)),
       base_system_prompt_(config.system_prompt),
-      max_iterations_(config.max_tool_iterations), conversation_(config.system_prompt),
+      max_iterations_(config.max_tool_iterations),
+      context_limit_(static_cast<size_t>(config.context_limit)),
+      compact_threshold_(static_cast<size_t>(config.compact_threshold)),
+      conversation_(config.system_prompt),
       client_(std::move(config.api_base), std::move(config.api_key)) {
     tools_.add_defaults(safe_dir_, config.search_api_key, config.search_engine_id,
         config.search_endpoint);
     tools_.set_mode(mode_);
     inject_mode_instruction();
+
+    // Wire up the summary callback for compaction
+    conversation_.set_summary_callback(
+        [this](const std::vector<Message>& msgs, size_t max_tokens) {
+            return summarize_messages_(msgs, max_tokens);
+        });
 }
 
 void ChatSession::clear() { conversation_.clear(); }
@@ -41,6 +50,16 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
     conversation_.add_user(user_input);
 
     for (int iter = 0; iter < max_iterations_; iter++) {
+        // ── Compact if needed before building the API payload ──
+        if (conversation_.needs_compaction(context_limit_, compact_threshold_)) {
+            size_t freed = conversation_.compact(context_limit_, compact_threshold_);
+            if (output_cb_ && freed > 0) {
+                output_cb_(
+                    "[\u2302 compacted " + std::to_string(freed) + " tokens]",
+                    OutputType::ToolInvocation);
+            }
+        }
+
         json payload = {{"model", model_},
             {"messages", conversation_.to_openai_messages()},
             {"tools", tools_.to_openai_tools()},
@@ -169,4 +188,53 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
     return std::unexpected(
         "Maximum tool call iterations (" + std::to_string(max_iterations_) +
             ") reached. Increase via LLM_MAX_TOOL_ITERATIONS env var.");
+}
+
+std::optional<std::string> ChatSession::summarize_messages_(
+    const std::vector<Message>& msgs, size_t max_tokens) {
+    // Build a compact conversation asking the LLM to summarize old exchanges.
+    Conversation summary_conv(
+        "Summarize the following conversation exchanges concisely. "
+        "Preserve the user's intent, key decisions, and any information "
+        "that will be needed to continue the task. "
+        "Output only the summary, no preamble.");
+
+    for (const auto& msg : msgs) {
+        if (msg.role == "user" && msg.content) {
+            summary_conv.add_user(*msg.content);
+        } else if (msg.role == "assistant" && msg.content) {
+            summary_conv.add_assistant(*msg.content);
+        } else if (msg.role == "assistant" && !msg.tool_calls.empty()) {
+            // Tool-call-only assistant messages: just note what was called
+            std::string summary;
+            for (const auto& tc : msg.tool_calls) {
+                if (!summary.empty()) summary += ", ";
+                summary += tc.name + "(" + tc.arguments + ")";
+            }
+            summary_conv.add_assistant("[called tools: " + summary + "]");
+        } else if (msg.role == "tool" && msg.content) {
+            // Tool results: just note the size — the content is waste now
+            summary_conv.add_tool(msg.tool_call_id,
+                "[tool result: " + std::to_string(msg.content->size()) + " bytes]");
+        }
+    }
+
+    json payload = {
+        {"model", model_},
+        {"messages", summary_conv.to_openai_messages()},
+        {"stream", false},
+        {"max_tokens", static_cast<int>(std::min(max_tokens, size_t(1024)))},
+    };
+
+    auto result = client_.chat(payload);
+    if (!result) {
+        return std::nullopt;
+    }
+
+    try {
+        auto content = (*result)["choices"][0]["message"]["content"];
+        return content.get<std::string>();
+    } catch (...) {
+        return std::nullopt;
+    }
 }

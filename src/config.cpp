@@ -33,6 +33,24 @@ Config Config::from_env() {
         }
     }
 
+    {
+        const char* val = std::getenv("LLM_CONTEXT_LIMIT");
+        if (val && val[0]) {
+            int n = std::atoi(val);
+            if (n > 0)
+                cfg.context_limit = n;
+        }
+    }
+
+    {
+        const char* val = std::getenv("LLM_COMPACT_THRESHOLD");
+        if (val && val[0]) {
+            int n = std::atoi(val);
+            if (n > 0 && n <= 100)
+                cfg.compact_threshold = n;
+        }
+    }
+
     cfg.search_api_key = get_env("SEARCH_API_KEY", "");
     cfg.search_engine_id = get_env("SEARCH_ENGINE_ID", "");
     cfg.search_endpoint = get_env("SEARCH_ENDPOINT", "");

@@ -38,6 +38,16 @@ struct ToolCall {
 void to_json(json& j, const ToolCall& tc);
 
 // ---------------------------------------------------------------------------
+// RetentionClass — how a message is treated during compaction
+// ---------------------------------------------------------------------------
+
+enum class RetentionClass : uint8_t {
+    Preserve,       // system prompt, user intents, final assistant answers
+    Summarizable,   // old user/assistant exchanges that can be condensed
+    Droppable,      // completed tool results, old reasoning, superseded tool calls
+};
+
+// ---------------------------------------------------------------------------
 // Message — one entry in the conversation history
 // ---------------------------------------------------------------------------
 
@@ -47,7 +57,23 @@ struct Message {
     std::string reasoning_content;      // model-specific, may be empty
     std::vector<ToolCall> tool_calls;   // for assistant tool_call msgs
     std::string tool_call_id;           // for tool result messages
+    RetentionClass retain = RetentionClass::Preserve;
+    bool is_summary = false;            // true if produced by summarization compaction
 };
+
+// ---------------------------------------------------------------------------
+// Token estimation — fast approximate token counter
+// ---------------------------------------------------------------------------
+
+size_t estimate_tokens(const std::string& text);
+size_t estimate_tokens(const Message& msg);
+
+// ---------------------------------------------------------------------------
+// SummaryCallback — used by Conversation::compact to produce summaries
+// ---------------------------------------------------------------------------
+
+using SummaryCallback = std::function<std::optional<std::string>(
+    const std::vector<Message>& messages, size_t max_tokens)>;
 
 // ---------------------------------------------------------------------------
 // ToolAccumulator — merges streaming tool_call deltas across SSE chunks
@@ -111,7 +137,24 @@ class Conversation {
     json to_openai_messages() const;
     const std::string& system_prompt() const { return system_prompt_; }
 
+    // -- Compaction --
+    // Compact the conversation to stay within the given token budget.
+    // Returns number of tokens freed (estimate).
+    // compact_threshold_pct is the % of context_limit that triggers compaction.
+    // If summary_cb is provided, old exchanges may be condensed; otherwise
+    // only Droppable messages are removed and sliding window is used as
+    // a last resort.
+    bool needs_compaction(size_t context_limit, size_t compact_threshold_pct) const;
+    size_t compact(size_t context_limit, size_t compact_threshold_pct);
+
+    void set_summary_callback(SummaryCallback cb) { summary_cb_ = std::move(cb); }
+    size_t estimate_total_tokens() const;
+
   private:
     std::string system_prompt_;
     std::vector<Message> messages_;
+    SummaryCallback summary_cb_;
+
+    // Walk backwards from the end and mark superseded tool calls + results as Droppable.
+    void mark_superseded_tool_calls();
 };

@@ -85,6 +85,31 @@ void to_json(json& j, const ToolCall& tc) {
 }
 
 // ---------------------------------------------------------------------------
+// Token estimation (fast approximate)
+// ---------------------------------------------------------------------------
+
+size_t estimate_tokens(const std::string& text) {
+    // GPT-style BPE approximation: ~0.25 tokens/char for English,
+    // ~0.15 for code. Use 0.25 as a safe overestimate.
+    // Add 1 for message framing overhead (role, newlines).
+    return (text.size() + 3) / 4 + 1;
+}
+
+size_t estimate_tokens(const Message& msg) {
+    size_t t = estimate_tokens(msg.content.value_or(""));
+    t += estimate_tokens(msg.reasoning_content);
+    for (const auto& tc : msg.tool_calls) {
+        t += estimate_tokens(tc.id);
+        t += estimate_tokens(tc.name);
+        t += estimate_tokens(tc.arguments);
+    }
+    t += estimate_tokens(msg.tool_call_id);
+    // JSON framing overhead per message (~20 tokens for role + surrounding keys)
+    t += 20;
+    return t;
+}
+
+// ---------------------------------------------------------------------------
 // ToolAccumulator
 // ---------------------------------------------------------------------------
 
@@ -211,14 +236,27 @@ void SSEParser::reset() {
 // Conversation
 // ---------------------------------------------------------------------------
 
-Conversation::Conversation(std::string system_prompt) : system_prompt_(std::move(system_prompt)) {}
+Conversation::Conversation(std::string system_prompt)
+    : system_prompt_(std::move(system_prompt)) {}
 
 void Conversation::add_user(std::string content) {
-    messages_.push_back(Message{.role = "user", .content = std::move(content)});
+    messages_.push_back(Message{
+        .role = "user",
+        .content = std::move(content),
+        .retain = RetentionClass::Preserve,
+    });
 }
 
 void Conversation::add_assistant(
     std::string content, std::string reasoning, std::vector<ToolCall> tool_calls) {
+    // Before adding the new assistant message, mark any superseded tool-call
+    // rounds as Summarizable. If this is a content-bearing response (final
+    // answer), the previous tool-call-only assistant + its tool results are
+    // no longer needed for future context — they can be dropped or summarized.
+    if (!content.empty()) {
+        mark_superseded_tool_calls();
+    }
+
     Message msg;
     msg.role = "assistant";
     msg.reasoning_content = std::move(reasoning);
@@ -226,15 +264,56 @@ void Conversation::add_assistant(
     if (!tool_calls.empty()) {
         msg.content = std::nullopt;
         msg.tool_calls = std::move(tool_calls);
+        // If the assistant message only contains tool calls (no content yet),
+        // it's a mid-loop thinking step — summarizable.
+        msg.retain = RetentionClass::Summarizable;
     } else {
         msg.content = std::move(content);
+        msg.retain = RetentionClass::Preserve;
     }
 
     messages_.push_back(std::move(msg));
 }
 
 void Conversation::add_tool(const std::string& tool_call_id, const std::string& content) {
-    messages_.push_back(Message{.role = "tool", .content = content, .tool_call_id = tool_call_id});
+    messages_.push_back(Message{
+        .role = "tool",
+        .content = content,
+        .tool_call_id = tool_call_id,
+        .retain = RetentionClass::Droppable,
+    });
+}
+
+void Conversation::mark_superseded_tool_calls() {
+    // Walk backwards from the end. When we find a content-bearing assistant
+    // message, we stop — everything before it that's a tool-call round can
+    // be demoted.
+    bool found_content = false;
+    for (auto it = messages_.rbegin(); it != messages_.rend(); ++it) {
+        if (it->role == "assistant" && it->content.has_value() && !it->content->empty()) {
+            // This is a final answer. Everything before it is superseded.
+            found_content = true;
+            continue;
+        }
+        if (!found_content) continue; // we haven't hit the final answer yet
+
+        if (it->role == "assistant" && !it->tool_calls.empty()) {
+            // This assistant triggered tool calls that have now been answered.
+            // Downgrade from Preserve to Summarizable.
+            if (it->retain == RetentionClass::Preserve) {
+                it->retain = RetentionClass::Summarizable;
+            }
+            // Mark the corresponding tool results as Droppable.
+            for (const auto& tc : it->tool_calls) {
+                for (auto& msg : messages_) {
+                    if (msg.role == "tool" && msg.tool_call_id == tc.id &&
+                        msg.retain == RetentionClass::Preserve) {
+                        msg.retain = RetentionClass::Droppable;
+                    }
+                }
+            }
+        }
+    }
 }
 
 void Conversation::truncate(size_t n) {
@@ -244,6 +323,107 @@ void Conversation::truncate(size_t n) {
 }
 
 void Conversation::clear() { messages_.clear(); }
+
+size_t Conversation::estimate_total_tokens() const {
+    size_t t = 0;
+    for (const auto& msg : messages_) {
+        t += estimate_tokens(msg);
+    }
+    return t;
+}
+
+bool Conversation::needs_compaction(size_t context_limit, size_t compact_threshold_pct) const {
+    if (context_limit == 0) return false;
+    size_t threshold = context_limit * compact_threshold_pct / 100;
+    return estimate_total_tokens() > threshold;
+}
+
+size_t Conversation::compact(size_t context_limit, size_t compact_threshold_pct) {
+    if (context_limit == 0) return 0;
+
+    size_t before = estimate_total_tokens();
+    size_t budget = context_limit * compact_threshold_pct / 100;
+
+    if (before <= budget) return 0;
+
+    // ── Phase 1: Drop Droppable messages ──
+    // Remove all messages tagged Droppable — these are completed tool results
+    // and old reasoning content that the model no longer needs.
+    {
+        for (auto it = messages_.begin(); it != messages_.end();) {
+            if (it->retain == RetentionClass::Droppable) {
+                it = messages_.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
+    if (estimate_total_tokens() <= budget) {
+        return before - estimate_total_tokens();
+    }
+
+    // ── Phase 2: Summarize old exchanges ──
+    // If we have a summary callback, find the oldest contiguous run of
+    // Summarizable messages and condense them into a single summary message.
+    if (summary_cb_) {
+        // Find the oldest contiguous Summarizable run (skip index 0 = system)
+        int64_t run_start = -1;
+        int64_t run_end = -1;
+        for (size_t i = 1; i < messages_.size(); i++) {
+            if (messages_[i].retain == RetentionClass::Summarizable) {
+                if (run_start < 0) run_start = static_cast<int64_t>(i);
+                run_end = static_cast<int64_t>(i) + 1;
+            } else if (run_start >= 0) {
+                break; // only compact the oldest run
+            }
+        }
+
+        if (run_start >= 0 && run_end > run_start) {
+            std::vector<Message> to_summarize(
+                messages_.begin() + run_start, messages_.begin() + run_end);
+
+            // Compute a token budget for the summary (10% of total budget)
+            size_t summary_budget = std::max(budget / 10, size_t(256));
+            auto summary = summary_cb_(to_summarize, summary_budget);
+            if (summary.has_value()) {
+                Message summary_msg;
+                summary_msg.role = "user";
+                summary_msg.content =
+                    "[Previous exchanges summarized: " + *summary + "]";
+                summary_msg.retain = RetentionClass::Preserve;
+                summary_msg.is_summary = true;
+
+                messages_.erase(
+                    messages_.begin() + run_start, messages_.begin() + run_end);
+                messages_.insert(
+                    messages_.begin() + run_start, std::move(summary_msg));
+            }
+        }
+    }
+
+    if (estimate_total_tokens() <= budget) {
+        return before - estimate_total_tokens();
+    }
+
+    // ── Phase 3: Sliding window (last resort) ──
+    // If still over budget, drop the oldest non-system, non-Preserve messages.
+    {
+        while (estimate_total_tokens() > budget && messages_.size() > 2) {
+            bool dropped = false;
+            for (size_t i = 1; i < messages_.size(); i++) {
+                if (messages_[i].retain != RetentionClass::Preserve) {
+                    messages_.erase(messages_.begin() + static_cast<int64_t>(i));
+                    dropped = true;
+                    break;
+                }
+            }
+            if (!dropped) break;
+        }
+    }
+
+    return before - estimate_total_tokens();
+}
 
 json Conversation::to_openai_messages() const {
     json arr = json::array();

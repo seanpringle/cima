@@ -39,6 +39,8 @@ class ChatSession {
     std::string safe_dir_;
     std::string base_system_prompt_;
     int max_iterations_ = 100;  // overridden by config.max_tool_iterations
+    size_t context_limit_;
+    size_t compact_threshold_;
     Mode mode_ = Mode::Plan;
     void inject_mode_instruction();
     Conversation conversation_;
@@ -46,4 +48,8 @@ class ChatSession {
     ToolRegistry tools_;
     OutputCallback output_cb_;
     Usage last_usage_;
+
+    // Summarization callback for conversation compaction
+    std::optional<std::string> summarize_messages_(
+        const std::vector<Message>& msgs, size_t max_tokens);
 };
