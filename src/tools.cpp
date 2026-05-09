@@ -267,6 +267,84 @@ static Tool make_write_file_tool(const std::string& safe_dir) {
   return t;
 }
 
+static Tool make_edit_file_tool(const std::string& safe_dir) {
+  Tool t;
+  t.name = "edit_file";
+  t.description = "Edit a file by searching for an exact string and replacing it. "
+                  "The search string must match exactly once in the file — this ensures edits are safe and unambiguous. "
+                  "Use this to make targeted surgical edits instead of rewriting entire files with write_file.";
+  t.parameters = {{"type", "object"},
+                  {"properties",
+                   {{"path", {{"type", "string"}, {"description", "File path to edit"}}},
+                    {"search", {{"type", "string"}, {"description", "Exact string to search for; must match exactly once in the file. "
+                                                                     "Include surrounding context (unique nearby lines) to guarantee a single match."}}},
+                    {"replace", {{"type", "string"}, {"description", "String to replace the matched occurrence with"}}}}},
+                  {"required", {"path", "search", "replace"}}};
+  t.execute = [safe_dir](const json& args) -> Result<std::string> {
+    auto raw = args.value("path", std::string());
+    auto search = args.value("search", std::string());
+    auto replace = args.value("replace", std::string());
+
+    if (search.empty()) {
+      return std::unexpected(std::string("search string is required"));
+    }
+
+    auto resolved = resolve_path(raw, safe_dir);
+    if (!resolved) {
+      return std::unexpected(resolved.error());
+    }
+
+    // Read the file
+    std::ifstream file(*resolved, std::ios::binary);
+    if (!file.is_open()) {
+      return std::unexpected("Failed to read file: " + *resolved);
+    }
+    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    file.close();
+
+    // Count occurrences of the search string
+    size_t count = 0;
+    size_t pos = 0;
+    while ((pos = content.find(search, pos)) != std::string::npos) {
+      count++;
+      pos += search.size();
+    }
+
+    if (count == 0) {
+      return std::unexpected("Search string not found in file (0 matches). "
+                             "Use read_file or grep_files to verify the file contents.");
+    }
+    if (count > 1) {
+      return std::unexpected("Search string found " + std::to_string(count) + " times in file (expected exactly 1). "
+                             "Include more surrounding context in the search string to uniquely identify the location.");
+    }
+
+    // Locate the unique occurrence
+    pos = content.find(search);
+
+    // Replace the search string with the replacement
+    content.replace(pos, search.size(), replace);
+
+    // Write the modified content back to the file
+    std::ofstream out(*resolved, std::ios::binary);
+    if (!out.is_open()) {
+      return std::unexpected("Failed to write file: " + *resolved);
+    }
+    out.write(content.data(), content.size());
+    out.close();
+
+    // Compute the line number where the edit occurred (1-indexed)
+    int line_num = 1;
+    for (size_t i = 0; i < pos; i++) {
+      if (content[i] == '\n') line_num++;
+    }
+
+    return "ok (replaced 1 occurrence at line " + std::to_string(line_num) +
+           ", " + std::to_string(search.size()) + " bytes -> " + std::to_string(replace.size()) + " bytes)";
+  };
+  return t;
+}
+
 static Tool make_run_bash_tool(const std::string& safe_dir) {
   Tool t;
   t.name = "run_bash";
@@ -417,6 +495,7 @@ void ToolRegistry::add_defaults(const std::string& safe_dir) {
   add(make_read_file_tool(safe_dir));
   add(make_grep_files_tool(safe_dir));
   add(make_write_file_tool(safe_dir));
+  add(make_edit_file_tool(safe_dir));
   add(make_run_bash_tool(safe_dir));
 }
 
