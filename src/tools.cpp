@@ -1150,6 +1150,457 @@ static Tool make_project_tree_tool(const std::string& safe_dir) {
 }
 
 // ===================================================================
+// apply_patch — unified diff application
+// ===================================================================
+
+// Helper: split a string into lines, preserving empty lines.
+// Each line retains its trailing newline if present; the final line
+// may lack one.
+static std::vector<std::string> split_lines(const std::string& text) {
+    std::vector<std::string> lines;
+    if (text.empty()) return lines;
+    size_t start = 0;
+    while (start < text.size()) {
+        size_t nl = text.find('\n', start);
+        if (nl == std::string::npos) {
+            lines.push_back(text.substr(start));
+            break;
+        }
+        lines.push_back(text.substr(start, nl - start + 1)); // include '\n'
+        start = nl + 1;
+    }
+    return lines;
+}
+
+// Helper: strip trailing newline(s) from a string.
+static std::string rtrim_nl(const std::string& s) {
+    if (s.empty()) return s;
+    size_t end = s.size();
+    while (end > 0 && (s[end - 1] == '\n' || s[end - 1] == '\r')) end--;
+    return s.substr(0, end);
+}
+
+struct HunkLine {
+    enum Type { Context, Delete, Add };
+    Type type;
+    std::string text; // without the leading prefix character
+};
+
+struct Hunk {
+    int old_start; // 1-indexed
+    int old_count;
+    int new_start; // 1-indexed
+    int new_count;
+    std::vector<HunkLine> lines;
+};
+
+// Parse a unified diff patch into a list of hunks.
+// Returns an error string on failure, or the list of hunks on success.
+static Result<std::vector<Hunk>> parse_patch(const std::string& patch) {
+    auto lines = split_lines(patch);
+    if (lines.empty()) {
+        return std::unexpected(std::string("patch string is required"));
+    }
+
+    std::vector<Hunk> hunks;
+    Hunk current;
+    bool in_hunk = false;
+    int line_num = 0;
+
+    auto finish_hunk = [&]() -> std::optional<std::string> {
+        if (!in_hunk) return std::nullopt;
+        if (current.old_count == 0 && current.new_count == 0) {
+            // Empty hunk — should not normally happen; skip it silently.
+            current = Hunk{};
+            in_hunk = false;
+            return std::nullopt;
+        }
+        // Validate that old_count and new_count match actual lines.
+        int old_in_lines = 0, new_in_lines = 0;
+        for (const auto& hl : current.lines) {
+            if (hl.type == HunkLine::Context || hl.type == HunkLine::Delete)
+                old_in_lines++;
+            if (hl.type == HunkLine::Context || hl.type == HunkLine::Add)
+                new_in_lines++;
+        }
+        // Some diff generators include trailing context that counts toward
+        // old_count/new_count. We accept the header counts as authoritative.
+        hunks.push_back(std::move(current));
+        current = Hunk{};
+        in_hunk = false;
+        return std::nullopt;
+    };
+
+    for (size_t i = 0; i < lines.size(); i++) {
+        line_num++;
+        const std::string& raw = lines[i];
+        // Strip trailing newline for processing
+        std::string line = rtrim_nl(raw);
+
+        if (line.empty()) {
+            // Skip blank lines between hunks
+            if (in_hunk) {
+                auto err = finish_hunk();
+                if (err) return std::unexpected(*err);
+            }
+            continue;
+        }
+
+        // Hunk header
+        if (line.size() > 4 && line[0] == '@' && line[1] == '@' &&
+            line[line.size() - 1] == '@' && line[line.size() - 2] == '@') {
+            // Finish previous hunk
+            if (in_hunk) {
+                auto err = finish_hunk();
+                if (err) return std::unexpected(*err);
+            }
+
+            // Parse: @@ -old_start,old_count +new_start,new_count @@ ...
+            // Format: @@ -<start>[,<count>] +<start>[,<count>] @@
+            // Count may be omitted if it is 1.
+            // Strip leading "@@ " (3 chars) and trailing " @@" (3 chars)
+            std::string hdr = line.substr(3, line.size() - 6);
+            // Trim leading/trailing whitespace on the header content
+            size_t hdr_start = 0;
+            while (hdr_start < hdr.size() && hdr[hdr_start] == ' ') hdr_start++;
+            size_t hdr_end = hdr.size();
+            while (hdr_end > hdr_start && hdr[hdr_end - 1] == ' ') hdr_end--;
+            hdr = hdr.substr(hdr_start, hdr_end - hdr_start);
+
+            // Split on ' ' to get old and new parts
+            auto space_pos = hdr.find(' ');
+            if (space_pos == std::string::npos) {
+                return std::unexpected("Hunk " + std::to_string(hunks.size() + 1) +
+                    ": invalid hunk header (missing space separator): '" + hdr + "'");
+            }
+            std::string old_part = hdr.substr(0, space_pos);
+            std::string new_part = hdr.substr(space_pos + 1);
+
+            // Parse old_part: -start,count
+            if (old_part.empty() || old_part[0] != '-') {
+                return std::unexpected("Hunk " + std::to_string(hunks.size() + 1) +
+                    ": expected '-' prefix in hunk header: '" + old_part + "'");
+            }
+            old_part = old_part.substr(1);
+            size_t comma = old_part.find(',');
+            try {
+                if (comma == std::string::npos) {
+                    current.old_start = std::stoi(old_part);
+                    current.old_count = 1;
+                } else {
+                    current.old_start = std::stoi(old_part.substr(0, comma));
+                    current.old_count = std::stoi(old_part.substr(comma + 1));
+                }
+            } catch (...) {
+                return std::unexpected("Hunk " + std::to_string(hunks.size() + 1) +
+                    ": invalid old-line spec in hunk header: '" + old_part + "'");
+            }
+
+            // Parse new_part: +start,count
+            if (new_part.empty() || new_part[0] != '+') {
+                return std::unexpected("Hunk " + std::to_string(hunks.size() + 1) +
+                    ": expected '+' prefix in hunk header: '" + new_part + "'");
+            }
+            new_part = new_part.substr(1);
+            comma = new_part.find(',');
+            try {
+                if (comma == std::string::npos) {
+                    current.new_start = std::stoi(new_part);
+                    current.new_count = 1;
+                } else {
+                    current.new_start = std::stoi(new_part.substr(0, comma));
+                    current.new_count = std::stoi(new_part.substr(comma + 1));
+                }
+            } catch (...) {
+                return std::unexpected("Hunk " + std::to_string(hunks.size() + 1) +
+                    ": invalid new-line spec in hunk header: '" + new_part + "'");
+            }
+
+            // Remove @@ section header (everything after @@ new @@)
+            // Already done by trimming the header content.
+            in_hunk = true;
+            continue;
+        }
+
+        // Metadata lines: --- and +++
+        if (line.size() > 3 && line[0] == '-' && line[1] == '-' && line[2] == '-') {
+            // --- original file — skip
+            continue;
+        }
+        if (line.size() > 3 && line[0] == '+' && line[1] == '+' && line[2] == '+') {
+            // +++ new file — skip
+            continue;
+        }
+
+        // Must be inside a hunk to have content lines
+        if (!in_hunk) {
+            // Lines before the first hunk header or after the last hunk
+            // that aren't ---/+++ headers are ignored (e.g. diff --git lines,
+            // index lines). Silently skip them.
+            continue;
+        }
+
+        // Content line
+        if (line.empty() || line[0] == ' ') {
+            // Context line (space prefix or blank line with no prefix)
+            HunkLine hl;
+            hl.type = HunkLine::Context;
+            hl.text = line.empty() ? "" : line.substr(1); // strip leading space
+            current.lines.push_back(std::move(hl));
+            // old_count and new_count already include context from header
+        } else if (line.size() > 0 && line[0] == '-') {
+            HunkLine hl;
+            hl.type = HunkLine::Delete;
+            hl.text = line.substr(1);
+            current.lines.push_back(std::move(hl));
+        } else if (line.size() > 0 && line[0] == '+') {
+            HunkLine hl;
+            hl.type = HunkLine::Add;
+            hl.text = line.substr(1);
+            current.lines.push_back(std::move(hl));
+        } else {
+            // Unknown line prefix — could be \ No newline at end of file
+            // This is a GNU diff extension; we ignore it.
+            // But if we're inside a hunk, it might be significant.
+            // The safest approach: treat as context if in hunk.
+            if (in_hunk) {
+                HunkLine hl;
+                hl.type = HunkLine::Context;
+                hl.text = line;
+                current.lines.push_back(std::move(hl));
+            }
+        }
+    }
+
+    // Finish last hunk
+    if (in_hunk) {
+        auto err = finish_hunk();
+        if (err) return std::unexpected(*err);
+    }
+
+    return hunks;
+}
+
+static Tool make_apply_patch_tool(const std::string& safe_dir) {
+    Tool t;
+    t.name = "apply_patch";
+    t.description =
+        "Apply a unified diff (patch) to a file in a single operation.\n"
+        "The patch must be in standard unified diff format:\n"
+        "  --- original\n"
+        "  +++ modified\n"
+        "  @@ -line,count +line,count @@\n"
+        "   context\n"
+        "  -removed\n"
+        "  +added\n"
+        "\n"
+        "All context lines must match exactly — this ensures the patch "
+        "applies safely and unambiguously. "
+        "Use this to make multi-hunk changes instead of multiple edit_file calls.";
+    t.timeout_sec = 10;
+    t.parameters = {{"type", "object"},
+        {"properties",
+            {{"path", {{"type", "string"}, {"description", "File path to patch"}}},
+                {"patch",
+                    {{"type", "string"},
+                        {"description",
+                            "Unified diff text to apply. Must include hunk headers "
+                            "(@@ -start,count +start,count @@) with context lines, "
+                            "deletions (-), and additions (+)."}}}}},
+        {"required", {"path", "patch"}}};
+    t.execute = [safe_dir](const json& args) -> Result<std::string> {
+        auto raw = args.value("path", std::string());
+        auto patch_str = args.value("patch", std::string());
+
+        if (patch_str.empty()) {
+            return std::unexpected(std::string("patch string is required"));
+        }
+
+        auto resolved = resolve_path(raw, safe_dir);
+        if (!resolved) {
+            return std::unexpected(resolved.error());
+        }
+
+        // Parse the patch
+        auto hunks_res = parse_patch(patch_str);
+        if (!hunks_res) {
+            return std::unexpected(hunks_res.error());
+        }
+        auto& hunks = *hunks_res;
+
+        if (hunks.empty()) {
+            return std::string("ok (0 hunks applied)");
+        }
+
+        // Read the target file
+        std::ifstream file(*resolved, std::ios::binary);
+        if (!file.is_open()) {
+            return std::unexpected("Failed to read file: " + *resolved);
+        }
+        std::string content(
+            (std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        file.close();
+
+        // Split into lines for manipulation
+        auto file_lines = split_lines(content);
+
+        // Track line offset from previous hunks
+        int offset = 0;
+
+        for (size_t h_idx = 0; h_idx < hunks.size(); h_idx++) {
+            const auto& hunk = hunks[h_idx];
+
+            // Build the "old pattern" — lines that must match in the file
+            struct MatchLine {
+                size_t file_index; // index into file_lines
+                std::string expected;
+                HunkLine::Type type; // Context or Delete
+            };
+            std::vector<MatchLine> pattern;
+            for (const auto& hl : hunk.lines) {
+                if (hl.type == HunkLine::Context || hl.type == HunkLine::Delete) {
+                    pattern.push_back({0, hl.text, hl.type});
+                }
+            }
+
+            if (pattern.empty()) {
+                // Hunk with no deletions/context — pure addition.
+                // Position: hunk.new_start + offset (1-indexed), so 0-indexed = new_start - 1 + offset
+                int insert_pos = hunk.new_start - 1 + offset;
+                if (insert_pos < 0) insert_pos = 0;
+                if (insert_pos > (int)file_lines.size()) insert_pos = file_lines.size();
+
+                // Build new lines (context + additions)
+                std::vector<std::string> new_lines;
+                for (const auto& hl : hunk.lines) {
+                    std::string l = hl.text;
+                    if (hl.type == HunkLine::Add || hl.type == HunkLine::Context) {
+                        l += '\n';
+                        new_lines.push_back(std::move(l));
+                    }
+                }
+
+                // Insert
+                file_lines.insert(file_lines.begin() + insert_pos,
+                    std::make_move_iterator(new_lines.begin()),
+                    std::make_move_iterator(new_lines.end()));
+
+                offset += (int)new_lines.size();
+                continue;
+            }
+
+            // Find the match location: start looking at old_start - 1 + offset
+            int expected_pos = hunk.old_start - 1 + offset;
+            if (expected_pos < 0) expected_pos = 0;
+
+            // Try the expected position first, then search ±5 lines around it
+            int best_pos = -1;
+            int max_search = (int)file_lines.size() - (int)pattern.size();
+            int search_start = std::max(0, expected_pos - 5);
+            int search_end = std::min(max_search, expected_pos + 5);
+
+            for (int try_pos = search_start; try_pos <= search_end && try_pos <= max_search; try_pos++) {
+                bool match = true;
+                for (size_t p = 0; p < pattern.size(); p++) {
+                    std::string file_line = rtrim_nl(file_lines[try_pos + p]);
+                    if (file_line != pattern[p].expected) {
+                        match = false;
+                        break;
+                    }
+                }
+                if (match) {
+                    best_pos = try_pos;
+                    break;
+                }
+            }
+
+            if (best_pos == -1) {
+                // Detailed error: show what we expected vs what we found
+                std::string error = "Hunk " + std::to_string(h_idx + 1) +
+                    ": context does not match at expected position (line " +
+                    std::to_string(hunk.old_start + offset) + "). ";
+                error += "Expected:\n";
+                for (size_t p = 0; p < pattern.size() && p < 8; p++) {
+                    error += "  ";
+                error += (pattern[p].type == HunkLine::Delete ? "-" : " ");
+                error += pattern[p].expected + "\n";
+                }
+                if (pattern.size() > 8) {
+                    error += "  ... (" + std::to_string(pattern.size() - 8) + " more matching lines)\n";
+                }
+                // Show what's actually in the file at that position
+                if (expected_pos < (int)file_lines.size()) {
+                    error += "File has:\n";
+                    int show_start = std::max(0, expected_pos - 1);
+                    int show_end = std::min((int)file_lines.size(), expected_pos + 7);
+                    for (int p = show_start; p < show_end; p++) {
+                        std::string fl = rtrim_nl(file_lines[p]);
+                        if (p == expected_pos) {
+                            error += ">>>> ";
+                        } else {
+                            error += "     ";
+                        }
+                        error += std::to_string(p + 1) + ": " + fl + "\n";
+                    }
+                } else {
+                    error += "File has no more lines (EOF at line " +
+                        std::to_string(file_lines.size()) + ").\n";
+                }
+                return std::unexpected(error);
+            }
+
+            // Build new lines (context + additions)
+            std::vector<std::string> new_lines;
+            for (const auto& hl : hunk.lines) {
+                std::string l = hl.text;
+                if (hl.type == HunkLine::Add || hl.type == HunkLine::Context) {
+                    l += '\n';
+                    new_lines.push_back(std::move(l));
+                }
+            }
+
+            // Replace the matched range [best_pos, best_pos + pattern.size()) with new_lines
+            auto erase_start = file_lines.begin() + best_pos;
+            auto erase_end = erase_start + (int)pattern.size();
+            file_lines.erase(erase_start, erase_end);
+            file_lines.insert(file_lines.begin() + best_pos,
+                std::make_move_iterator(new_lines.begin()),
+                std::make_move_iterator(new_lines.end()));
+
+            // Update offset: (new_lines - pattern) represents the delta
+            offset += (int)new_lines.size() - (int)pattern.size();
+        }
+
+        // Reconstruct and write the file
+        std::string new_content;
+        for (const auto& l : file_lines) {
+            new_content += l;
+        }
+
+        std::ofstream out(*resolved, std::ios::binary);
+        if (!out.is_open()) {
+            return std::unexpected("Failed to write file: " + *resolved);
+        }
+        out.write(new_content.data(), new_content.size());
+        out.close();
+
+        // Count stats for the success message
+        int total_additions = 0, total_deletions = 0, total_hunks = (int)hunks.size();
+        for (const auto& hunk : hunks) {
+            for (const auto& hl : hunk.lines) {
+                if (hl.type == HunkLine::Add) total_additions++;
+                if (hl.type == HunkLine::Delete) total_deletions++;
+            }
+        }
+
+        return "ok (" + std::to_string(total_hunks) + " hunks applied, " +
+            std::to_string(total_additions) + " additions, " +
+            std::to_string(total_deletions) + " deletions)";
+    };
+    return t;
+}
+
+// ===================================================================
 // ToolRegistry
 // ===================================================================
 
@@ -1165,6 +1616,7 @@ void ToolRegistry::add_defaults(const std::string& safe_dir,
     add(make_grep_files_tool(safe_dir));
     add(make_write_file_tool(safe_dir));
     add(make_edit_file_tool(safe_dir));
+    add(make_apply_patch_tool(safe_dir));
     add(make_run_bash_tool(safe_dir));
     // Always register web_search — falls back to Wikipedia opensearch if no
     // credentials are configured. Google CSE or a custom endpoint can be used
@@ -1192,7 +1644,8 @@ Result<std::string> ToolRegistry::execute(const std::string& name, const std::st
 
     // Plan mode restricts write/edit/bash at runtime
     if (mode_ == Mode::Plan &&
-        (name == "write_file" || name == "edit_file" || name == "run_bash")) {
+        (name == "write_file" || name == "edit_file" || name == "run_bash" ||
+            name == "apply_patch")) {
         return std::unexpected("Tool '" + name +
             "' is not available in Plan mode (read-only). "
             "Available tools: list_files, read_file, grep_files, project_tree, web_search, web_fetch.");

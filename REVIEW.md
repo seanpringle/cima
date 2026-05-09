@@ -25,7 +25,7 @@
 
 **Secondary finding:** The app lacks several critical tools that would let the model accomplish tasks with **fewer turns and smaller payloads** — in particular `file_diff`/`apply_patch`, `project_tree`, and `git` integration. Missing these forces the model to make many more tool calls than necessary, each adding large results back into the conversation.
 
-**Status:** 🟡 **Partially addressed.** `project_tree` implemented. `file_diff`/`apply_patch` and `git` integration remain as identified gaps.
+**Status:** 🟡 **Partially addressed.** `project_tree` and `apply_patch` implemented. `git` integration remains as an identified gap.
 
 **Tertiary finding:** The request-handling layer has minor inefficiencies (uncached tool schemas, no gzip, fragile retry logic) but these are not the primary driver of context-window bloat.
 
@@ -339,15 +339,25 @@ This is effectively no timeout for normal chat usage. If the server hangs, the c
 
 These tools are **essential for effective agentic coding** and their absence forces the model to make many more tool calls, each adding large results to the conversation.
 
-#### ❌ `file_diff` / `apply_patch`
+#### ✅ `apply_patch`
 
 **Why it matters:**  
-The `edit_file` tool performs a single search-and-replace operation. For any multi-line change (e.g., adding a function, refactoring a class), the model must make **multiple `edit_file` calls** — one per hunk. Each call adds a tool result message to the conversation. A single `apply_patch` tool that accepts a unified diff could replace 3–10 `edit_file` calls.
+The `edit_file` tool performs a single search-and-replace operation. For any multi-line change (e.g., adding a function, refactoring a class), the model must make **multiple `edit_file` calls** — one per hunk. Each call adds a tool result message to the conversation. A single `apply_patch` tool that accepts a unified diff can replace 3–10 `edit_file` calls.
 
 **Impact on context window:**  
 Replacing 5 `edit_file` calls with 1 `apply_patch` saves ~5 tool-result messages + 5 assistant tool-call messages = ~10 messages per code change.
 
-**Status:** ❌ **Not addressed.**
+**Implementation details:**  
+- Parameters: `path` (required), `patch` (required, unified diff text)
+- Built-in unified diff parser (no external `patch` dependency)
+- Validates all context lines match before applying (safe by design)
+- Handles multi-hunk patches, pure additions, pure deletions, and mixed
+- Detailed error messages showing expected vs actual content on mismatch
+- Output: `ok (N hunks applied, M additions, K deletions)`
+- Timeout: 10 seconds
+- Plan mode: ✗ blocked (Build only, like `edit_file`/`write_file`)
+
+**Status:** ✅ **Implemented.**
 
 #### ✅ `project_tree`
 
@@ -463,7 +473,7 @@ Running tests with structured output (pass/fail counts, test names). Currently r
 
 | # | Change | File(s) | Effort | Impact | Status |
 |---|--------|---------|--------|--------|--------|
-| 4 | **Add `apply_patch` tool** — Accept unified diff input. | `tools.cpp` | 1 day | **High** | ❌ |
+| 4 | **Add `apply_patch` tool** — Accept unified diff input. | `tools.cpp` | 1 day | **High** | ✅ **Done.** Built-in unified diff parser, multi-hunk, context validation, 10s timeout. |
 | 5 | **Add `project_tree` tool** — Recursive directory listing. | `tools.cpp` | 0.5 day | **High** | ✅ **Done.** UTF-8 tree, depth/line limits, `skip_permission_denied`. |
 | 6 | **Add git tools** — `git_status`, `git_diff`, `git_log`, `git_commit`. | `tools.cpp` (new) | 2 days | **High** | ❌ |
 | 7 | **Add Accept-Encoding: gzip** — HTTP compression. | `client.cpp` | 15 min | **Medium** | ✅ **Done.** `b67c7d1` |
@@ -511,7 +521,7 @@ Running tests with structured output (pass/fail counts, test names). Currently r
 
 | Tool | Parameters | Max Output | Timeout | Plan Mode | Priority |
 |------|-----------|------------|---------|-----------|----------|
-| `apply_patch` | `path`, `patch` (unified diff) | brief msg | 10s | ✗ blocked | P1 |
+| `apply_patch` | `path`, `patch` (unified diff) | brief msg | 10s | ✗ blocked | P1 ✅ |
 | `project_tree` | `path` (string), `max_depth` (int, default 5), `max_lines` (int, default 500) | 500 lines | 5s | ✓ allowed | P1 ✅ |
 | `read_file_lines` | `path`, `start_line` (int), `end_line` (int), `max_lines` (int) | 500 lines | none | ✓ allowed | P2 ✅ |
 | `git_status` | none | brief | 10s | ✓ allowed | P1 |
@@ -554,6 +564,7 @@ Running tests with structured output (pass/fail counts, test names). Currently r
 | 2025-01-XX | `4df848e` | Discover context window from API via `/v1/models` |
 | 2026-05-10 | `c69b3ae` | Add `project_tree` tool — recursive UTF-8 tree with depth/line limits, permission-safe iteration, Plan mode support |
 | 2026-05-XX | `a7b8c25` | Add `read_file_lines` tool — read specific 1-indexed line ranges (`start_line`/`end_line`) with line-numbered output, max_lines cap, Plan mode support |
+| 2026-05-XX | (current) | Add `apply_patch` tool — built-in unified diff parser, multi-hunk support, context validation, 10s timeout, Plan mode (blocked) |
 
 ---
 
