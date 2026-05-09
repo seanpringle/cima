@@ -69,6 +69,7 @@ public:
 
   explicit SSEParser(Callbacks cb);
   void feed(const char* data, size_t len);
+  void flush();
   void reset();
   const std::string& raw() const { return raw_; }
 

@@ -227,6 +227,71 @@ TEST_CASE("SSEParser malformed JSON calls on_error", "[types][sse]") {
     CHECK(errored);
 }
 
+TEST_CASE("SSEParser flush processes remaining buffered data", "[types][sse]") {
+    std::vector<json> received;
+    bool done = false;
+
+    SSEParser parser(SSEParser::Callbacks{
+        .on_data = [&](const json& j) { received.push_back(j); },
+        .on_done = [&]() { done = true; },
+        .on_error = [&](const std::string& e) { FAIL(e); },
+    });
+
+    // Feed partial data: first event is complete (has \n\n), [DONE] lacks trailing \n
+    parser.feed("data: {\"key\":\"value\"}\n\ndata: [DONE]", 35);
+
+    // The first event was already processed by line-splitting;
+    // "data: [DONE]" has no trailing \n so it stays buffered.
+    REQUIRE(received.size() == 1);
+    CHECK(received[0]["key"] == "value");
+    CHECK_FALSE(done);
+
+    // flush() processes the remaining "[DONE]" line
+    parser.flush();
+
+    CHECK(received.size() == 1);  // no new data events
+    CHECK(done);                  // [DONE] was processed
+}
+
+TEST_CASE("SSEParser flush handles partial non-DONE data", "[types][sse]") {
+    std::vector<json> received;
+    bool done = false;
+    std::string error;
+
+    SSEParser parser(SSEParser::Callbacks{
+        .on_data = [&](const json& j) { received.push_back(j); },
+        .on_done = [&]() { done = true; },
+        .on_error = [&](const std::string& e) { error = e; },
+    });
+
+    // A content line without trailing \n (connection closed mid-stream)
+    parser.feed("data: {\"msg\":\"hello\"}", 21);
+    CHECK(received.empty());  // nothing processed yet
+
+    parser.flush();
+    REQUIRE(received.size() == 1);
+    CHECK(received[0]["msg"] == "hello");
+    CHECK_FALSE(done);
+    CHECK(error.empty());
+}
+
+TEST_CASE("SSEParser flush with no buffered data is safe", "[types][sse]") {
+    SSEParser parser(SSEParser::Callbacks{
+        .on_data = [](const json&) {},
+        .on_done = []() {},
+        .on_error = [](const std::string&) {},
+    });
+
+    // flush with empty buffer should not crash
+    parser.flush();
+    // flush after well-formed complete data should not crash
+    parser.feed("data: {\"x\":1}\n\n", 13);
+    parser.flush();
+    // flush after reset should not crash
+    parser.reset();
+    parser.flush();
+}
+
 // ========================================================================
 // Conversation tests
 // ========================================================================

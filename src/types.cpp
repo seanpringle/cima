@@ -176,6 +176,13 @@ void SSEParser::process_line(std::string line) {
   // Ignore other fields (event:, :keepalive, etc.)
 }
 
+void SSEParser::flush() {
+  if (!buf_.empty()) {
+    process_line(std::move(buf_));
+    buf_.clear();
+  }
+}
+
 void SSEParser::reset() { buf_.clear(); raw_.clear(); }
 
 // ---------------------------------------------------------------------------

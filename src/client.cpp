@@ -227,6 +227,7 @@ Result<void> ChatClient::stream_chat(const json& payload, SSEParser::Callbacks c
     std::this_thread::sleep_for(std::chrono::duration<double>(jittered_delay(kBaseDelaySec * (1 << attempt))));
   }
 
+  parser.flush();
   curl_easy_cleanup(curl);
   curl_slist_free_all(headers);
 
