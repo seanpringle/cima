@@ -1,9 +1,11 @@
 #include "tools.h"
 
+#include <atomic>
 #include <csignal>
 #include <cstdlib>
 #include <fcntl.h>
 #include <fstream>
+#include <future>
 #include <poll.h>
 #include <regex>
 #include <sys/wait.h>
@@ -154,6 +156,7 @@ static Tool make_grep_files_tool(const std::string& safe_dir) {
   Tool t;
   t.name = "grep_files";
   t.description = "Search file contents using a regex pattern (max 50 results)";
+  t.timeout_sec = 10;
   t.parameters = {{"type", "object"},
                   {"properties",
                    {{"pattern", {{"type", "string"}, {"description", "Regex pattern to search for"}}},
@@ -207,6 +210,9 @@ static Tool make_grep_files_tool(const std::string& safe_dir) {
       auto it = std::filesystem::recursive_directory_iterator(*resolved, std::filesystem::directory_options::skip_permission_denied, ec);
       auto end = std::filesystem::recursive_directory_iterator{};
       for (; it != end && count < max_results; it.increment(ec)) {
+        if (g_interrupted) {
+          break;
+        }
         if (it->path().filename() == ".git" && it->is_directory()) {
           it.disable_recursion_pending();
           continue;
@@ -266,6 +272,7 @@ static Tool make_run_bash_tool(const std::string& safe_dir) {
   t.name = "run_bash";
   t.description = "Run a bash command in the project directory "
                   "(e.g. build, test, lint). Output is capped at 100 lines / 4000 chars.";
+  t.timeout_sec = 30;
   t.parameters = {{"type", "object"}, {"properties", {{"command", {{"type", "string"}, {"description", "Shell command to execute"}}}}}, {"required", {"command"}}};
   t.execute = [safe_dir](const json& args) -> Result<std::string> {
     auto command = args.value("command", std::string());
@@ -335,6 +342,13 @@ static Tool make_run_bash_tool(const std::string& safe_dir) {
     };
 
     while (true) {
+      if (g_interrupted) {
+        kill_child();
+        close(pipefd[0]);
+        truncate_output(output);
+        return output + "\n(interrupted)";
+      }
+
       auto now = std::chrono::steady_clock::now();
       if (now >= deadline) {
         kill_child();
@@ -425,6 +439,17 @@ Result<std::string> ToolRegistry::execute(const std::string& name, const std::st
     args = json::parse(args_json);
   } catch (const json::parse_error& e) {
     return std::unexpected("invalid JSON arguments: " + std::string(e.what()));
+  }
+
+  if (tool->timeout_sec > 0) {
+    auto future = std::async(std::launch::async, [tool, args = std::move(args)] {
+      return tool->execute(args);
+    });
+    auto status = future.wait_for(std::chrono::seconds(tool->timeout_sec));
+    if (status == std::future_status::timeout) {
+      return std::unexpected("tool '" + tool->name + "' timed out after " + std::to_string(tool->timeout_sec) + "s");
+    }
+    return future.get();
   }
 
   return tool->execute(args);

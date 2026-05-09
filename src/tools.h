@@ -22,6 +22,7 @@ struct Tool {
   std::string name;
   std::string description;
   json parameters;
+  int timeout_sec = 0; // 0 = no timeout
   std::function<Result<std::string>(const json& args)> execute;
 };
 

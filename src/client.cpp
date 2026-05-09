@@ -160,7 +160,30 @@ Result<void> ChatClient::stream_chat(const json& payload, SSEParser::Callbacks c
   std::string payload_str = payload.dump();
   long http_code = 0;
 
-  SSEParser parser(std::move(callbacks));
+  // Wrap callbacks to detect if any data was already delivered to the user.
+  // We must not retry if callbacks were invoked — retrying would duplicate data.
+  bool data_delivered = false;
+  SSEParser::Callbacks guarded;
+  if (callbacks.on_data) {
+    guarded.on_data = [&data_delivered, cb = std::move(callbacks.on_data)](const json& j) {
+      data_delivered = true;
+      cb(j);
+    };
+  }
+  if (callbacks.on_done) {
+    guarded.on_done = [&data_delivered, cb = std::move(callbacks.on_done)]() {
+      data_delivered = true;
+      cb();
+    };
+  }
+  if (callbacks.on_error) {
+    guarded.on_error = [&data_delivered, cb = std::move(callbacks.on_error)](const std::string& s) {
+      data_delivered = true;
+      cb(s);
+    };
+  }
+
+  SSEParser parser(std::move(guarded));
 
   auto* headers = make_headers();
   CURL* curl = setup_curl(url(), headers, payload_str);
@@ -174,6 +197,7 @@ Result<void> ChatClient::stream_chat(const json& payload, SSEParser::Callbacks c
 
   CURLcode res = CURLE_OK;
   for (int attempt = 0; attempt < kMaxRetries; ++attempt) {
+    data_delivered = false;
     parser.reset();
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_stream);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &parser);
@@ -185,6 +209,11 @@ Result<void> ChatClient::stream_chat(const json& payload, SSEParser::Callbacks c
       break;
 
     if (attempt == kMaxRetries - 1)
+      break;
+
+    // If any callback was already invoked, data was consumed by the user.
+    // Retrying would produce duplicate content — bail out instead.
+    if (data_delivered)
       break;
 
     bool recoverable = (res == CURLE_OK && should_retry(http_code)) ||

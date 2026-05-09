@@ -1,5 +1,7 @@
 #include "chat.h"
 
+#include <future>
+
 ChatSession::ChatSession(Config config)
     : model_(std::move(config.model)), safe_dir_(std::move(config.safe_dir)), max_iterations_(config.max_tool_iterations), conversation_(std::move(config.system_prompt)),
       client_(std::move(config.api_base), std::move(config.api_key)) {
@@ -78,12 +80,42 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
     if (!calls.empty()) {
       conversation_.add_assistant("", reasoning, calls);
 
-      for (const auto& call : calls) {
-        if (output_cb_) {
-          output_cb_("\xE2\x86\x92 " + call.name + "(" + call.arguments + ")", OutputType::ToolInvocation);
+      if (g_interrupted) {
+        conversation_.truncate(snapshot);
+        return std::unexpected("Interrupted during tool execution");
+      }
+
+      if (calls.size() > 1) {
+        std::vector<std::future<Result<std::string>>> futures;
+        futures.reserve(calls.size());
+        for (size_t i = 0; i < calls.size(); i++) {
+          futures.push_back(std::async(std::launch::async, [&, i] {
+            return tools_.execute(calls[i].name, calls[i].arguments);
+          }));
         }
-        auto tr = tools_.execute(call.name, call.arguments);
-        conversation_.add_tool(call.id, tr ? *tr : tr.error());
+        for (size_t i = 0; i < calls.size(); i++) {
+          if (g_interrupted) {
+            conversation_.truncate(snapshot);
+            return std::unexpected("Interrupted during tool execution");
+          }
+          if (output_cb_) {
+            output_cb_("\xE2\x86\x92 " + calls[i].name + "(" + calls[i].arguments + ")", OutputType::ToolInvocation);
+          }
+          auto tr = futures[i].get();
+          conversation_.add_tool(calls[i].id, tr ? *tr : tr.error());
+        }
+      } else {
+        for (const auto& call : calls) {
+          if (g_interrupted) {
+            conversation_.truncate(snapshot);
+            return std::unexpected("Interrupted during tool execution");
+          }
+          if (output_cb_) {
+            output_cb_("\xE2\x86\x92 " + call.name + "(" + call.arguments + ")", OutputType::ToolInvocation);
+          }
+          auto tr = tools_.execute(call.name, call.arguments);
+          conversation_.add_tool(call.id, tr ? *tr : tr.error());
+        }
       }
       continue;
     }

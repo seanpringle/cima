@@ -146,8 +146,12 @@ void SSEParser::process_line(std::string line) {
     std::string payload = line.substr(prefix.size());
 
     if (payload == "[DONE]") {
-      if (cb_.on_done) {
-        cb_.on_done();
+      try {
+        if (cb_.on_done) {
+          cb_.on_done();
+        }
+      } catch (...) {
+        // swallow all exceptions — must not throw through C frames (libcurl)
       }
       return;
     }
@@ -157,9 +161,13 @@ void SSEParser::process_line(std::string line) {
       if (cb_.on_data) {
         cb_.on_data(j);
       }
-    } catch (const json::exception& e) {
+    } catch (const std::exception& e) {
       if (cb_.on_error) {
-        cb_.on_error(std::string("JSON error: ") + e.what() + " | payload: " + payload);
+        cb_.on_error(std::string("SSE error: ") + e.what() + " | payload: " + payload);
+      }
+    } catch (...) {
+      if (cb_.on_error) {
+        cb_.on_error("SSE error: unknown exception | payload: " + payload);
       }
     }
     return;
@@ -168,7 +176,7 @@ void SSEParser::process_line(std::string line) {
   // Ignore other fields (event:, :keepalive, etc.)
 }
 
-void SSEParser::reset() { buf_.clear(); }
+void SSEParser::reset() { buf_.clear(); raw_.clear(); }
 
 // ---------------------------------------------------------------------------
 // Conversation

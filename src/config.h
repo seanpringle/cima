@@ -1,8 +1,11 @@
 #pragma once
 
+#include <atomic>
 #include <expected>
 #include <filesystem>
 #include <string>
+
+extern std::atomic<bool> g_interrupted;
 
 template <typename T> using Result = std::expected<T, std::string>;
 

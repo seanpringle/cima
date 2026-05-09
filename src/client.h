@@ -5,10 +5,7 @@
 
 #include <curl/curl.h>
 
-#include <atomic>
 #include <string>
-
-extern std::atomic<bool> g_interrupted;
 
 #include <nlohmann/json.hpp>
 
