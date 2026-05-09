@@ -58,6 +58,13 @@ static CURL* setup_curl(const std::string& url, struct curl_slist* headers, cons
   curl_easy_setopt(curl, CURLOPT_USERAGENT, "llm-chat/0.1");
   curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
 
+  // Enable SSL/TLS verification when using HTTPS.
+  curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+  curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+  // Use system default CA bundle — do NOT set a custom CA path so that
+  // curl finds the system trust store automatically.
+  curl_easy_setopt(curl, CURLOPT_CAINFO, nullptr);
+
   curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progress_cb);
   curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
 
