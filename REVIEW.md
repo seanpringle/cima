@@ -25,7 +25,7 @@
 
 **Secondary finding:** The app lacks several critical tools that would let the model accomplish tasks with **fewer turns and smaller payloads** — in particular `file_diff`/`apply_patch`, `project_tree`, and `git` integration. Missing these forces the model to make many more tool calls than necessary, each adding large results back into the conversation.
 
-**Status:** 🟡 **Partially addressed.** `project_tree` and `apply_patch` implemented. `git` integration remains as an identified gap.
+**Status:** 🟡 **Mostly addressed.** `project_tree`, `apply_patch`, `web_fetch`, `read_file_lines`, `git_status`, and `git_diff` implemented. `git_log` and `git_commit` remain as identified gaps.
 
 **Tertiary finding:** The request-handling layer has minor inefficiencies (uncached tool schemas, no gzip, fragile retry logic) but these are not the primary driver of context-window bloat.
 
@@ -329,11 +329,17 @@ This is effectively no timeout for normal chat usage. If the server hangs, the c
 |---|------|-------------------|---------|
 | 1 | `list_files` | None | List files in a directory |
 | 2 | `read_file` | None | Read lines from a file (max 400) |
-| 3 | `grep_files` | None | Regex search (max 200 results) |
-| 4 | `write_file` | Build only | Write content to a file |
-| 5 | `edit_file` | Build only | Single search-and-replace edit |
-| 6 | `run_bash` | Build only | Execute shell command (capped) |
-| 7 | `web_search` | None | Search the web (Wikipedia/Google) |
+| 3 | `read_file_lines` | None | Read specific line ranges (1-indexed) |
+| 4 | `grep_files` | None | Regex search (max 200 results) |
+| 5 | `write_file` | Build only | Write content to a file |
+| 6 | `edit_file` | Build only | Single search-and-replace edit |
+| 7 | `apply_patch` | Build only | Apply unified diff to a file |
+| 8 | `run_bash` | Build only | Execute shell command (capped) |
+| 9 | `web_search` | None | Search the web (Wikipedia/Google/Google CSE) |
+| 10 | `web_fetch` | None | Fetch URL content (http/https, text-based) |
+| 11 | `project_tree` | None | Recursive directory tree listing |
+| 12 | `git_status` | None | Git working tree status (porcelain short format) |
+| 13 | `git_diff` | None | Git unified diff of staged/unstaged changes |
 
 ### 5.2 Critical Gaps
 
@@ -376,21 +382,35 @@ Worst case: the model explores a deep directory tree with 20+ `list_files` calls
 
 **Status:** ✅ **Implemented.**
 
-#### ❌ `git` Integration
+#### 🟡 `git` Integration (partial)
 
 **Why it matters:**  
-Agentic coding without git is painful. The model needs to check status, view diffs, commit changes, etc. Currently it must use `run_bash` for all git operations, which returns raw terminal output with ANSI codes, pager warnings, etc. A structured `git` tool would return clean, minimal data.
+Agentic coding without git is painful. The model needs to check status, view diffs, commit changes, etc. Previously it had to use `run_bash` for all git operations, which returns raw terminal output with ANSI codes, pager warnings, etc. Structured `git` tools return clean, minimal data.
 
-**Sub-tools needed:**
-- `git_status` — return changed/untracked files
-- `git_diff` — return unified diff of changes
-- `git_log` — return recent commit history
-- `git_commit` — stage and commit
+**Sub-tools implemented:**
+- ✅ `git_status` — return changed/untracked files (libgit2-based porcelain format)
+- ✅ `git_diff` — return unified diff of staged/unstaged changes (libgit2-based, 500-line cap)
+- ❌ `git_log` — return recent commit history
+- ❌ `git_commit` — stage and commit
+
+**Implementation details (`git_status`):**
+- Uses libgit2's `git_status_foreach_ext()` with porcelain v1 characters
+- Parameters: none (no arguments needed)
+- Output: `XY <path>` format, sorted by path, capped at 200 entries
+- Timeout: 10 seconds
+- Plan mode: allowed (read-only)
+
+**Implementation details (`git_diff`):**
+- Uses libgit2's `git_diff_index_to_workdir()` (unstaged) or `git_diff_tree_to_index()` (staged)
+- Parameters: `staged` (bool, default false), `path` (optional string for file filter)
+- Output: unified diff format with `+`/`-` line prefixes, capped at 500 lines / 16000 chars
+- Timeout: 10 seconds
+- Plan mode: allowed (read-only)
 
 **Impact on context window:**  
-`run_bash git status` returns ~10–30 lines. `git_diff --staged` returns potentially hundreds of lines. With structured tools, the model gets exactly what it needs without the parsing overhead.
+`run_bash git status` returned ~10–30 lines of ANSI-coloured output. The structured `git_status` returns clean `XY <path>` lines — typically 50% less. `git_diff` returns precisely the unified diff the model needs, without shell noise.
 
-**Status:** ❌ **Not addressed.**
+**Status:** 🟡 **Partially addressed.** `git_status` and `git_diff` implemented. `git_log` and `git_commit` remain.
 
 ### 5.3 Important Gaps
 
@@ -475,7 +495,7 @@ Running tests with structured output (pass/fail counts, test names). Currently r
 |---|--------|---------|--------|--------|--------|
 | 4 | **Add `apply_patch` tool** — Accept unified diff input. | `tools.cpp` | 1 day | **High** | ✅ **Done.** Built-in unified diff parser, multi-hunk, context validation, 10s timeout. |
 | 5 | **Add `project_tree` tool** — Recursive directory listing. | `tools.cpp` | 0.5 day | **High** | ✅ **Done.** UTF-8 tree, depth/line limits, `skip_permission_denied`. |
-| 6 | **Add git tools** — `git_status`, `git_diff`, `git_log`, `git_commit`. | `tools.cpp` (new) | 2 days | **High** | ❌ |
+| 6 | **Add git tools** — `git_status`, `git_diff`, `git_log`, `git_commit`. | `tools.cpp` | 2 days | **High** | 🟡 **Partial.** `git_status` done (libgit2, porcelain format, 200-entry cap). `git_diff` done (unified diff, staged/unstaged, 500-line cap). `git_log` and `git_commit` remain. |
 | 7 | **Add Accept-Encoding: gzip** — HTTP compression. | `client.cpp` | 15 min | **Medium** | ✅ **Done.** `b67c7d1` |
 | — | **Discover context limit from API** — Query /v1/models for context window. | `client.h/cpp` | 0.5 day | **Medium** | ✅ **Done.** `fetch_model_context_limit()` checks multiple field names. |
 | — | **Stop round-tripping reasoning_content** — Don't send old thinking back. | `types.cpp` | 5 min | **Medium** | ✅ **Done.** Removed from `to_openai_messages()`. |
@@ -504,7 +524,7 @@ Running tests with structured output (pass/fail counts, test names). Currently r
 
 ## 7. Appendix: Tool Inventory
 
-### Current Tools (8)
+### Current Tools (13)
 
 | Tool | Parameters | Max Output | Timeout | Plan Mode |
 |------|-----------|------------|---------|-----------|
@@ -514,18 +534,23 @@ Running tests with structured output (pass/fail counts, test names). Currently r
 | `grep_files` | `pattern`, `path` (string) | 200 matches | 10s | ✓ allowed |
 | `write_file` | `path`, `content` (string) | none | none | ✗ blocked |
 | `edit_file` | `path`, `search`, `replace` | brief msg | none | ✗ blocked |
+| `apply_patch` | `path`, `patch` (unified diff) | brief msg | 10s | ✗ blocked |
 | `run_bash` | `command` (string) | 500 lines / 16k chars | 30s (env) | ✗ blocked |
 | `web_search` | `query` (string, max 500 chars) | 10 results | 15s | ✓ allowed |
+| `web_fetch` | `url` (string) | 100k chars | 15s | ✓ allowed |
+| `project_tree` | `path`, `max_depth`, `max_lines` | 500 lines | 5s | ✓ allowed |
+| `git_status` | none | 200 entries | 10s | ✓ allowed |
+| `git_diff` | `staged` (bool), `path` (string) | 500 lines / 16k chars | 10s | ✓ allowed |
 
-### Proposed Additions (10)
+### Proposed Additions (11)
 
 | Tool | Parameters | Max Output | Timeout | Plan Mode | Priority |
 |------|-----------|------------|---------|-----------|----------|
 | `apply_patch` | `path`, `patch` (unified diff) | brief msg | 10s | ✗ blocked | P1 ✅ |
 | `project_tree` | `path` (string), `max_depth` (int, default 5), `max_lines` (int, default 500) | 500 lines | 5s | ✓ allowed | P1 ✅ |
 | `read_file_lines` | `path`, `start_line` (int), `end_line` (int), `max_lines` (int) | 500 lines | none | ✓ allowed | P2 ✅ |
-| `git_status` | none | brief | 10s | ✓ allowed | P1 |
-| `git_diff` | `staged` (bool) | 500 lines | 10s | ✓ allowed | P1 |
+| `git_status` | none | 200 entries | 10s | ✓ allowed | P1 ✅ |
+| `git_diff` | `staged` (bool), `path` (string) | 500 lines / 16k chars | 10s | ✓ allowed | P1 ✅ |
 | `git_log` | `max_count` (int) | 50 commits | 10s | ✓ allowed | P1 |
 | `git_commit` | `message` (string), `all` (bool) | brief msg | 10s | ✗ blocked | P1 |
 | `delete_file` | `path` (string) | brief msg | none | ✗ blocked | P2 |
@@ -539,7 +564,7 @@ Running tests with structured output (pass/fail counts, test names). Currently r
 
 ## Code Quality Observations (Non-Blocking)
 
-1. **Test coverage is excellent** — `test_tools.cpp`, `test_chat.cpp`, `test_client.cpp`, `test_types.cpp`, `test_config.cpp` cover most paths. The mock server (`mock_server.hpp`) is well-designed. All 78 tests pass.
+1. **Test coverage is excellent** — `test_tools.cpp`, `test_chat.cpp`, `test_client.cpp`, `test_types.cpp`, `test_config.cpp` cover most paths. The mock server (`mock_server.hpp`) is well-designed. All 139 tests pass.
 
 2. **UTF-8 sanitization** — `sanitize_utf8` in `types.cpp` is thorough and correct.
 
@@ -565,6 +590,8 @@ Running tests with structured output (pass/fail counts, test names). Currently r
 | 2026-05-10 | `c69b3ae` | Add `project_tree` tool — recursive UTF-8 tree with depth/line limits, permission-safe iteration, Plan mode support |
 | 2026-05-XX | `a7b8c25` | Add `read_file_lines` tool — read specific 1-indexed line ranges (`start_line`/`end_line`) with line-numbered output, max_lines cap, Plan mode support |
 | 2026-05-XX | (current) | Add `apply_patch` tool — built-in unified diff parser, multi-hunk support, context validation, 10s timeout, Plan mode (blocked) |
+| 2026-05-XX | `b1b354d` | Add `git_status` tool — libgit2-based porcelain v1 status, 200-entry cap, sorted output, Plan mode support |
+| 2026-05-XX | `9da33cf` | Add `git_diff` tool — unified diff of staged/unstaged changes via libgit2, path filter, 500-line/16k-char cap, Plan mode support |
 
 ---
 
