@@ -111,7 +111,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
 
     json tools = reg.to_openai_tools();
     REQUIRE(tools.is_array());
-    REQUIRE(tools.size() == 9);
+    REQUIRE(tools.size() == 10);
 
     // Check structure of first tool
     CHECK(tools[0]["type"] == "function");
@@ -127,7 +127,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
         names.insert(t["function"]["name"].get<std::string>());
     }
     CHECK(names == std::set<std::string>{
-                       "list_files", "read_file", "grep_files", "write_file",
+                       "list_files", "read_file", "read_file_lines", "grep_files", "write_file",
                        "edit_file", "run_bash", "web_search", "web_fetch",
                        "project_tree"});
 }
@@ -374,6 +374,292 @@ TEST_CASE("read_file path traversal rejected", "[tools][read_file]") {
 
     auto result = reg.execute("read_file", R"({"path": "../../etc/passwd"})");
     CHECK_FALSE(result);
+
+    fs::remove_all(sd);
+}
+
+// ===================================================================
+// read_file_lines
+// ===================================================================
+
+TEST_CASE("read_file_lines basic", "[tools][read_file_lines]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    // Create a file with known content
+    std::ofstream ofs(sd + "/lines.txt");
+    for (int i = 1; i <= 20; i++) {
+        ofs << "line " << i << "\n";
+    }
+    ofs.close();
+
+    auto result = reg.execute("read_file_lines",
+                              R"({"path": "lines.txt", "start_line": 1, "end_line": 5})");
+    REQUIRE(result);
+
+    // Should contain lines 1-5 with line numbers
+    CHECK(result->find("1: line 1") != std::string::npos);
+    CHECK(result->find("5: line 5") != std::string::npos);
+    // Should NOT contain lines outside the range
+    CHECK(result->find("6: line 6") == std::string::npos);
+    // Should report truncation since there are more lines after line 5
+    CHECK(result->find("truncated") != std::string::npos);
+    CHECK(result->find(">20 lines") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("read_file_lines read to exact EOF", "[tools][read_file_lines]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    // Create a file with exactly 5 lines
+    std::ofstream ofs(sd + "/exact.txt");
+    for (int i = 1; i <= 5; i++) {
+        ofs << "exact " << i << "\n";
+    }
+    ofs.close();
+
+    // Read all lines (end_line matches file length)
+    auto result = reg.execute("read_file_lines",
+                              R"({"path": "exact.txt", "start_line": 1, "end_line": 5})");
+    REQUIRE(result);
+
+    // Should contain lines 1-5 with line numbers
+    CHECK(result->find("1: exact 1") != std::string::npos);
+    CHECK(result->find("5: exact 5") != std::string::npos);
+    // Should NOT be truncated — we read exactly to EOF
+    CHECK(result->find("truncated") == std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("read_file_lines start_line offset", "[tools][read_file_lines]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    std::ofstream ofs(sd + "/lines.txt");
+    for (int i = 1; i <= 50; i++) {
+        ofs << "content " << i << "\n";
+    }
+    ofs.close();
+
+    // Read lines 10-15
+    auto result = reg.execute("read_file_lines",
+                              R"({"path": "lines.txt", "start_line": 10, "end_line": 15})");
+    REQUIRE(result);
+
+    // Should contain lines 10-15
+    CHECK(result->find("10: content 10") != std::string::npos);
+    CHECK(result->find("15: content 15") != std::string::npos);
+    // Should NOT contain lines outside the range
+    CHECK(result->find("9: content 9") == std::string::npos);
+    CHECK(result->find("16: content 16") == std::string::npos);
+    // Should report truncation since there are more lines after line 15
+    CHECK(result->find("truncated") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("read_file_lines end_line beyond EOF", "[tools][read_file_lines]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    std::ofstream ofs(sd + "/short.txt");
+    for (int i = 1; i <= 5; i++) {
+        ofs << "short " << i << "\n";
+    }
+    ofs.close();
+
+    // Request range that goes beyond EOF
+    auto result = reg.execute("read_file_lines",
+                              R"({"path": "short.txt", "start_line": 1, "end_line": 999})");
+    REQUIRE(result);
+
+    // Should contain all 5 lines
+    CHECK(result->find("1: short 1") != std::string::npos);
+    CHECK(result->find("5: short 5") != std::string::npos);
+    // Should indicate truncation (since end_line wasn't fully read)
+    CHECK(result->find("truncated") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("read_file_lines end_line omitted", "[tools][read_file_lines]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    std::ofstream ofs(sd + "/many.txt");
+    for (int i = 1; i <= 50; i++) {
+        ofs << "omitted " << i << "\n";
+    }
+    ofs.close();
+
+    // Read from line 40 without specifying end_line
+    auto result = reg.execute("read_file_lines",
+                              R"({"path": "many.txt", "start_line": 40})");
+    REQUIRE(result);
+
+    // Should contain lines 40-50
+    CHECK(result->find("40: omitted 40") != std::string::npos);
+    CHECK(result->find("50: omitted 50") != std::string::npos);
+    // Should NOT be truncated (we read to EOF within max_lines, end_line omitted)
+    CHECK(result->find("truncated") == std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("read_file_lines max_lines cap", "[tools][read_file_lines]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    std::ofstream ofs(sd + "/long.txt");
+    for (int i = 1; i <= 500; i++) {
+        ofs << "longline " << i << "\n";
+    }
+    ofs.close();
+
+    // Read with small max_lines
+    auto result = reg.execute("read_file_lines",
+                              R"({"path": "long.txt", "start_line": 1, "max_lines": 10})");
+    REQUIRE(result);
+
+    // Should contain lines 1-10
+    CHECK(result->find("1: longline 1") != std::string::npos);
+    CHECK(result->find("10: longline 10") != std::string::npos);
+    CHECK(result->find("11: longline 11") == std::string::npos);
+    // Should indicate truncation
+    CHECK(result->find("truncated") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("read_file_lines start_line < 1", "[tools][read_file_lines]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+    std::ofstream(sd + "/dummy.txt") << "hello\n";
+
+    auto result = reg.execute("read_file_lines",
+                              R"({"path": "dummy.txt", "start_line": 0})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("start_line") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("read_file_lines end_line < start_line", "[tools][read_file_lines]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+    std::ofstream(sd + "/dummy.txt") << "hello\n";
+
+    auto result = reg.execute("read_file_lines",
+                              R"({"path": "dummy.txt", "start_line": 10, "end_line": 5})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("end_line") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("read_file_lines file not found", "[tools][read_file_lines]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    auto result = reg.execute("read_file_lines",
+                              R"({"path": "nonexistent.txt", "start_line": 1})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("Failed to open") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("read_file_lines path traversal rejected", "[tools][read_file_lines]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    auto result = reg.execute("read_file_lines",
+                              R"({"path": "../../etc/passwd"})");
+    CHECK_FALSE(result);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("read_file_lines empty file", "[tools][read_file_lines]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    // Create empty file
+    std::ofstream(sd + "/empty.txt");
+    // No content written
+
+    auto result = reg.execute("read_file_lines",
+                              R"({"path": "empty.txt", "start_line": 1})");
+    REQUIRE(result);
+    // Should return empty string (no lines)
+    CHECK(result->empty());
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("read_file_lines start_line beyond EOF", "[tools][read_file_lines]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    std::ofstream(sd + "/few.txt") << "line1\nline2\nline3\n";
+
+    auto result = reg.execute("read_file_lines",
+                              R"({"path": "few.txt", "start_line": 10})");
+    REQUIRE(result);
+    CHECK(result->find("beyond end of file") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("read_file_lines single line", "[tools][read_file_lines]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    std::ofstream(sd + "/single.txt") << "only line\n";
+
+    auto result = reg.execute("read_file_lines",
+                              R"({"path": "single.txt", "start_line": 1, "end_line": 1})");
+    REQUIRE(result);
+    CHECK(result->find("1: only line") != std::string::npos);
+    CHECK(result->find("truncated") == std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("read_file_lines max_lines clamped", "[tools][read_file_lines]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    std::ofstream ofs(sd + "/big.txt");
+    for (int i = 1; i <= 600; i++) {
+        ofs << "big " << i << "\n";
+    }
+    ofs.close();
+
+    // max_lines=1000 should be clamped to 500
+    auto result = reg.execute("read_file_lines",
+                              R"({"path": "big.txt", "start_line": 1, "max_lines": 1000})");
+    REQUIRE(result);
+    CHECK(result->find("500: big 500") != std::string::npos);
+    CHECK(result->find("501: big 501") == std::string::npos);
+    CHECK(result->find("truncated") != std::string::npos);
 
     fs::remove_all(sd);
 }

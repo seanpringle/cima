@@ -97,6 +97,111 @@ static Tool make_list_files_tool(const std::string& safe_dir) {
     return t;
 }
 
+static Tool make_read_file_lines_tool(const std::string& safe_dir) {
+    Tool t;
+    t.name = "read_file_lines";
+    t.description =
+        "Read specific line ranges from a file. Returns lines prefixed with line "
+        "numbers. Use this when you know the line numbers you want (e.g. after a "
+        "grep match at line 52, read lines 45-78). "
+        "For reading from an offset, use read_file instead.";
+    t.parameters = {{"type", "object"},
+        {"properties",
+            {{"path", {{"type", "string"}, {"description", "Path to the file"}}},
+                {"start_line",
+                    {{"type", "integer"},
+                        {"description",
+                            "First line to read (1-indexed, default 1)"}}},
+                {"end_line",
+                    {{"type", "integer"},
+                        {"description",
+                            "Last line to read (inclusive). If omitted, reads to "
+                            "end of file (capped by max_lines)."}}},
+                {"max_lines",
+                    {{"type", "integer"},
+                        {"description",
+                            "Maximum lines to return (default 200, max 500)"}}}}},
+        {"required", {"path"}}};
+    t.execute = [safe_dir](const json& args) -> Result<std::string> {
+        auto raw = args.value("path", std::string());
+        auto resolved = resolve_path(raw, safe_dir);
+        if (!resolved) {
+            return std::unexpected(resolved.error());
+        }
+
+        int start_line = args.value("start_line", 1);
+        int end_line = args.value("end_line", 0); // 0 = not specified
+        int max_lines = args.value("max_lines", 200);
+
+        if (start_line < 1) {
+            return std::unexpected("start_line must be >= 1");
+        }
+        if (end_line != 0 && end_line < start_line) {
+            return std::unexpected("end_line must be >= start_line");
+        }
+        if (max_lines < 1) max_lines = 1;
+        if (max_lines > 500) max_lines = 500;
+
+        std::ifstream file(*resolved);
+        if (!file.is_open()) {
+            return std::unexpected("Failed to open file: " + *resolved);
+        }
+
+        std::string result;
+        std::string line;
+        int line_num = 0;
+        int count = 0;
+
+        // Skip lines before start_line
+        while (line_num < start_line - 1 && std::getline(file, line)) {
+            line_num++;
+        }
+
+        // Determine how many lines to read
+        int max_to_read = max_lines;
+        if (end_line != 0) {
+            int range = end_line - start_line + 1;
+            if (range < max_to_read) max_to_read = range;
+        }
+
+        while (count < max_to_read && std::getline(file, line)) {
+            line_num++;
+            result += std::to_string(line_num) + ": " + line + "\n";
+            count++;
+        }
+
+        // Check if there are more lines beyond what was read
+        // Try reading one more line to detect EOF reliably
+        bool has_more = false;
+        int remaining = 0;
+        if (end_line != 0 && line_num < end_line) {
+            // We haven't read far enough per end_line — definitely has more
+            has_more = true;
+            std::string dummy;
+            while (std::getline(file, dummy)) { remaining++; }
+        } else {
+            // Check if there's more content by attempting one more read
+            std::string peek;
+            has_more = static_cast<bool>(std::getline(file, peek));
+            if (has_more) {
+                remaining = 1;
+                std::string dummy;
+                while (std::getline(file, dummy)) { remaining++; }
+            }
+        }
+
+        if (has_more) {
+            result += "...(truncated, >" + std::to_string(count + remaining) +
+                " lines from line " + std::to_string(start_line) + ")";
+        } else if (count == 0 && start_line > 1) {
+            result = "(start_line " + std::to_string(start_line) +
+                " is beyond end of file)";
+        }
+        return result;
+    };
+    return t;
+}
+
 static Tool make_read_file_tool(const std::string& safe_dir) {
     Tool t;
     t.name = "read_file";
@@ -1056,6 +1161,7 @@ void ToolRegistry::add_defaults(const std::string& safe_dir,
     const std::string& search_endpoint) {
     add(make_list_files_tool(safe_dir));
     add(make_read_file_tool(safe_dir));
+    add(make_read_file_lines_tool(safe_dir));
     add(make_grep_files_tool(safe_dir));
     add(make_write_file_tool(safe_dir));
     add(make_edit_file_tool(safe_dir));
