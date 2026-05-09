@@ -337,40 +337,48 @@ static void cancel_chat(AsyncChatState& chat) {
   g_interrupted = false;
 }
 
-void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session, bool& done) {
-  // ── drain pending output from chat thread ──
-  {
-    std::lock_guard<std::mutex> lock(chat.mutex);
-    for (auto& [text, type] : chat.pending) {
-      if (type == OutputType::ToolInvocation) {
+static void drain_pending(ChatUIState& ui, AsyncChatState& chat) {
+  std::lock_guard<std::mutex> lock(chat.mutex);
+  for (auto& [text, type] : chat.pending) {
+    if (type == OutputType::ToolInvocation) {
+      if (!ui.entries.empty() && ui.entries.back().is_streaming) {
+        ui.entries.back().is_streaming = false;
+      }
+      ui.entries.push_back({EntryType::ToolCall, text, false});
+    } else {
+      auto entry_type = (type == OutputType::Reasoning) ? EntryType::Reasoning : EntryType::Content;
+      if (!ui.entries.empty() && ui.entries.back().is_streaming && ui.entries.back().type == entry_type) {
+        ui.entries.back().text += text;
+      } else {
         if (!ui.entries.empty() && ui.entries.back().is_streaming) {
           ui.entries.back().is_streaming = false;
         }
-        ui.entries.push_back({EntryType::ToolCall, text, false});
-      } else {
-        auto entry_type = (type == OutputType::Reasoning) ? EntryType::Reasoning : EntryType::Content;
-        if (!ui.entries.empty() && ui.entries.back().is_streaming && ui.entries.back().type == entry_type) {
-          ui.entries.back().text += text;
-        } else {
-          if (!ui.entries.empty() && ui.entries.back().is_streaming) {
-            ui.entries.back().is_streaming = false;
-          }
-          ui.entries.push_back({entry_type, text, true});
-        }
+        ui.entries.push_back({entry_type, text, true});
       }
     }
-    chat.pending.clear();
   }
+  chat.pending.clear();
+}
 
-  // ── check if chat just finished ──
+void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session, bool& done) {
+  // ── check if chat finished (before drain, so the drain catches any last items) ──
+  bool stream_ended = false;
+  Result<ChatResult> result = std::unexpected(std::string("unknown error"));
   if (chat.running && chat.future.valid() && chat.future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-    Result<ChatResult> result = std::unexpected(std::string("unknown error"));
     try {
       result = chat.future.get();
     } catch (const std::exception& e) {
       result = std::unexpected(std::string(e.what()));
     }
     chat.running = false;
+    stream_ended = true;
+  }
+
+  // ── drain pending output (includes any items that arrived after last frame's drain) ──
+  drain_pending(ui, chat);
+
+  // ── finalize streaming entry now that all pending data is incorporated ──
+  if (stream_ended) {
     if (!ui.entries.empty() && ui.entries.back().is_streaming) {
       ui.entries.back().is_streaming = false;
     }
@@ -479,13 +487,7 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
 
   bool running_snapshot = chat.running;
 
-  if (running_snapshot) {
-    float cancel_w = ImGui::CalcTextSize("  Cancel  ").x + ImGui::GetStyle().FramePadding.x * 2;
-    float input_w = ImGui::GetContentRegionAvail().x - cancel_w - ImGui::GetStyle().ItemSpacing.x;
-    ImGui::SetNextItemWidth(input_w);
-  } else {
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-  }
+  ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
 
   if (running_snapshot)
     ImGui::BeginDisabled();
@@ -496,7 +498,7 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
                                 ui.input_buf,
                                 sizeof(ui.input_buf),
                                 ImVec2(0, ImGui::GetFrameHeightWithSpacing() * 3),
-                                ImGuiInputTextFlags_CtrlEnterForNewLine | ImGuiInputTextFlags_EnterReturnsTrue)) {
+                                ImGuiInputTextFlags_CtrlEnterForNewLine | ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_WordWrap)) {
     std::string input(ui.input_buf);
     ui.input_buf[0] = '\0';
     if (!input.empty()) {
@@ -514,16 +516,32 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
 
   if (ui.mono_font)
     ImGui::PopFont();
-  if (running_snapshot) {
+  if (running_snapshot)
     ImGui::EndDisabled();
-  } else if (chat.running) {
-    ImGui::SameLine();
-  }
 
   if (chat.running) {
-    if (ImGui::Button("  Cancel  ")) {
+    if (ImGui::Button("  Cancel  "))
       cancel_chat(chat);
+  } else {
+    if (ui.input_buf[0] == '\0')
+      ImGui::BeginDisabled();
+    if (ImGui::Button("  Send  ")) {
+      std::string input(ui.input_buf);
+      ui.input_buf[0] = '\0';
+      if (!input.empty()) {
+        if (input == "/clear") {
+          session.clear();
+          ui.entries.clear();
+        } else if (input == "/exit" || input == "/quit") {
+          done = true;
+        } else {
+          ui.entries.push_back({EntryType::UserText, input, false});
+          start_chat(chat, session, std::move(input));
+        }
+      }
     }
+    if (ui.input_buf[0] == '\0')
+      ImGui::EndDisabled();
   }
 
   ImGui::End(); // main window
