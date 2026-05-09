@@ -445,8 +445,12 @@ json Conversation::to_openai_messages() const {
                             {"arguments", sanitize_utf8(tc.arguments)}}}});
             }
             j["tool_calls"] = std::move(arr);
+            j["reasoning_content"] = sanitize_utf8(msg.reasoning_content);
         } else {
             j["content"] = sanitize_utf8(msg.content.value_or(""));
+            if (!msg.reasoning_content.empty()) {
+                j["reasoning_content"] = sanitize_utf8(msg.reasoning_content);
+            }
         }
 
         if (!msg.tool_call_id.empty()) {

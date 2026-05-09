@@ -330,8 +330,7 @@ TEST_CASE("Conversation with reasoning content", "[types][conversation]") {
 
     CHECK(msgs[2]["role"] == "assistant");
     CHECK(msgs[2]["content"] == "4");
-    // reasoning_content is stored but no longer round-tripped to the API
-    CHECK(msgs[2].find("reasoning_content") == msgs[2].end());
+    CHECK(msgs[2]["reasoning_content"] == "The user asked a simple arithmetic question.");
 }
 
 TEST_CASE("Conversation with tool calls", "[types][conversation]") {
@@ -352,8 +351,7 @@ TEST_CASE("Conversation with tool calls", "[types][conversation]") {
 
     CHECK(msgs[2]["role"] == "assistant");
     CHECK(msgs[2]["content"] == nullptr);
-    // reasoning_content is stored but no longer round-tripped
-    CHECK(msgs[2].find("reasoning_content") == msgs[2].end());
+    CHECK(msgs[2]["reasoning_content"] == "Need to list /tmp contents.");
 
     auto tcs = msgs[2]["tool_calls"];
     REQUIRE(tcs.is_array());
@@ -414,6 +412,5 @@ TEST_CASE("Conversation empty content for tool_call message is null",
 
     json msgs = conv.to_openai_messages();
     CHECK(msgs[2]["content"] == nullptr);
-    // reasoning_content is stored but no longer round-tripped
-    CHECK(msgs[2].find("reasoning_content") == msgs[2].end());
+    CHECK(msgs[2]["reasoning_content"] == "thinking...");
 }
