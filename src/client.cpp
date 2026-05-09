@@ -2,6 +2,7 @@
 
 #include <curl/curl.h>
 #include <cstring>
+#include <random>
 #include <thread>
 #include <chrono>
 
@@ -67,6 +68,14 @@ bool ChatClient::should_retry(long http_code) const {
   return http_code == 429 || (http_code >= 500 && http_code < 600);
 }
 
+/// Returns a random delay in [0.5*base, 1.5*base] to add jitter to retries.
+static double jittered_delay(double base_sec) {
+  // thread_local so we seed once per thread (fine for single-threaded UI)
+  static thread_local std::mt19937 rng(std::random_device{}());
+  std::uniform_real_distribution<double> dist(0.5, 1.5);
+  return base_sec * dist(rng);
+}
+
 CURLcode ChatClient::perform_with_retry(CURL* curl, long& http_code, std::string& body) {
   for (int attempt = 0; attempt < kMaxRetries; ++attempt) {
     body.clear();
@@ -90,7 +99,7 @@ CURLcode ChatClient::perform_with_retry(CURL* curl, long& http_code, std::string
     if (!recoverable)
       return res;
 
-    std::this_thread::sleep_for(std::chrono::duration<double>(kBaseDelaySec * (1 << attempt)));
+    std::this_thread::sleep_for(std::chrono::duration<double>(jittered_delay(kBaseDelaySec * (1 << attempt))));
   }
   return CURLE_OK;
 }
@@ -174,7 +183,7 @@ Result<void> ChatClient::stream_chat(const json& payload, SSEParser::Callbacks c
     if (!recoverable)
       break;
 
-    std::this_thread::sleep_for(std::chrono::duration<double>(kBaseDelaySec * (1 << attempt)));
+    std::this_thread::sleep_for(std::chrono::duration<double>(jittered_delay(kBaseDelaySec * (1 << attempt))));
   }
 
   curl_easy_cleanup(curl);
