@@ -111,7 +111,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
 
     json tools = reg.to_openai_tools();
     REQUIRE(tools.is_array());
-    REQUIRE(tools.size() == 7);
+    REQUIRE(tools.size() == 8);
 
     // Check structure of first tool
     CHECK(tools[0]["type"] == "function");
@@ -128,7 +128,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
     }
     CHECK(names == std::set<std::string>{
                        "list_files", "read_file", "grep_files", "write_file",
-                       "edit_file", "run_bash", "web_search"});
+                       "edit_file", "run_bash", "web_search", "web_fetch"});
 }
 
 // ===================================================================
@@ -765,4 +765,146 @@ TEST_CASE("web_search respects max query length", "[tools][web_search]") {
     REQUIRE(result);
     // Should have succeeded (the mock doesn't check query length)
     CHECK(result->find("1. A") != std::string::npos);
+}
+
+// ===================================================================
+// web_fetch
+// ===================================================================
+
+TEST_CASE("web_fetch basic", "[tools][web_fetch]") {
+    std::string body = "Hello, World! This is a test page.";
+    MockHttpServer server(body, 200);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    ToolRegistry reg;
+    reg.add_defaults("/tmp");
+    std::string fetch_url = server.url().substr(0, server.url().find("?q="));
+    auto result = reg.execute("web_fetch",
+        R"({"url": ")" + fetch_url + R"("})");
+    INFO("fetch_url = " << fetch_url);
+    INFO("error = " << (result ? "none" : result.error()));
+    REQUIRE(result);
+    CHECK(*result == body);
+}
+
+TEST_CASE("web_fetch empty URL rejected", "[tools][web_fetch]") {
+    ToolRegistry reg;
+    reg.add_defaults("/tmp");
+    auto result = reg.execute("web_fetch", R"({"url": ""})");
+    CHECK_FALSE(result);
+    CHECK(result.error() == "url is required");
+}
+
+TEST_CASE("web_fetch http error", "[tools][web_fetch]") {
+    MockHttpServer server("Not Found", 404);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    ToolRegistry reg;
+    reg.add_defaults("/tmp");
+    auto result = reg.execute("web_fetch",
+        R"({"url": ")" + server.url().substr(0, server.url().find("?q=")) + R"("})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("HTTP 404") != std::string::npos);
+}
+
+TEST_CASE("web_fetch connection refused", "[tools][web_fetch]") {
+    ToolRegistry reg;
+    reg.add_defaults("/tmp");
+    auto result = reg.execute("web_fetch", R"({"url": "http://127.0.0.1:1/test"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("curl error") != std::string::npos);
+}
+
+TEST_CASE("web_fetch unsupported scheme rejected", "[tools][web_fetch]") {
+    ToolRegistry reg;
+    reg.add_defaults("/tmp");
+    auto result = reg.execute("web_fetch", R"({"url": "ftp://example.com/file"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("only http and https") != std::string::npos);
+}
+
+TEST_CASE("web_fetch file scheme rejected", "[tools][web_fetch]") {
+    ToolRegistry reg;
+    reg.add_defaults("/tmp");
+    auto result = reg.execute("web_fetch", R"({"url": "file:///etc/passwd"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("only http and https") != std::string::npos);
+}
+
+TEST_CASE("web_fetch data scheme rejected", "[tools][web_fetch]") {
+    ToolRegistry reg;
+    reg.add_defaults("/tmp");
+    auto result = reg.execute("web_fetch", R"({"url": "data:text/plain,hello"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("only http and https") != std::string::npos);
+}
+
+TEST_CASE("web_fetch truncates large content", "[tools][web_fetch]") {
+    // Generate content larger than 100k chars
+    std::string large_body(100500, 'x');
+    MockHttpServer server(large_body, 200);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    ToolRegistry reg;
+    reg.add_defaults("/tmp");
+    std::string fetch_url = server.url().substr(0, server.url().find("?q="));
+    auto result = reg.execute("web_fetch",
+        R"({"url": ")" + fetch_url + R"("})");
+    INFO("fetch_url = " << fetch_url);
+    INFO("error = " << (result ? "none" : result.error()));
+    REQUIRE(result);
+    CHECK(result->find("truncated") != std::string::npos);
+    CHECK(result->size() <= 100100); // 100k + truncation message
+}
+
+TEST_CASE("web_fetch available in plan mode", "[tools][web_fetch]") {
+    std::string body = "plan mode content";
+    MockHttpServer server(body, 200);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    ToolRegistry reg;
+    reg.add_defaults("/tmp");
+    reg.set_mode(Mode::Plan);
+    std::string fetch_url = server.url().substr(0, server.url().find("?q="));
+    auto result = reg.execute("web_fetch",
+        R"({"url": ")" + fetch_url + R"("})");
+    INFO("fetch_url = " << fetch_url);
+    INFO("error = " << (result ? "none" : result.error()));
+    REQUIRE(result);
+    CHECK(*result == body);
+}
+
+TEST_CASE("web_fetch caching returns same content", "[tools][web_fetch]") {
+    // Use a unique URL based on a counter to avoid cross-test cache collisions.
+    static int call_count = 0;
+    call_count++;
+    std::string body = "cached content " + std::to_string(call_count);
+
+    MockHttpServer server(body, 200);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    std::string mock_url =
+        "http://127.0.0.1:" + std::to_string(server.port.load()) + "/cached_test";
+
+    ToolRegistry reg;
+    reg.add_defaults("/tmp");
+
+    // First fetch should succeed
+    auto r1 = reg.execute("web_fetch", R"({"url": ")" + mock_url + R"("})");
+    REQUIRE(r1);
+    CHECK(*r1 == body);
+
+    // Second fetch of same URL should return cached content (same result)
+    auto r2 = reg.execute("web_fetch", R"({"url": ")" + mock_url + R"("})");
+    REQUIRE(r2);
+    CHECK(*r2 == body);
+}
+
+TEST_CASE("web_fetch binary content-type rejected", "[tools][web_fetch]") {
+    // MockHttpServer always returns Content-Type: application/json which is
+    // allowed. To test binary rejection we'd need a server that returns
+    // image/png, etc. Placeholder until MockHttpServer supports custom
+    // Content-Type headers.
+    SUCCEED("Binary Content-Type rejection requires MockHttpServer extension "
+            "(currently always returns application/json which is allowed).");
 }

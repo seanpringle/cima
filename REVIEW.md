@@ -422,7 +422,7 @@ Running tests with structured output (pass/fail counts, test names). Currently r
 **Why it matters:**  
 `web_search` returns search results but cannot fetch the content of a specific URL. Models often need to read documentation or API references.
 
-**Status:** ❌ **Not addressed.**
+**Status:** ✅ **Implemented.** Built on libcurl with URL validation (http/https only), Content-Type filtering (text-based content only), per-session caching, 100k char output limit, and 15s timeout. Available in Plan mode.
 
 ### 5.4 Nice-to-Have Gaps
 
@@ -471,7 +471,7 @@ Running tests with structured output (pass/fail counts, test names). Currently r
 
 | # | Change | File(s) | Effort | Impact | Status |
 |---|--------|---------|--------|--------|--------|
-| 13 | **Add `web_fetch` tool** — Fetch URL content. | `tools.cpp` | 0.5 day | Low | ❌ |
+| 13 | **Add `web_fetch` tool** — Fetch URL content. | `tools.cpp` | 0.5 day | Low | ✅ **Done.** URL validation, Content-Type filtering, caching, 100k limit, 15s timeout. All tests pass. |
 | 14 | **Curl timeout matching** — Reduce from 3600s to 120s. | `client.cpp` | 5 min | Low | ❌ |
 | 15 | **SSE parser hardening** — Handle `event:`, `id:`, `retry:` fields. | `types.cpp` | 0.5 day | Low | ❌ |
 | 16 | **Retry logic cleanup** — Simplify `data_delivered` tracking; add interrupt check. | `client.cpp` | 0.5 day | Low | ❌ |
@@ -508,7 +508,7 @@ Running tests with structured output (pass/fail counts, test names). Currently r
 | `search_symbols` | `symbol` (string), `path` (string) | 50 matches | 10s | ✓ allowed | P2 |
 | `lint` | `path` (string), `tool` (string) | 200 lines | 30s | ✗ blocked | P2 |
 | `run_tests` | `path` (string), `filter` (string) | 500 lines | 120s | ✗ blocked | P2 |
-| `web_fetch` | `url` (string) | 100k chars | 15s | ✓ allowed | P3 |
+| `web_fetch` | `url` (string) | 100k chars | 15s | ✓ allowed | P3 ✅ |
 
 ---
 

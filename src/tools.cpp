@@ -8,10 +8,12 @@
 #include <fcntl.h>
 #include <fstream>
 #include <future>
+#include <mutex>
 #include <poll.h>
 #include <regex>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <unordered_map>
 
 // ===================================================================
 // Path sandbox
@@ -700,6 +702,172 @@ static Tool make_web_search_tool(const std::string& api_key,
 }
 
 // ===================================================================
+// Web fetch tool (libcurl)
+// ===================================================================
+
+// ── URL validation helper ──
+
+// Returns true if the scheme is http or https (case-insensitive).
+// Rejects file://, ftp://, data:, javascript:, etc.
+static bool is_valid_fetch_scheme(const std::string& url) {
+    auto pos = url.find(':');
+    if (pos == std::string::npos) return false;
+    std::string scheme = url.substr(0, pos);
+    for (auto& c : scheme) c = char(std::tolower((unsigned char)c));
+    return scheme == "http" || scheme == "https";
+}
+
+// ── Caching ──
+
+static std::mutex g_fetch_cache_mutex;
+static std::unordered_map<std::string, std::string> g_fetch_cache;
+
+// ── Tool factory ──
+
+static Tool make_web_fetch_tool() {
+    Tool t;
+    t.name = "web_fetch";
+    t.description =
+        "Fetch the content of a URL. Returns the response body as text. "
+        "Max 100,000 characters. "
+        "Use this to read documentation, API references, or web pages. "
+        "Only returns the raw response body; for search results use web_search.";
+    t.timeout_sec = 15;
+    t.parameters = {{"type", "object"},
+        {"properties",
+            {{"url",
+                {{"type", "string"},
+                    {"description",
+                        "URL to fetch (http/https). "
+                        "Results are cached per session — re-fetching the same URL "
+                        "returns the cached content."}}}}},
+        {"required", {"url"}}};
+    t.execute = [](const json& args) -> Result<std::string> {
+        auto url = args.value("url", std::string());
+        if (url.empty()) {
+            return std::unexpected("url is required");
+        }
+
+        // ── URL validation ──
+        // 1. Check scheme (http/https only)
+        if (!is_valid_fetch_scheme(url)) {
+            return std::unexpected("web_fetch: only http and https URLs are supported");
+        }
+
+        // ── Cache check ──
+        {
+            std::lock_guard<std::mutex> lock(g_fetch_cache_mutex);
+            auto it = g_fetch_cache.find(url);
+            if (it != g_fetch_cache.end()) {
+                return it->second;
+            }
+        }
+
+        // ── HTTP GET via libcurl ──
+        CURL* curl = curl_easy_init();
+        if (!curl) {
+            return std::unexpected("web_fetch: curl_easy_init failed");
+        }
+
+        std::string body;
+        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, web_search_write_cb);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
+        curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+        curl_easy_setopt(curl, CURLOPT_USERAGENT, "llm-chat/0.1");
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+        curl_easy_setopt(curl, CURLOPT_CAINFO, nullptr);
+        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+        curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 5L);
+        curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, web_search_progress_cb);
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+
+        CURLcode res = curl_easy_perform(curl);
+
+        long http_code = 0;
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+
+        // Read Content-Type BEFORE curl_easy_cleanup — the pointer is only
+        // valid while the handle lives.
+        std::string content_type;
+        char* ct_raw = nullptr;
+        curl_easy_getinfo(curl, CURLINFO_CONTENT_TYPE, &ct_raw);
+        if (ct_raw != nullptr) {
+            content_type = ct_raw;
+        }
+
+        curl_easy_cleanup(curl);
+
+        if (res != CURLE_OK) {
+            return std::unexpected(std::string("web_fetch curl error: ") +
+                curl_easy_strerror(res));
+        }
+
+        if (http_code != 200) {
+            std::string msg = "web_fetch HTTP " + std::to_string(http_code);
+            if (!body.empty()) {
+                msg += ": " + body.substr(0, 500);
+            }
+            return std::unexpected(msg);
+        }
+
+        // ── Content-Type filtering ──
+        // Only allow text-based content types. If the server didn't send a
+        // Content-Type header, we allow it (assume text).
+        if (!content_type.empty()) {
+            std::string ct = content_type;
+            // Convert to lowercase for comparison
+            for (auto& c : ct) c = char(std::tolower((unsigned char)c));
+
+            // Strip parameters like charset=utf-8
+            auto semi = ct.find(';');
+            if (semi != std::string::npos) ct = ct.substr(0, semi);
+
+            // Trim trailing whitespace
+            while (!ct.empty() && (ct.back() == ' ' || ct.back() == '\t'))
+                ct.pop_back();
+
+            // Allowed content types
+            bool allowed = false;
+            if (ct.find("text/") == 0) allowed = true;
+            else if (ct == "application/json") allowed = true;
+            else if (ct == "application/xml") allowed = true;
+            else if (ct == "application/javascript") allowed = true;
+            else if (ct == "application/x-javascript") allowed = true;
+            else if (ct == "application/atom+xml") allowed = true;
+            else if (ct == "application/rss+xml") allowed = true;
+            else if (ct == "application/xhtml+xml") allowed = true;
+
+            if (!allowed) {
+                return std::unexpected(
+                    "web_fetch: unsupported Content-Type '" + ct +
+                    "' — only text-based content can be fetched");
+            }
+        }
+
+        // ── Truncation ──
+        const size_t max_chars = 100000;
+        if (body.size() > max_chars) {
+            body = body.substr(0, max_chars) +
+                "\n...(truncated, >" + std::to_string(max_chars) + " chars)";
+        }
+
+        // ── Cache the result ──
+        {
+            std::lock_guard<std::mutex> lock(g_fetch_cache_mutex);
+            g_fetch_cache[url] = body;
+        }
+
+        return body;
+    };
+    return t;
+}
+
+// ===================================================================
 // ToolRegistry
 // ===================================================================
 
@@ -719,6 +887,7 @@ void ToolRegistry::add_defaults(const std::string& safe_dir,
     // credentials are configured. Google CSE or a custom endpoint can be used
     // by setting the appropriate environment variables.
     add(make_web_search_tool(search_api_key, search_engine_id, search_endpoint));
+    add(make_web_fetch_tool());
 }
 
 json ToolRegistry::to_openai_tools() const {
@@ -742,7 +911,7 @@ Result<std::string> ToolRegistry::execute(const std::string& name, const std::st
         (name == "write_file" || name == "edit_file" || name == "run_bash")) {
         return std::unexpected("Tool '" + name +
             "' is not available in Plan mode (read-only). "
-            "Available tools: list_files, read_file, grep_files, web_search.");
+            "Available tools: list_files, read_file, grep_files, web_search, web_fetch.");
     }
 
     json args;
