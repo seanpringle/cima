@@ -328,6 +328,39 @@ static Tool make_read_file_tool(const std::string& safe_dir) {
     return t;
 }
 
+// ===================================================================
+// Gitignore helpers
+// ===================================================================
+
+/// Check whether a path within a git repository is ignored by .gitignore rules.
+/// @param repo      An open git_repository*, or nullptr (returns false).
+/// @param abs_path  Absolute filesystem path to check.
+/// @param workdir   The repository worktree root (from git_repository_workdir()).
+static bool is_gitignored(git_repository* repo,
+                          const std::filesystem::path& abs_path,
+                          const std::filesystem::path& workdir) {
+    if (!repo) return false;
+
+    std::error_code ec;
+    auto rel = std::filesystem::relative(abs_path, workdir, ec);
+    if (ec) return false;
+
+    // Use generic (forward-slash) separators as required by libgit2
+    std::string rel_str = rel.generic_string();
+
+    int ignored = 0;
+    int err = git_ignore_path_is_ignored(&ignored, repo, rel_str.c_str());
+    if (err != 0) {
+        // If libgit2 can't check (e.g. path outside the repo), treat as not ignored
+        return false;
+    }
+    return ignored != 0;
+}
+
+// ===================================================================
+// grep_files
+// ===================================================================
+
 static Tool make_grep_files_tool(const std::string& safe_dir) {
     Tool t;
     t.name = "grep_files";
@@ -376,6 +409,22 @@ static Tool make_grep_files_tool(const std::string& safe_dir) {
             }
         };
 
+        // Try to open a git repository rooted at the search path.
+        // If this fails (not a git repo), repo stays nullptr and gitignore
+        // filtering is skipped entirely.
+        git_repository* repo = nullptr;
+        std::filesystem::path repo_workdir;
+        {
+            auto repo_res = open_git_repo(*resolved);
+            if (repo_res) {
+                repo = *repo_res;
+                const char* wd = git_repository_workdir(repo);
+                if (wd) repo_workdir = std::filesystem::path(wd);
+            }
+        }
+        auto repo_cleanup = std::unique_ptr<git_repository, decltype(&git_repository_free)>(
+            repo, git_repository_free);
+
         std::error_code ec;
         auto status = std::filesystem::status(*resolved, ec);
         if (ec) {
@@ -383,7 +432,9 @@ static Tool make_grep_files_tool(const std::string& safe_dir) {
         }
 
         if (std::filesystem::is_regular_file(status)) {
-            search_file(*resolved);
+            if (!repo || !is_gitignored(repo, *resolved, repo_workdir)) {
+                search_file(*resolved);
+            }
         } else if (std::filesystem::is_directory(status)) {
             auto it = std::filesystem::recursive_directory_iterator(
                 *resolved, std::filesystem::directory_options::skip_permission_denied, ec);
@@ -394,6 +445,13 @@ static Tool make_grep_files_tool(const std::string& safe_dir) {
                 }
                 if (it->path().filename() == ".git" && it->is_directory()) {
                     it.disable_recursion_pending();
+                    continue;
+                }
+                // Skip paths matched by .gitignore rules
+                if (repo && is_gitignored(repo, it->path(), repo_workdir)) {
+                    if (it->is_directory()) {
+                        it.disable_recursion_pending();
+                    }
                     continue;
                 }
                 if (it->is_regular_file()) {

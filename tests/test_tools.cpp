@@ -1503,6 +1503,60 @@ TEST_CASE("grep_files path traversal rejected", "[tools][grep_files]") {
     fs::remove_all(sd);
 }
 
+TEST_CASE("grep_files ignores gitignored files", "[tools][grep_files]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    // Create a git repo and an initial commit (required for gitignore to work)
+    auto r = reg.execute("run_bash", R"({"command": "git init"})");
+    REQUIRE(r);
+    reg.execute("run_bash",
+        R"({"command": "git config user.email test@test.com"})");
+    reg.execute("run_bash",
+        R"({"command": "git config user.name Test"})");
+    std::ofstream(sd + "/README.md") << "# Test\n";
+    reg.execute("run_bash", R"({"command": "git add -A"})");
+    reg.execute("run_bash", R"({"command": "git commit -m 'initial commit'"})");
+
+    // Create .gitignore that ignores *.log and build/
+    std::ofstream(sd + "/.gitignore") << "*.log\nbuild/\n";
+
+    // Create some files
+    std::ofstream(sd + "/hello.txt") << "hello world\n";
+    std::ofstream(sd + "/trace.log") << "hello from log\n";
+    fs::create_directory(sd + "/build");
+    std::ofstream(sd + "/build/out.o") << "hello binary\n";
+
+    // Search for "hello" — should only match hello.txt
+    auto result = reg.execute("grep_files",
+                              R"({"pattern": "hello", "path": "."})");
+    REQUIRE(result);
+    CHECK(result->find("hello.txt") != std::string::npos);
+    CHECK(result->find("trace.log") == std::string::npos);   // ignored by *.log
+    CHECK(result->find("out.o") == std::string::npos);       // ignored via build/
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("grep_files without gitignore still works", "[tools][grep_files]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    std::ofstream(sd + "/hello.txt") << "hello world\n";
+    std::ofstream(sd + "/trace.log") << "hello from log\n";
+
+    // No .gitignore, no git repo — both files should be searched
+    auto result = reg.execute("grep_files",
+                              R"({"pattern": "hello", "path": "."})");
+    REQUIRE(result);
+    CHECK(result->find("hello.txt") != std::string::npos);
+    CHECK(result->find("trace.log") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
 // ===================================================================
 // run_bash
 // ===================================================================
