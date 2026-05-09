@@ -3,7 +3,7 @@
 #include "chat.h"
 #include "config.h"
 
-#include <SDL.h>
+#include <SDL3/SDL.h>
 
 #include <atomic>
 #include <future>

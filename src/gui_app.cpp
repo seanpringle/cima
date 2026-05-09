@@ -2,8 +2,8 @@
 #include "gui_chat.h"
 
 #include "imgui.h"
-#include "backends/imgui_impl_sdl2.h"
-#include "backends/imgui_impl_sdlrenderer2.h"
+#include "backends/imgui_impl_sdl3.h"
+#include "backends/imgui_impl_sdlrenderer3.h"
 
 #include <chrono>
 #include <csignal>
@@ -13,20 +13,21 @@
 extern std::atomic<bool> g_interrupted;
 
 int gui_main(Config cfg) {
-  if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER) != 0) {
+  if (!SDL_Init(SDL_INIT_VIDEO)) {
     SDL_Log("SDL_Init error: %s", SDL_GetError());
     return 1;
   }
 
-  SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
-  SDL_Window* window = SDL_CreateWindow("llm-chat", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, 1280, 1280, window_flags);
+  SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_RESIZABLE);
+  SDL_Window* window = SDL_CreateWindow("llm-chat", 1280, 1280, window_flags);
   if (!window) {
     SDL_Log("SDL_CreateWindow error: %s", SDL_GetError());
     SDL_Quit();
     return 1;
   }
+  SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
 
-  SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_ACCELERATED);
+  SDL_Renderer* renderer = SDL_CreateRenderer(window, NULL);
   if (!renderer) {
     SDL_Log("SDL_CreateRenderer error: %s", SDL_GetError());
     SDL_DestroyWindow(window);
@@ -44,15 +45,10 @@ int gui_main(Config cfg) {
 
   ImFont* mono_font = nullptr;
   {
-    float dpi = 96.0f;
-    int display_idx = SDL_GetWindowDisplayIndex(window);
-    if (display_idx >= 0) {
-      float ddpi, hdpi, vdpi;
-      if (SDL_GetDisplayDPI(display_idx, &ddpi, &hdpi, &vdpi) == 0 && hdpi > 0)
-        dpi = hdpi;
-    }
+    float display_scale = SDL_GetWindowDisplayScale(window);
+    if (display_scale <= 0.0f) display_scale = 1.0f;
 
-    float scale = 1.25f * (dpi / 96.0f);
+    float scale = display_scale;
     ImGui::GetStyle().ScaleAllSizes(scale);
 
     static const ImWchar latin[] = {
@@ -89,8 +85,8 @@ int gui_main(Config cfg) {
     ImGui::GetIO().Fonts->AddFontFromFileTTF("font/NotoEmoji-Regular.ttf", fs * 0.9f, &merge, unicode);
   }
 
-  ImGui_ImplSDL2_InitForSDLRenderer(window, renderer);
-  ImGui_ImplSDLRenderer2_Init(renderer);
+  ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
+  ImGui_ImplSDLRenderer3_Init(renderer);
 
   ChatSession session(std::move(cfg));
   ChatUIState ui_state;
@@ -107,10 +103,10 @@ int gui_main(Config cfg) {
   while (!done) {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
-      ImGui_ImplSDL2_ProcessEvent(&event);
-      if (event.type == SDL_QUIT)
+      ImGui_ImplSDL3_ProcessEvent(&event);
+      if (event.type == SDL_EVENT_QUIT)
         done = true;
-      if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE && event.window.windowID == SDL_GetWindowID(window))
+      if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
         done = true;
     }
 
@@ -118,8 +114,8 @@ int gui_main(Config cfg) {
       g_interrupted = true;
     }
 
-    ImGui_ImplSDLRenderer2_NewFrame();
-    ImGui_ImplSDL2_NewFrame();
+    ImGui_ImplSDLRenderer3_NewFrame();
+    ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
 
     render_chat_ui(ui_state, chat_state, session, done);
@@ -127,7 +123,7 @@ int gui_main(Config cfg) {
     ImGui::Render();
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
-    ImGui_ImplSDLRenderer2_RenderDrawData(ImGui::GetDrawData(), renderer);
+    ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), renderer);
     SDL_RenderPresent(renderer);
   }
 
@@ -140,8 +136,8 @@ int gui_main(Config cfg) {
     }
   }
 
-  ImGui_ImplSDLRenderer2_Shutdown();
-  ImGui_ImplSDL2_Shutdown();
+  ImGui_ImplSDLRenderer3_Shutdown();
+  ImGui_ImplSDL3_Shutdown();
   ImGui::DestroyContext();
 
   SDL_DestroyRenderer(renderer);

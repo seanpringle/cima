@@ -20,7 +20,7 @@ FetchContent_Declare(imgui
 FetchContent_MakeAvailable(imgui)
 
 find_package(CURL REQUIRED)
-find_package(SDL2 REQUIRED)
+find_package(SDL3 REQUIRED)
 find_package(Catch2 REQUIRED)
 
 add_library(llmchat
@@ -45,13 +45,13 @@ add_executable(llm-chat
     ${imgui_SOURCE_DIR}/imgui_draw.cpp
     ${imgui_SOURCE_DIR}/imgui_tables.cpp
     ${imgui_SOURCE_DIR}/imgui_widgets.cpp
-    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl2.cpp
-    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlrenderer2.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlrenderer3.cpp
 )
 target_include_directories(llm-chat PRIVATE ${imgui_SOURCE_DIR})
 target_include_directories(llm-chat PRIVATE ${imgui_SOURCE_DIR}/backends)
 target_compile_definitions(llm-chat PRIVATE IMGUI_USE_WCHAR32=1)
-target_link_libraries(llm-chat PRIVATE llmchat SDL2::SDL2)
+target_link_libraries(llm-chat PRIVATE llmchat SDL3::SDL3)
 
 add_executable(test_config tests/test_config.cpp)
 target_link_libraries(test_config PRIVATE llmchat Catch2::Catch2WithMain)
