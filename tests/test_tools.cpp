@@ -546,3 +546,220 @@ TEST_CASE("run_bash path traversal rejected", "[tools][run_bash]") {
 
     fs::remove_all(sd);
 }
+
+// ===================================================================
+// Mock HTTP server for web_search tests
+// ===================================================================
+
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <thread>
+#include <atomic>
+#include <chrono>
+
+struct MockHttpServer {
+    std::thread thread;
+    std::atomic<int> port{0};
+    int server_fd = -1;
+    std::string response_body;
+    int response_status = 200;
+    bool delay_response = false;
+
+    MockHttpServer(const std::string& body, int status = 200, bool delay = false)
+        : response_body(body), response_status(status), delay_response(delay) {
+        server_fd = socket(AF_INET, SOCK_STREAM, 0);
+        REQUIRE(server_fd >= 0);
+
+        int opt = 1;
+        setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
+        sockaddr_in addr{};
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        addr.sin_port = 0;
+        int rc = bind(server_fd, (sockaddr*)&addr, sizeof(addr));
+        REQUIRE(rc == 0);
+
+        rc = listen(server_fd, 1);
+        REQUIRE(rc == 0);
+
+        sockaddr_in bound{};
+        socklen_t len = sizeof(bound);
+        rc = getsockname(server_fd, (sockaddr*)&bound, &len);
+        REQUIRE(rc == 0);
+        port = ntohs(bound.sin_port);
+
+        thread = std::thread([this]() {
+            sockaddr_in client_addr{};
+            socklen_t client_len = sizeof(client_addr);
+            int client = accept(server_fd, (sockaddr*)&client_addr, &client_len);
+            if (client < 0)
+                return;
+
+            if (delay_response)
+                std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+
+            std::string resp = "HTTP/1.1 " + std::to_string(response_status) + " OK\r\n"
+                               "Content-Type: application/json\r\n"
+                               "Content-Length: " + std::to_string(response_body.size()) + "\r\n"
+                               "Connection: close\r\n\r\n" + response_body;
+            send(client, resp.data(), resp.size(), 0);
+            close(client);
+        });
+    }
+
+    ~MockHttpServer() {
+        if (server_fd >= 0) {
+            close(server_fd);
+            server_fd = -1;
+        }
+        if (thread.joinable())
+            thread.join();
+    }
+
+    std::string url() const {
+        return "http://127.0.0.1:" + std::to_string(port.load()) + "/search?q={query}";
+    }
+};
+
+// ===================================================================
+// web_search
+// ===================================================================
+
+TEST_CASE("web_search requires api key", "[tools][web_search]") {
+    ToolRegistry reg;
+    // No search_api_key — web_search should not be registered
+    reg.add_defaults("/tmp");
+    auto result = reg.execute("web_search", R"({"query": "hello"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("unknown tool") != std::string::npos);
+}
+
+TEST_CASE("web_search with api key but no engine/endpoint", "[tools][web_search]") {
+    ToolRegistry reg;
+    reg.add_defaults("/tmp", "my-api-key", "", "");
+    auto result = reg.execute("web_search", R"({"query": "hello"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("SEARCH_ENGINE_ID") != std::string::npos);
+}
+
+TEST_CASE("web_search empty query rejected", "[tools][web_search]") {
+    ToolRegistry reg;
+    reg.add_defaults("/tmp", "key", "cx", "");
+    auto result = reg.execute("web_search", R"({"query": ""})");
+    CHECK_FALSE(result);
+    CHECK(result.error() == "query is required");
+}
+
+TEST_CASE("web_search custom endpoint basic", "[tools][web_search]") {
+    // Mock server returns Google-style JSON
+    std::string mock_json = R"({
+        "items": [
+            {"title": "Result One", "snippet": "First snippet", "link": "https://example.com/1"},
+            {"title": "Result Two", "snippet": "Second snippet", "link": "https://example.com/2"}
+        ]
+    })";
+    MockHttpServer server(mock_json, 200);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50)); // let server start
+
+    ToolRegistry reg;
+    reg.add_defaults("/tmp", "test-key", "", server.url());
+    auto result = reg.execute("web_search", R"({"query": "test query"})");
+    REQUIRE(result);
+
+    // Check formatting
+    CHECK(result->find("1. Result One") != std::string::npos);
+    CHECK(result->find("First snippet") != std::string::npos);
+    CHECK(result->find("https://example.com/1") != std::string::npos);
+    CHECK(result->find("2. Result Two") != std::string::npos);
+    CHECK(result->find("Second snippet") != std::string::npos);
+    CHECK(result->find("https://example.com/2") != std::string::npos);
+}
+
+TEST_CASE("web_search custom endpoint no results", "[tools][web_search]") {
+    std::string mock_json = R"({"items": []})";
+    MockHttpServer server(mock_json, 200);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    ToolRegistry reg;
+    reg.add_defaults("/tmp", "test-key", "", server.url());
+    auto result = reg.execute("web_search", R"({"query": "nonexistent"})");
+    REQUIRE(result);
+    CHECK(*result == "(no results found)");
+}
+
+TEST_CASE("web_search custom endpoint http error", "[tools][web_search]") {
+    std::string mock_json = R"({"error": "rate limited"})";
+    MockHttpServer server(mock_json, 429);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    ToolRegistry reg;
+    reg.add_defaults("/tmp", "test-key", "", server.url());
+    auto result = reg.execute("web_search", R"({"query": "test"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("HTTP 429") != std::string::npos);
+}
+
+TEST_CASE("web_search custom endpoint connection refused", "[tools][web_search]") {
+    // Start server, then let it close so port is free — we connect to a port
+    // that nothing is listening on
+    {
+        MockHttpServer server("{}", 200);
+        int used_port = server.port.load();
+    } // server destroyed, port freed
+
+    // Now connect to that same port — will likely be refused
+    // (race condition: something else could grab the port)
+    // Instead, test with an obviously unreachable port
+    ToolRegistry reg;
+    reg.add_defaults("/tmp", "test-key", "", "http://127.0.0.1:1/search?q={query}");
+    auto result = reg.execute("web_search", R"({"query": "test"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("curl error") != std::string::npos);
+}
+
+TEST_CASE("web_search timeout", "[tools][web_search]") {
+    std::string mock_json = R"({"items": []})";
+    MockHttpServer server(mock_json, 200, true); // delay 1.5s, tool timeout is 15s
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    ToolRegistry reg;
+    reg.add_defaults("/tmp", "test-key", "", server.url());
+    auto start = std::chrono::steady_clock::now();
+    auto result = reg.execute("web_search", R"({"query": "test"})");
+    auto elapsed = std::chrono::steady_clock::now() - start;
+
+    // 1.5s delay is within the 15s timeout, so it should succeed
+    REQUIRE(result);
+    CHECK(elapsed > std::chrono::seconds(1));
+}
+
+TEST_CASE("web_search available in plan mode", "[tools][web_search]") {
+    std::string mock_json = R"({"items": [{"title": "A", "snippet": "B", "link": "C"}]})";
+    MockHttpServer server(mock_json, 200);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    ToolRegistry reg;
+    reg.add_defaults("/tmp", "test-key", "", server.url());
+    reg.set_mode(Mode::Plan);
+
+    auto result = reg.execute("web_search", R"({"query": "test"})");
+    // Should succeed in Plan mode (read-only tool)
+    REQUIRE(result);
+}
+
+TEST_CASE("web_search respects max query length", "[tools][web_search]") {
+    std::string mock_json = R"({"items": [{"title": "A", "snippet": "B", "link": "C"}]})";
+    MockHttpServer server(mock_json, 200);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    ToolRegistry reg;
+    reg.add_defaults("/tmp", "test-key", "", server.url());
+    // 250 character query should be truncated to 200
+    std::string long_query(250, 'x');
+    auto result = reg.execute("web_search",
+        R"({"query": ")" + long_query + R"("})");
+    REQUIRE(result);
+    // Should have succeeded (the mock doesn't check query length)
+    CHECK(result->find("1. A") != std::string::npos);
+}

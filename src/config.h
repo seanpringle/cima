@@ -15,6 +15,9 @@ struct Config {
     std::string model = "deepseek-v4-flash";
     std::string system_prompt = "You are a helpful assistant.";
     std::string safe_dir;
+    std::string search_api_key;
+    std::string search_engine_id;
+    std::string search_endpoint;
     int max_tool_iterations = 25;
 
     static Config from_env();

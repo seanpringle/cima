@@ -3,6 +3,8 @@
 #include <atomic>
 #include <csignal>
 #include <cstdlib>
+#include <cstring>
+#include <curl/curl.h>
 #include <fcntl.h>
 #include <fstream>
 #include <future>
@@ -513,18 +515,174 @@ static Tool make_run_bash_tool(const std::string& safe_dir) {
 }
 
 // ===================================================================
+// Web search tool (libcurl)
+// ===================================================================
+
+static size_t web_search_write_cb(char* ptr, size_t size, size_t nmemb, void* userdata) {
+    auto* s = static_cast<std::string*>(userdata);
+    s->append(ptr, size * nmemb);
+    return size * nmemb;
+}
+
+static int web_search_progress_cb(void* /*clientp*/,
+    curl_off_t /*dltotal*/,
+    curl_off_t /*dlnow*/,
+    curl_off_t /*ultotal*/,
+    curl_off_t /*ulnow*/) {
+    return g_interrupted ? 1 : 0;
+}
+
+static Tool make_web_search_tool(const std::string& api_key,
+    const std::string& engine_id,
+    const std::string& endpoint_override) {
+    Tool t;
+    t.name = "web_search";
+    t.description = "Search the web. Returns up to 10 results with titles, snippets, and URLs. "
+                    "Configure via SEARCH_API_KEY and either SEARCH_ENGINE_ID (Google CSE) or "
+                    "SEARCH_ENDPOINT (custom URL with {query} placeholder).";
+    t.timeout_sec = 15;
+    t.parameters = {{"type", "object"},
+        {"properties",
+            {{"query",
+                {{"type", "string"}, {"description", "Search query (max 200 characters)"}}}}},
+        {"required", {"query"}}};
+    t.execute = [api_key, engine_id, endpoint_override](
+                    const json& args) -> Result<std::string> {
+        auto query = args.value("query", std::string());
+        if (query.empty())
+            return std::unexpected("query is required");
+
+        if (query.size() > 200)
+            query = query.substr(0, 200);
+
+        if (api_key.empty())
+            return std::unexpected(
+                "web_search requires SEARCH_API_KEY to be configured");
+
+        // Build the request URL
+        std::string url;
+        if (!endpoint_override.empty()) {
+            // Custom endpoint — substitute {query}
+            url = endpoint_override;
+            auto pos = url.find("{query}");
+            if (pos != std::string::npos) {
+                char* encoded = curl_easy_escape(nullptr, query.c_str(), (int)query.size());
+                if (!encoded)
+                    return std::unexpected("curl_easy_escape failed");
+                url.replace(pos, 7, encoded);
+                curl_free(encoded);
+            }
+        } else if (!engine_id.empty()) {
+            // Google Custom Search Engine
+            char* enc_key = curl_easy_escape(nullptr, api_key.c_str(), 0);
+            char* enc_cx = curl_easy_escape(nullptr, engine_id.c_str(), 0);
+            char* enc_q = curl_easy_escape(nullptr, query.c_str(), 0);
+            if (!enc_key || !enc_cx || !enc_q) {
+                curl_free(enc_key);
+                curl_free(enc_cx);
+                curl_free(enc_q);
+                return std::unexpected("curl_easy_escape failed");
+            }
+            url = "https://www.googleapis.com/customsearch/v1?key=" +
+                std::string(enc_key) + "&cx=" + std::string(enc_cx) + "&q=" + std::string(enc_q);
+            curl_free(enc_key);
+            curl_free(enc_cx);
+            curl_free(enc_q);
+        } else {
+            return std::unexpected(
+                "web_search requires either SEARCH_ENGINE_ID or SEARCH_ENDPOINT to be configured");
+        }
+
+        // libcurl GET
+        CURL* curl = curl_easy_init();
+        if (!curl)
+            return std::unexpected("curl_easy_init failed");
+
+        std::string body;
+        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, web_search_write_cb);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
+        curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+        curl_easy_setopt(curl, CURLOPT_USERAGENT, "llm-chat/0.1");
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+        curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+        curl_easy_setopt(curl, CURLOPT_CAINFO, nullptr);
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, web_search_progress_cb);
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+
+        CURLcode res = curl_easy_perform(curl);
+        long http_code = 0;
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+        curl_easy_cleanup(curl);
+
+        if (res != CURLE_OK) {
+            return std::unexpected(std::string("web_search curl error: ") +
+                curl_easy_strerror(res));
+        }
+
+        if (http_code != 200) {
+            std::string msg = "web_search HTTP " + std::to_string(http_code);
+            if (!body.empty())
+                msg += ": " + body.substr(0, 500);
+            return std::unexpected(msg);
+        }
+
+        // Parse JSON response
+        json j;
+        try {
+            j = json::parse(body);
+        } catch (const json::parse_error& e) {
+            return std::unexpected("web_search JSON parse error: " + std::string(e.what()));
+        }
+
+        // Format results (Google CSE structure; custom endpoints should match)
+        if (!j.contains("items") || !j["items"].is_array() || j["items"].empty()) {
+            return std::string("(no results found)");
+        }
+
+        std::string result;
+        int rank = 1;
+        for (const auto& item : j["items"]) {
+            if (rank > 10)
+                break;
+            std::string title = item.value("title", "(no title)");
+            std::string snippet = item.value("snippet", "");
+            std::string link = item.value("link", "");
+            result += std::to_string(rank) + ". " + title + "\n";
+            if (!snippet.empty())
+                result += "   " + snippet + "\n";
+            if (!link.empty())
+                result += "   " + link + "\n";
+            result += "\n";
+            rank++;
+        }
+
+        return result;
+    };
+    return t;
+}
+
+// ===================================================================
 // ToolRegistry
 // ===================================================================
 
 void ToolRegistry::add(Tool tool) { tools_.push_back(std::move(tool)); }
 
-void ToolRegistry::add_defaults(const std::string& safe_dir) {
+void ToolRegistry::add_defaults(const std::string& safe_dir,
+    const std::string& search_api_key,
+    const std::string& search_engine_id,
+    const std::string& search_endpoint) {
     add(make_list_files_tool(safe_dir));
     add(make_read_file_tool(safe_dir));
     add(make_grep_files_tool(safe_dir));
     add(make_write_file_tool(safe_dir));
     add(make_edit_file_tool(safe_dir));
     add(make_run_bash_tool(safe_dir));
+    if (!search_api_key.empty()) {
+        add(make_web_search_tool(search_api_key, search_engine_id, search_endpoint));
+    }
 }
 
 json ToolRegistry::to_openai_tools() const {
@@ -548,7 +706,7 @@ Result<std::string> ToolRegistry::execute(const std::string& name, const std::st
         (name == "write_file" || name == "edit_file" || name == "run_bash")) {
         return std::unexpected("Tool '" + name +
             "' is not available in Plan mode (read-only). "
-            "Available tools: list_files, read_file, grep_files.");
+            "Available tools: list_files, read_file, grep_files, web_search.");
     }
 
     json args;

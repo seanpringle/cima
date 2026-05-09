@@ -39,7 +39,10 @@ class ToolRegistry {
     ToolRegistry() = default;
 
     void add(Tool tool);
-    void add_defaults(const std::string& safe_dir);
+    void add_defaults(const std::string& safe_dir,
+        const std::string& search_api_key = {},
+        const std::string& search_engine_id = {},
+        const std::string& search_endpoint = {});
     void set_mode(Mode m) { mode_ = m; }
     Mode mode() const { return mode_; }
 

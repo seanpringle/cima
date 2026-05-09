@@ -33,6 +33,10 @@ Config Config::from_env() {
         }
     }
 
+    cfg.search_api_key = get_env("SEARCH_API_KEY", "");
+    cfg.search_engine_id = get_env("SEARCH_ENGINE_ID", "");
+    cfg.search_endpoint = get_env("SEARCH_ENDPOINT", "");
+
     {
         const char* safe = std::getenv("SAFE_DIR");
         if (safe && safe[0]) {
