@@ -111,7 +111,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
 
     json tools = reg.to_openai_tools();
     REQUIRE(tools.is_array());
-    REQUIRE(tools.size() == 8);
+    REQUIRE(tools.size() == 9);
 
     // Check structure of first tool
     CHECK(tools[0]["type"] == "function");
@@ -128,7 +128,8 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
     }
     CHECK(names == std::set<std::string>{
                        "list_files", "read_file", "grep_files", "write_file",
-                       "edit_file", "run_bash", "web_search", "web_fetch"});
+                       "edit_file", "run_bash", "web_search", "web_fetch",
+                       "project_tree"});
 }
 
 // ===================================================================
@@ -164,6 +165,166 @@ TEST_CASE("list_files path traversal rejected", "[tools][list_files]") {
     auto result = reg.execute("list_files", R"({"path": "../../etc"})");
     CHECK_FALSE(result);
     CHECK(result.error().find("path must be under") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+// ===================================================================
+// project_tree
+// ===================================================================
+
+TEST_CASE("project_tree basic", "[tools][project_tree]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    // Create a small directory tree
+    fs::create_directories(sd + "/src/util");
+    fs::create_directories(sd + "/tests");
+    std::ofstream(sd + "/src/main.cpp") << "int main() {}\n";
+    std::ofstream(sd + "/src/util/helper.h") << "// helper\n";
+    std::ofstream(sd + "/README.md") << "# Project\n";
+    std::ofstream(sd + "/tests/test_all.cpp") << "// tests\n";
+
+    auto result = reg.execute("project_tree", R"({"path": "."})");
+    REQUIRE(result);
+
+    // Output should contain all files/dirs in tree format
+    CHECK(result->find("src/") != std::string::npos);
+    CHECK(result->find("main.cpp") != std::string::npos);
+    CHECK(result->find("util/") != std::string::npos);
+    CHECK(result->find("helper.h") != std::string::npos);
+    CHECK(result->find("tests/") != std::string::npos);
+    CHECK(result->find("test_all.cpp") != std::string::npos);
+    CHECK(result->find("README.md") != std::string::npos);
+
+    // Should contain tree-drawing characters
+    CHECK(result->find("├──") != std::string::npos);
+    CHECK(result->find("└──") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("project_tree max_depth", "[tools][project_tree]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    // Create a deep hierarchy: a/b/c/d/e/file.txt (5 levels of dirs + 1 file)
+    fs::create_directories(sd + "/a/b/c/d/e");
+    std::ofstream(sd + "/a/b/c/d/e/file.txt") << "deep\n";
+
+    // Depth 2 should show a/, b/, but not c/ or deeper
+    auto result = reg.execute("project_tree", R"({"path": ".", "max_depth": 2})");
+    REQUIRE(result);
+    CHECK(result->find("a/") != std::string::npos);
+    CHECK(result->find("b/") != std::string::npos);
+    CHECK(result->find("c/") == std::string::npos);
+    CHECK(result->find("file.txt") == std::string::npos);
+
+    // Depth 6 should show everything (file.txt is at depth 6)
+    auto result6 = reg.execute("project_tree", R"({"path": ".", "max_depth": 6})");
+    REQUIRE(result6);
+    CHECK(result6->find("file.txt") != std::string::npos);
+
+    // Depth 1 should only show a/ (no deeper)
+    auto result1 = reg.execute("project_tree", R"({"path": ".", "max_depth": 1})");
+    REQUIRE(result1);
+    CHECK(result1->find("a/") != std::string::npos);
+    CHECK(result1->find("b/") == std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("project_tree max_lines", "[tools][project_tree]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    // Create many files to exceed max_lines
+    // Use a flat directory with max_depth=2 so we recurse one level
+    fs::create_directories(sd + "/dir");
+    for (int i = 0; i < 100; i++) {
+        std::ofstream(sd + "/dir/file_" + std::to_string(i) + ".txt") << "x\n";
+    }
+
+    // max_depth=2 so we can see into dir/; max_lines=50 will truncate
+    auto result = reg.execute("project_tree",
+                              R"({"path": ".", "max_lines": 50, "max_depth": 2})");
+    REQUIRE(result);
+    CHECK(result->find("truncated") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("project_tree single file path", "[tools][project_tree]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    std::ofstream(sd + "/hello.txt") << "hello\n";
+
+    auto result = reg.execute("project_tree", R"({"path": "hello.txt"})");
+    REQUIRE(result);
+    CHECK(result->find("hello.txt") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("project_tree empty directory", "[tools][project_tree]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    auto result = reg.execute("project_tree", R"({"path": "."})");
+    REQUIRE(result);
+    CHECK(result->find("empty directory") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("project_tree path traversal rejected", "[tools][project_tree]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    auto result = reg.execute("project_tree", R"({"path": "../../etc"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("path must be under") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("project_tree available in plan mode", "[tools][project_tree]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+    reg.set_mode(Mode::Plan);
+
+    fs::create_directories(sd + "/sub");
+    std::ofstream(sd + "/sub/plan_file.txt") << "plan\n";
+
+    auto result = reg.execute("project_tree", R"({"path": "."})");
+    REQUIRE(result);
+    CHECK(result->find("sub/") != std::string::npos);
+    CHECK(result->find("plan_file.txt") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("project_tree default parameters", "[tools][project_tree]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    fs::create_directories(sd + "/sub");
+    std::ofstream(sd + "/sub/note.txt") << "note\n";
+
+    // No arguments — should default to path=".", max_depth=5, max_lines=500
+    auto result = reg.execute("project_tree", R"({})");
+    REQUIRE(result);
+    CHECK(result->find("sub/") != std::string::npos);
+    CHECK(result->find("note.txt") != std::string::npos);
 
     fs::remove_all(sd);
 }

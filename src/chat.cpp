@@ -41,7 +41,7 @@ void ChatSession::clear() { conversation_.clear(); }
 void ChatSession::inject_mode_instruction() {
     std::string mode_instruction = (mode_ == Mode::Plan)
         ? "[Mode] You are now in Plan mode (read-only). "
-          "Available tools: list_files, read_file, grep_files, web_search. "
+          "Available tools: list_files, read_file, grep_files, project_tree, web_search, web_fetch. "
           "Do not use write_file, edit_file, or run_bash \xe2\x80\x94 they will be rejected."
         : "[Mode] You are now in Build mode. All tools are available.";
     // Embed the mode instruction directly into the system prompt, so that all

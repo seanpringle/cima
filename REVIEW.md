@@ -25,7 +25,7 @@
 
 **Secondary finding:** The app lacks several critical tools that would let the model accomplish tasks with **fewer turns and smaller payloads** — in particular `file_diff`/`apply_patch`, `project_tree`, and `git` integration. Missing these forces the model to make many more tool calls than necessary, each adding large results back into the conversation.
 
-**Status:** 🟡 **Not yet addressed.** These remain as identified gaps.
+**Status:** 🟡 **Partially addressed.** `project_tree` implemented. `file_diff`/`apply_patch` and `git` integration remain as identified gaps.
 
 **Tertiary finding:** The request-handling layer has minor inefficiencies (uncached tool schemas, no gzip, fragile retry logic) but these are not the primary driver of context-window bloat.
 
@@ -349,7 +349,7 @@ Replacing 5 `edit_file` calls with 1 `apply_patch` saves ~5 tool-result messages
 
 **Status:** ❌ **Not addressed.**
 
-#### ❌ `project_tree`
+#### ✅ `project_tree`
 
 **Why it matters:**  
 `list_files` only lists a single directory. To understand the project structure, the model has to call `list_files` recursively, potentially dozens of times. A single `project_tree` call could return the entire recursive file tree.
@@ -357,7 +357,14 @@ Replacing 5 `edit_file` calls with 1 `apply_patch` saves ~5 tool-result messages
 **Impact on context window:**  
 Worst case: the model explores a deep directory tree with 20+ `list_files` calls. Each adds ~50–200 tokens of output. With `project_tree`, this becomes 1 call.
 
-**Status:** ❌ **Not addressed.**
+**Implementation details:**  
+- Recursive tree walk with UTF-8 box-drawing (`├──`, `└──`, `│`)
+- Parameters: `path` (optional, default `.`), `max_depth` (1–10, default 5), `max_lines` (1–500, default 500)
+- Directories sorted first, then files; `.git` excluded
+- Permission errors handled via `skip_permission_denied`
+- Available in both Plan and Build modes (read-only)
+
+**Status:** ✅ **Implemented.**
 
 #### ❌ `git` Integration
 
@@ -451,7 +458,7 @@ Running tests with structured output (pass/fail counts, test names). Currently r
 | # | Change | File(s) | Effort | Impact | Status |
 |---|--------|---------|--------|--------|--------|
 | 4 | **Add `apply_patch` tool** — Accept unified diff input. | `tools.cpp` | 1 day | **High** | ❌ |
-| 5 | **Add `project_tree` tool** — Recursive directory listing. | `tools.cpp` | 0.5 day | **High** | ❌ |
+| 5 | **Add `project_tree` tool** — Recursive directory listing. | `tools.cpp` | 0.5 day | **High** | ✅ **Done.** UTF-8 tree, depth/line limits, `skip_permission_denied`. |
 | 6 | **Add git tools** — `git_status`, `git_diff`, `git_log`, `git_commit`. | `tools.cpp` (new) | 2 days | **High** | ❌ |
 | 7 | **Add Accept-Encoding: gzip** — HTTP compression. | `client.cpp` | 15 min | **Medium** | ✅ **Done.** `b67c7d1` |
 | — | **Discover context limit from API** — Query /v1/models for context window. | `client.h/cpp` | 0.5 day | **Medium** | ✅ **Done.** `fetch_model_context_limit()` checks multiple field names. |
@@ -498,7 +505,7 @@ Running tests with structured output (pass/fail counts, test names). Currently r
 | Tool | Parameters | Max Output | Timeout | Plan Mode | Priority |
 |------|-----------|------------|---------|-----------|----------|
 | `apply_patch` | `path`, `patch` (unified diff) | brief msg | 10s | ✗ blocked | P1 |
-| `project_tree` | `max_depth` (int, default 5) | 500 lines | 5s | ✓ allowed | P1 |
+| `project_tree` | `path` (string), `max_depth` (int, default 5), `max_lines` (int, default 500) | 500 lines | 5s | ✓ allowed | P1 ✅ |
 | `git_status` | none | brief | 10s | ✓ allowed | P1 |
 | `git_diff` | `staged` (bool) | 500 lines | 10s | ✓ allowed | P1 |
 | `git_log` | `max_count` (int) | 50 commits | 10s | ✓ allowed | P1 |
@@ -537,6 +544,7 @@ Running tests with structured output (pass/fail counts, test names). Currently r
 | 2025-01-XX | `208205e` | Stop round-tripping `reasoning_content` to API |
 | 2025-01-XX | `8deebc7` | Selective retention compaction (3-phase: drop → summarize → slide) |
 | 2025-01-XX | `4df848e` | Discover context window from API via `/v1/models` |
+| 2026-05-10 | `HEAD` | Add `project_tree` tool — recursive UTF-8 tree with depth/line limits, permission-safe iteration, Plan mode support |
 
 ---
 

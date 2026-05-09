@@ -868,6 +868,183 @@ static Tool make_web_fetch_tool() {
 }
 
 // ===================================================================
+// project_tree tool
+// ===================================================================
+
+static Tool make_project_tree_tool(const std::string& safe_dir) {
+    Tool t;
+    t.name = "project_tree";
+    t.description =
+        "Recursively list files/directories in a tree-like format.\n"
+        "Maximum depth of 5 to avoid huge outputs. "
+        "Use this to understand project structure in a single call "
+        "instead of calling list_files repeatedly.";
+    t.timeout_sec = 5;
+    t.parameters = {{"type", "object"},
+        {"properties",
+            {{"path",
+                {{"type", "string"},
+                    {"description",
+                        "Starting directory path (default '.')"}}},
+                {"max_depth",
+                    {{"type", "integer"},
+                        {"description",
+                            "Maximum recursion depth (default 5, max 10)"}}},
+                {"max_lines",
+                    {{"type", "integer"},
+                        {"description",
+                            "Maximum output lines (default 500, max 500)"}}}}}};
+    t.execute = [safe_dir](const json& args) -> Result<std::string> {
+        auto raw = args.value("path", std::string("."));
+        auto resolved = resolve_path(raw, safe_dir);
+        if (!resolved) {
+            return std::unexpected(resolved.error());
+        }
+
+        int max_depth = args.value("max_depth", 5);
+        if (max_depth < 1) max_depth = 1;
+        if (max_depth > 10) max_depth = 10;
+
+        int max_lines = args.value("max_lines", 500);
+        if (max_lines < 1) max_lines = 1;
+        if (max_lines > 500) max_lines = 500;
+
+        std::error_code ec;
+        auto status = std::filesystem::status(*resolved, ec);
+        if (ec) {
+            return std::unexpected("Cannot access path: " + *resolved);
+        }
+
+        // If the path is not a directory, just show it as a single line
+        if (!std::filesystem::is_directory(status)) {
+            return *resolved + "\n";
+        }
+
+        std::string result;
+        int line_count = 0;
+        bool truncated = false;
+        bool interrupted = false;
+
+        // Recursive walk — uses std::function for capture in lambda
+        std::function<void(const std::filesystem::path&, int, const std::string&)> walk;
+        walk = [&](const std::filesystem::path& dir, int depth, const std::string& prefix) {
+            if (depth > max_depth) return;
+            if (line_count >= max_lines) {
+                truncated = true;
+                return;
+            }
+            if (g_interrupted) {
+                interrupted = true;
+                return;
+            }
+
+            // Collect directory entries
+            std::vector<std::filesystem::directory_entry> entries;
+            std::error_code ec2;
+            auto it = std::filesystem::directory_iterator(
+                dir, std::filesystem::directory_options::skip_permission_denied, ec2);
+            if (ec2) {
+                // Cannot read this directory — skip silently
+                return;
+            }
+            auto end = std::filesystem::directory_iterator{};
+            for (; it != end; it.increment(ec2)) {
+                if (g_interrupted) {
+                    interrupted = true;
+                    return;
+                }
+                if (ec2) {
+                    // Permission error on one entry — skip it and continue
+                    ec2.clear();
+                    continue;
+                }
+                // Skip .git directory (don't traverse into it)
+                if (it->path().filename() == ".git" && it->is_directory()) {
+                    continue;
+                }
+                entries.push_back(*it);
+            }
+
+            // Sort: directories first, then files; alphabetically within each group
+            std::sort(entries.begin(), entries.end(),
+                [](const auto& a, const auto& b) {
+                    bool a_dir = a.is_directory();
+                    bool b_dir = b.is_directory();
+                    if (a_dir != b_dir) return a_dir > b_dir; // dirs first
+                    // Compare filenames case-insensitively on the stored path
+                    return a.path().filename().string() < b.path().filename().string();
+                });
+
+            for (size_t i = 0; i < entries.size(); i++) {
+                if (g_interrupted) {
+                    interrupted = true;
+                    return;
+                }
+                if (line_count >= max_lines) {
+                    truncated = true;
+                    return;
+                }
+
+                const auto& entry = entries[i];
+                bool is_last = (i == entries.size() - 1);
+
+                // Build tree line
+                result += prefix;
+                result += is_last ? "└── " : "├── ";
+                result += entry.path().filename().string();
+                if (entry.is_directory()) {
+                    result += "/";
+                }
+                result += "\n";
+                line_count++;
+
+                // Recurse into directories
+                if (entry.is_directory() && depth < max_depth) {
+                    std::string child_prefix = prefix + (is_last ? "    " : "│   ");
+                    walk(entry.path(), depth + 1, child_prefix);
+                }
+            }
+        };
+
+        // Root line
+        result += *resolved + "/\n";
+        line_count++;
+
+        // Walk
+        walk(*resolved, 1, "");
+
+        if (interrupted) {
+            result += "(interrupted)\n";
+        } else if (truncated) {
+            result += "...(truncated, >" + std::to_string(max_lines) + " lines)\n";
+        } else if (line_count <= 1) {
+            // Only the root line — directory is empty (or all entries were skipped)
+            // Try to detect if the directory actually has no visible entries
+            // by counting non-.git items.
+            std::error_code ec3;
+            int count = 0;
+            auto it2 = std::filesystem::directory_iterator(
+                *resolved, std::filesystem::directory_options::skip_permission_denied, ec3);
+            for (; it2 != std::filesystem::directory_iterator{}; it2.increment(ec3)) {
+                if (it2->path().filename() != ".git") {
+                    count++;
+                    if (count > 0) break;
+                }
+            }
+            if (count == 0) {
+                result += "(empty directory)\n";
+            } else {
+                // Some entries exist but were skipped (e.g. permissions)
+                // The tree output is already complete with what we could read.
+            }
+        }
+
+        return result;
+    };
+    return t;
+}
+
+// ===================================================================
 // ToolRegistry
 // ===================================================================
 
@@ -887,6 +1064,7 @@ void ToolRegistry::add_defaults(const std::string& safe_dir,
     // credentials are configured. Google CSE or a custom endpoint can be used
     // by setting the appropriate environment variables.
     add(make_web_search_tool(search_api_key, search_engine_id, search_endpoint));
+    add(make_project_tree_tool(safe_dir));
     add(make_web_fetch_tool());
 }
 
@@ -911,7 +1089,7 @@ Result<std::string> ToolRegistry::execute(const std::string& name, const std::st
         (name == "write_file" || name == "edit_file" || name == "run_bash")) {
         return std::unexpected("Tool '" + name +
             "' is not available in Plan mode (read-only). "
-            "Available tools: list_files, read_file, grep_files, web_search, web_fetch.");
+            "Available tools: list_files, read_file, grep_files, project_tree, web_search, web_fetch.");
     }
 
     json args;
