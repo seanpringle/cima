@@ -1,5 +1,7 @@
 #include "types.h"
 
+#include <unordered_set>
+
 // ---------------------------------------------------------------------------
 // UTF-8 sanitization — replace invalid byte sequences with U+FFFD
 // ---------------------------------------------------------------------------
@@ -419,6 +421,38 @@ size_t Conversation::compact(size_t context_limit, size_t compact_threshold_pct)
                 }
             }
             if (!dropped) break;
+        }
+    }
+
+    // ── Phase 4: Remove orphaned tool_calls messages ──
+    // If all tool results for a given assistant tool_calls message were dropped
+    // in previous phases, remove the orphaned assistant message too. The API
+    // requires every assistant tool_calls message to have corresponding tool
+    // responses.
+    if (!messages_.empty()) {
+        std::unordered_set<std::string> active_tool_ids;
+        for (const auto& msg : messages_) {
+            if (msg.role == "tool" && !msg.tool_call_id.empty()) {
+                active_tool_ids.insert(msg.tool_call_id);
+            }
+        }
+        for (auto it = messages_.begin(); it != messages_.end();) {
+            if (it->role == "assistant" && !it->tool_calls.empty()) {
+                bool any_alive = false;
+                for (const auto& tc : it->tool_calls) {
+                    if (active_tool_ids.count(tc.id)) {
+                        any_alive = true;
+                        break;
+                    }
+                }
+                if (!any_alive) {
+                    it = messages_.erase(it);
+                } else {
+                    ++it;
+                }
+            } else {
+                ++it;
+            }
         }
     }
 

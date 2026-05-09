@@ -38,6 +38,12 @@ ChatSession::ChatSession(Config config)
 
 void ChatSession::clear() { conversation_.clear(); }
 
+size_t ChatSession::compact() {
+    if (!conversation_.needs_compaction(context_limit_, compact_threshold_))
+        return 0;
+    return conversation_.compact(context_limit_, compact_threshold_);
+}
+
 void ChatSession::inject_mode_instruction() {
     std::string mode_instruction = (mode_ == Mode::Plan)
         ? "[Mode] You are now in Plan mode (read-only). "

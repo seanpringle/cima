@@ -502,6 +502,18 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
                 session.clear();
                 ui.entries.clear();
             }
+            if (MenuItem("Compact now")) {
+                size_t freed = session.compact();
+                if (freed > 0) {
+                    ui.entries.push_back(
+                        {EntryType::Content, "[\u2302 compacted " + std::to_string(freed) + " tokens]",
+                            false, ui.next_seq++});
+                } else {
+                    ui.entries.push_back(
+                        {EntryType::Content, "[compact: no tokens to free (below threshold)]", false,
+                            ui.next_seq++});
+                }
+            }
             EndMenu();
         }
         if (BeginMenu("Mode")) {
@@ -701,7 +713,8 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
             cancel_chat(chat);
         }
     } else {
-        if (ui.input_buf[0] == '\0')
+        bool disable_send = (ui.input_buf[0] == '\0');
+        if (disable_send)
             BeginDisabled();
         if (Button("Send")) {
             string input(ui.input_buf);
@@ -711,7 +724,7 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
                 start_chat(chat, session, std::move(input));
             }
         }
-        if (ui.input_buf[0] == '\0')
+        if (disable_send)
             EndDisabled();
     }
 
