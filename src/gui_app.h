@@ -11,7 +11,7 @@
 #include <string>
 #include <vector>
 
-enum class EntryType { UserText, Reasoning, Content, ToolCall, ModeSwitch };
+enum class EntryType { UserText, Reasoning, Content, ToolCall };
 
 struct DisplayEntry {
     EntryType type;

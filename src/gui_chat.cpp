@@ -464,13 +464,6 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
                 Mode new_mode = (ui.mode == Mode::Plan) ? Mode::Build : Mode::Plan;
                 ui.mode = new_mode;
                 session.set_mode(new_mode);
-                auto msg =
-                    "Switched to " + string(new_mode == Mode::Plan ? "Plan" : "Build") + " mode";
-                if (!ui.entries.empty() && ui.entries.back().type == EntryType::ModeSwitch) {
-                    ui.entries.back().text = msg;
-                } else {
-                    push_entry(ui, EntryType::ModeSwitch, msg, false);
-                }
             }
         }
     }
@@ -503,26 +496,10 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
             if (MenuItem("Switch to Build (full access)", "Tab", false, ui.mode != Mode::Build)) {
                 ui.mode = Mode::Build;
                 session.set_mode(Mode::Build);
-                {
-                    string msg = "Switched to Build mode";
-                    if (!ui.entries.empty() && ui.entries.back().type == EntryType::ModeSwitch) {
-                        ui.entries.back().text = msg;
-                    } else {
-                        push_entry(ui, EntryType::ModeSwitch, msg, false);
-                    }
-                }
             }
             if (MenuItem("Switch to Plan (read-only)", "Tab", false, ui.mode != Mode::Plan)) {
                 ui.mode = Mode::Plan;
                 session.set_mode(Mode::Plan);
-                {
-                    string msg = "Switched to Plan mode";
-                    if (!ui.entries.empty() && ui.entries.back().type == EntryType::ModeSwitch) {
-                        ui.entries.back().text = msg;
-                    } else {
-                        push_entry(ui, EntryType::ModeSwitch, msg, false);
-                    }
-                }
             }
             EndMenu();
         }
@@ -605,11 +582,6 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
                     PopTextWrapPos();
                     PopStyleColor();
                     break;
-                case EntryType::ModeSwitch:
-                    PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
-                    TextUnformatted(entry.text.c_str());
-                    PopStyleColor();
-                    break;
                 }
 
                 PopID();
@@ -659,9 +631,6 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
                     break;
                 case EntryType::ToolCall:
                     prefix = "[Tool] ";
-                    break;
-                case EntryType::ModeSwitch:
-                    prefix = "[Mode] ";
                     break;
                 }
                 PushTextWrapPos(0);
