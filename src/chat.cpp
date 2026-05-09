@@ -6,23 +6,29 @@ ChatSession::ChatSession(Config config)
     : model_(std::move(config.model)), safe_dir_(std::move(config.safe_dir)), max_iterations_(config.max_tool_iterations), conversation_(std::move(config.system_prompt)),
       client_(std::move(config.api_base), std::move(config.api_key)) {
   tools_.add_defaults(safe_dir_);
+  tools_.set_mode(mode_);
+  inject_mode_instruction();
 }
 
 void ChatSession::clear() {
   conversation_.clear();
 }
 
-void ChatSession::set_mode(Mode m) {
-  if (m == mode_) return;
-  mode_ = m;
-  tools_.set_mode(m);
+void ChatSession::inject_mode_instruction() {
   std::string instruction =
-      (m == Mode::Plan)
+      (mode_ == Mode::Plan)
           ? "[Mode] You are now in Plan mode (read-only). "
             "Available tools: list_files, read_file, grep_files. "
             "Do not use write_file, edit_file, or run_bash \xe2\x80\x94 they will be rejected."
           : "[Mode] You are now in Build mode. All tools are available.";
   conversation_.add_system(std::move(instruction));
+}
+
+void ChatSession::set_mode(Mode m) {
+  if (m == mode_) return;
+  mode_ = m;
+  tools_.set_mode(m);
+  inject_mode_instruction();
 }
 
 Result<ChatResult> ChatSession::run_once(const std::string& user_input) {

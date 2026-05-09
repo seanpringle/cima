@@ -36,8 +36,9 @@ public:
 private:
   std::string model_;
   std::string safe_dir_;
-  int max_iterations_ = 25;
-  Mode mode_ = Mode::Build;
+  int max_iterations_ = 100;
+  Mode mode_ = Mode::Plan;
+  void inject_mode_instruction();
   Conversation conversation_;
   ChatClient client_;
   ToolRegistry tools_;

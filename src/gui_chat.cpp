@@ -5,11 +5,45 @@
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <iomanip>
 #include <iostream>
 #include <string>
-#include <thread>
 
 extern std::atomic<bool> g_interrupted;
+
+std::string dump(const std::string_view s) {
+  std::span<const uint8_t> buf((const uint8_t*)s.data(), s.size());
+  std::stringstream ss;
+  for (size_t row = 0, lim = s.size()/16 + std::min(size_t(1u),s.size()%16); row < lim; row++) {
+    for (size_t col = 0; col < 16; col++) {
+      if (col == 8) ss << ' ';
+      size_t i = row*16+col;
+      if (i < buf.size()) {
+        uint32_t b = buf[i];
+        ss << std::hex << std::fixed << std::setw(2) << b << ' ';
+      } else {
+        ss << "   ";
+      }
+    }
+    ss << ' ';
+    for (size_t col = 0; col < 16; col++) {
+      if (col == 8) ss << ' ';
+      size_t i = row*16+col;
+      if (i < buf.size()) {
+        char b = buf[i];
+        if (b > ' ' && b <= 'z') {
+          ss << b;
+        } else {
+          ss << '.';
+        }
+      } else {
+        ss << ' ';
+      }
+    }
+    ss << '\n';
+  }
+  return ss.str();
+};
 
 void render_content(ImFont* normal_font, ImFont* bold_font, const std::string& text) {
   using namespace ImGui;
@@ -18,7 +52,7 @@ void render_content(ImFont* normal_font, ImFont* bold_font, const std::string& t
   using std::vector;
 
   string copy = text;
-  copy.erase(std::remove_if(copy.begin(), copy.end(), [](auto c) { return c == '\r'; }), copy.end());
+  copy.erase(std::remove_if(copy.begin(), copy.end(), [](auto c) { return c == '\r' || c == '\0'; }), copy.end());
 
   string_view src(copy);
 
@@ -236,7 +270,7 @@ void render_content(ImFont* normal_font, ImFont* bold_font, const std::string& t
 
     if (src.starts_with("|")) {
       vector<string_view> headers;
-      while (src.starts_with("|")) {
+      while (src.starts_with("|") && !src.starts_with("|\n")) {
         src.remove_prefix(1);
         auto header = scanTableCell();
         if (!header.size()) break;
@@ -249,10 +283,10 @@ void render_content(ImFont* normal_font, ImFont* bold_font, const std::string& t
       }
 
       string tableId = "##table-" + std::to_string(++tables);
-      BeginTable(tableId.c_str(), headers.size());
+      BeginTable(tableId.c_str(), headers.size(), ImGuiTableFlags_Borders|ImGuiTableFlags_RowBg);
       for (auto [i,header]: headers | std::ranges::views::enumerate) {
         string title = string(header) + "##col-" + std::to_string(i);
-        TableSetupColumn(title.c_str());
+        TableSetupColumn(title.c_str(), i == headers.size()-1 ? ImGuiTableColumnFlags_WidthStretch: 0);
       }
 
       while (src.starts_with("|")) {
@@ -263,7 +297,7 @@ void render_content(ImFont* normal_font, ImFont* bold_font, const std::string& t
         }
 
         TableNextRow();
-        for (size_t i = 0; src.starts_with("|"); i++) {
+        for (size_t i = 0; src.starts_with("|") && !src.starts_with("|\n"); i++) {
           src.remove_prefix(1);
           TableSetColumnIndex(i);
           parseText(scanTableCell());
@@ -338,23 +372,27 @@ static void cancel_chat(AsyncChatState& chat) {
   g_interrupted = false;
 }
 
+static void push_entry(ChatUIState& ui, EntryType type, const std::string& text, bool streaming) {
+  ui.entries.push_back({type, text, streaming, ui.next_seq++});
+}
+
 static void drain_pending(ChatUIState& ui, AsyncChatState& chat) {
   std::lock_guard<std::mutex> lock(chat.mutex);
-  for (auto& [text, type] : chat.pending) {
+  for (auto& [pending_text, type] : chat.pending) {
     if (type == OutputType::ToolInvocation) {
       if (!ui.entries.empty() && ui.entries.back().is_streaming) {
         ui.entries.back().is_streaming = false;
       }
-      ui.entries.push_back({EntryType::ToolCall, text, false});
+      push_entry(ui, EntryType::ToolCall, pending_text, false);
     } else {
       auto entry_type = (type == OutputType::Reasoning) ? EntryType::Reasoning : EntryType::Content;
       if (!ui.entries.empty() && ui.entries.back().is_streaming && ui.entries.back().type == entry_type) {
-        ui.entries.back().text += text;
+        ui.entries.back().text += pending_text;
       } else {
         if (!ui.entries.empty() && ui.entries.back().is_streaming) {
           ui.entries.back().is_streaming = false;
         }
-        ui.entries.push_back({entry_type, text, true});
+        push_entry(ui, entry_type, pending_text, true);
       }
     }
   }
@@ -384,7 +422,7 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
       ui.entries.back().is_streaming = false;
     }
     if (!result) {
-      ui.entries.push_back({EntryType::Content, "Error: " + result.error(), false});
+      push_entry(ui, EntryType::Content, "Error: " + result.error(), false);
     }
   }
 
@@ -398,10 +436,12 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
         Mode new_mode = (ui.mode == Mode::Plan) ? Mode::Build : Mode::Plan;
         ui.mode = new_mode;
         session.set_mode(new_mode);
-        ui.entries.push_back(
-            {EntryType::Content,
-             "--- Switched to " + std::string(new_mode == Mode::Plan ? "Plan" : "Build") + " mode ---",
-             false});
+        auto msg = "Switched to " + std::string(new_mode == Mode::Plan ? "Plan" : "Build") + " mode";
+        if (!ui.entries.empty() && ui.entries.back().type == EntryType::ModeSwitch) {
+          ui.entries.back().text = msg;
+        } else {
+          push_entry(ui, EntryType::ModeSwitch, msg, false);
+        }
       }
     }
   }
@@ -426,6 +466,35 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
       }
       ImGui::EndMenu();
     }
+    if (ImGui::BeginMenu("Mode")) {
+      ImGui::Text("Current: %s", ui.mode == Mode::Plan ? "Plan" : "Build");
+      ImGui::Separator();
+      if (ImGui::MenuItem("Switch to Build (full access)", "Tab", false, ui.mode != Mode::Build)) {
+        ui.mode = Mode::Build;
+        session.set_mode(Mode::Build);
+        {
+          std::string msg = "Switched to Build mode";
+          if (!ui.entries.empty() && ui.entries.back().type == EntryType::ModeSwitch) {
+            ui.entries.back().text = msg;
+          } else {
+            push_entry(ui, EntryType::ModeSwitch, msg, false);
+          }
+        }
+      }
+      if (ImGui::MenuItem("Switch to Plan (read-only)", "Tab", false, ui.mode != Mode::Plan)) {
+        ui.mode = Mode::Plan;
+        session.set_mode(Mode::Plan);
+        {
+          std::string msg = "Switched to Plan mode";
+          if (!ui.entries.empty() && ui.entries.back().type == EntryType::ModeSwitch) {
+            ui.entries.back().text = msg;
+          } else {
+            push_entry(ui, EntryType::ModeSwitch, msg, false);
+          }
+        }
+      }
+      ImGui::EndMenu();
+    }
     if (ImGui::BeginMenu("Model")) {
       bool changed = ImGui::InputText("Name", ui.model_buf, sizeof(ui.model_buf), ImGuiInputTextFlags_EnterReturnsTrue);
       ImGui::SameLine();
@@ -438,66 +507,140 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
     ImGui::EndMenuBar();
   }
 
-  // ── conversation area ──
+  // ── tabs (Chat / Debug) ──
   float input_height = ImGui::GetFrameHeightWithSpacing() * 3 + ImGui::GetStyle().ItemSpacing.y * 2 + ImGui::GetFrameHeightWithSpacing() + 8;
 
   if (ui.mono_font)
     ImGui::PushFont(ui.mono_font);
-  ImGui::BeginChild("##msgs", ImVec2(0, -input_height), false, ImGuiWindowFlags_AlwaysVerticalScrollbar);
 
-  for (size_t i = 0; i < ui.entries.size(); i++) {
-    auto& entry = ui.entries[i];
+  if (ImGui::BeginTabBar("##tabs")) {
+    // ── Chat tab ──
+    if (ImGui::BeginTabItem("Chat")) {
+      ImGui::BeginChild("##chat", ImVec2(0, -input_height), false, ImGuiWindowFlags_AlwaysVerticalScrollbar);
 
-    // deepseek returning empty blocks?
-    if (entry.type == EntryType::Content && !entry.text.size()) continue;
+      size_t i = 0;
 
-    if (i > 0) ImGui::NewLine();
-    ImGui::PushID(std::string("entry-" + std::to_string(i)).c_str());
-
-    switch (entry.type) {
-    case EntryType::UserText:
-      ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(100, 180, 255, 255));
-      ImGui::TextWrapped("You: %s", entry.text.c_str());
-      ImGui::PopStyleColor();
-      break;
-    case EntryType::Reasoning:
-      ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(160, 160, 160, 255));
-      render_content(ui.mono_font, ui.mono_font, "Thinking: " + entry.text);
-      ImGui::PopStyleColor();
-      break;
-    case EntryType::Content:
-      ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_Text));
-      render_content(ui.mono_font, ui.mono_font, entry.text);
-      ImGui::PopStyleColor();
-      break;
-    case EntryType::ToolCall:
-      ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 165, 0, 255));
-      ImGui::TextWrapped("%s", entry.text.c_str());
-      // collapse tool calls together
-      for (; i+1 < ui.entries.size() && ui.entries[i+1].type == EntryType::ToolCall; i++) {
-        ImGui::TextWrapped("%s", ui.entries[i+1].text.c_str());
+      if (ui.entries.size() > 30) {
+        i = ui.entries.size()-30;
+        ImGui::TextWrapped("%d old entries", int(i));
+        ImGui::Separator();
       }
-      ImGui::PopStyleColor();
-      break;
+
+      for (; i < ui.entries.size(); i++) {
+        auto& entry = ui.entries[i];
+
+        if (entry.type == EntryType::Content && !entry.text.size()) continue;
+
+        if (i > 0) ImGui::NewLine();
+        ImGui::PushID(std::string("entry-" + std::to_string(i)).c_str());
+
+        std::stringstream ss;
+
+        switch (entry.type) {
+        case EntryType::UserText:
+          ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(100, 180, 255, 255));
+          ImGui::PushTextWrapPos(0);
+          ss << "You: " << entry.text;
+          ImGui::TextUnformatted(ss.str().c_str());
+          ImGui::PopTextWrapPos();
+          ImGui::PopStyleColor();
+          break;
+        case EntryType::Reasoning:
+          ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(160, 160, 160, 255));
+          render_content(ui.mono_font, ui.mono_font, "Thinking: " + entry.text);
+          ImGui::PopStyleColor();
+          break;
+        case EntryType::Content:
+          ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_Text));
+          render_content(ui.mono_font, ui.mono_font, entry.text);
+          ImGui::PopStyleColor();
+          break;
+        case EntryType::ToolCall:
+          ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 165, 0, 255));
+          ImGui::PushTextWrapPos(0);
+          ImGui::TextUnformatted(entry.text.c_str());
+          for (; i+1 < ui.entries.size() && ui.entries[i+1].type == EntryType::ToolCall; i++) {
+            ImGui::TextUnformatted(ui.entries[i+1].text.c_str());
+          }
+          ImGui::PopTextWrapPos();
+          ImGui::PopStyleColor();
+          break;
+        case EntryType::ModeSwitch:
+          ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(120, 120, 120, 255));
+          ImGui::TextUnformatted(entry.text.c_str());
+          ImGui::PopStyleColor();
+          break;
+        }
+
+        ImGui::PopID();
+      }
+
+      // auto-scroll
+      float scroll_y = ImGui::GetScrollY();
+      float scroll_max = ImGui::GetScrollMaxY();
+      if (scroll_y >= scroll_max - 10.0f)
+        ui.auto_scroll = true;
+      else
+        ui.auto_scroll = false;
+      if (ui.auto_scroll)
+        ImGui::SetScrollHereY(1.0f);
+
+      ImGui::EndChild();
+      ImGui::EndTabItem();
     }
 
-    ImGui::PopID();
+    // ── Raw tab ──
+    if (ImGui::BeginTabItem("Raw")) {
+      ImGui::BeginChild("##raw", ImVec2(0, -input_height), false, ImGuiWindowFlags_AlwaysVerticalScrollbar);
+
+      ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(180, 180, 180, 255));
+      for (const auto& entry : ui.entries) {
+        const char* prefix = "";
+        switch (entry.type) {
+        case EntryType::UserText: prefix = "[You] "; break;
+        case EntryType::Reasoning: prefix = "[Reasoning] "; break;
+        case EntryType::Content: prefix = "[Assistant] "; break;
+        case EntryType::ToolCall: prefix = "[Tool] "; break;
+        case EntryType::ModeSwitch: prefix = "[Mode] "; break;
+        }
+        ImGui::PushTextWrapPos(0);
+        std::stringstream ss;
+        ss << prefix << entry.text;
+        ImGui::TextUnformatted(ss.str().c_str());
+        ImGui::PopTextWrapPos();
+      }
+      ImGui::PopStyleColor();
+
+      ImGui::EndChild();
+      ImGui::EndTabItem();
+    }
+
+    // ── Raw tab ──
+    if (ImGui::BeginTabItem("Dump")) {
+      ImGui::BeginChild("##dump", ImVec2(0, -input_height), false, ImGuiWindowFlags_AlwaysVerticalScrollbar);
+
+      ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(180, 180, 180, 255));
+      for (const auto& entry : ui.entries) {
+        const char* prefix = "";
+        switch (entry.type) {
+        case EntryType::UserText: prefix = "[User] "; break;
+        case EntryType::Reasoning: prefix = "[Reasoning] "; break;
+        case EntryType::Content: prefix = "[Assistant] "; break;
+        case EntryType::ToolCall: prefix = "[Tool] "; break;
+        case EntryType::ModeSwitch: prefix = "[Mode] "; break;
+        }
+        ImGui::TextWrapped("[%d] %s", entry.seq, prefix);
+        ImGui::TextUnformatted(dump(entry.text).c_str());
+      }
+      ImGui::PopStyleColor();
+
+      ImGui::EndChild();
+      ImGui::EndTabItem();
+    }
+
+    ImGui::EndTabBar();
   }
 
-  // auto-scroll
-  float scroll_y = ImGui::GetScrollY();
-  float scroll_max = ImGui::GetScrollMaxY();
-  if (scroll_y >= scroll_max - 10.0f) {
-    ui.auto_scroll = true;
-  } else {
-    ui.auto_scroll = false;
-  }
-
-  if (ui.auto_scroll) {
-    ImGui::SetScrollHereY(1.0f);
-  }
-
-  ImGui::EndChild(); // ##msgs
   if (ui.mono_font)
     ImGui::PopFont();
 
@@ -524,10 +667,11 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
       if (input == "/clear") {
         session.clear();
         ui.entries.clear();
+        ui.next_seq = 1;
       } else if (input == "/exit" || input == "/quit") {
         done = true;
       } else {
-        ui.entries.push_back({EntryType::UserText, input, false});
+        ui.entries.push_back({EntryType::UserText, input, false, ui.next_seq++});
         start_chat(chat, session, std::move(input));
       }
     }
@@ -551,10 +695,11 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
         if (input == "/clear") {
           session.clear();
           ui.entries.clear();
+          ui.next_seq = 1;
         } else if (input == "/exit" || input == "/quit") {
           done = true;
         } else {
-          ui.entries.push_back({EntryType::UserText, input, false});
+        ui.entries.push_back({EntryType::UserText, input, false, ui.next_seq++});
           start_chat(chat, session, std::move(input));
         }
       }
@@ -567,9 +712,8 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
   {
     auto mode_str = (ui.mode == Mode::Plan) ? "[Plan]" : "[Build]";
     auto mode_color = (ui.mode == Mode::Plan) ? IM_COL32(100, 180, 255, 255) : IM_COL32(100, 255, 100, 255);
-    auto label = std::string(mode_str) + "  [Tab]";
     ImGui::SameLine(0, 16);
-    ImGui::TextColored(ImColor(mode_color), "%s", label.c_str());
+    ImGui::TextColored(ImColor(mode_color), "%s", mode_str);
   }
 
   ImGui::End(); // main window

@@ -15,7 +15,8 @@ struct ChatUIState {
   bool request_cancel = false;
   char model_buf[256] = {};
   ImFont* mono_font = nullptr;
-  Mode mode = Mode::Build;
+  Mode mode = Mode::Plan;
+  int next_seq = 1;
 };
 
 void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session, bool& done);

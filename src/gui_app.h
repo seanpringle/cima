@@ -11,12 +11,13 @@
 #include <string>
 #include <vector>
 
-enum class EntryType { UserText, Reasoning, Content, ToolCall };
+enum class EntryType { UserText, Reasoning, Content, ToolCall, ModeSwitch };
 
 struct DisplayEntry {
   EntryType type;
   std::string text;
   bool is_streaming = false;
+  int seq = 0;
 };
 
 struct AsyncChatState {
