@@ -513,6 +513,13 @@ Result<std::string> ToolRegistry::execute(const std::string& name, const std::st
     return std::unexpected("unknown tool: " + name);
   }
 
+  // Plan mode restricts write/edit/bash at runtime
+  if (mode_ == Mode::Plan && (name == "write_file" || name == "edit_file" || name == "run_bash")) {
+    return std::unexpected("Tool '" + name +
+                           "' is not available in Plan mode (read-only). "
+                           "Available tools: list_files, read_file, grep_files.");
+  }
+
   json args;
   try {
     args = json::parse(args_json);

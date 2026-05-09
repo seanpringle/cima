@@ -5,6 +5,8 @@
 #include "tools.h"
 #include "types.h"
 
+#include <string>
+
 struct ChatResult {
   std::string content;
   std::string reasoning;
@@ -28,11 +30,14 @@ public:
   void clear();
   const std::string& model() const { return model_; }
   void set_output_callback(OutputCallback cb) { output_cb_ = std::move(cb); }
+  void set_mode(Mode m);
+  Mode mode() const { return mode_; }
 
 private:
   std::string model_;
   std::string safe_dir_;
   int max_iterations_ = 25;
+  Mode mode_ = Mode::Build;
   Conversation conversation_;
   ChatClient client_;
   ToolRegistry tools_;

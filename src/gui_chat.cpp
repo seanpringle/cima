@@ -7,6 +7,7 @@
 #include <cstring>
 #include <iostream>
 #include <string>
+#include <thread>
 
 extern std::atomic<bool> g_interrupted;
 
@@ -387,6 +388,24 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
     }
   }
 
+  // ── mode toggle (Tab key, debounced to 500ms) ──
+  {
+    static std::chrono::steady_clock::time_point last_mode_toggle;
+    if (!chat.running && ImGui::IsKeyPressed(ImGuiKey_Tab, false)) {
+      auto now = std::chrono::steady_clock::now();
+      if (now - last_mode_toggle > std::chrono::milliseconds(500)) {
+        last_mode_toggle = now;
+        Mode new_mode = (ui.mode == Mode::Plan) ? Mode::Build : Mode::Plan;
+        ui.mode = new_mode;
+        session.set_mode(new_mode);
+        ui.entries.push_back(
+            {EntryType::Content,
+             "--- Switched to " + std::string(new_mode == Mode::Plan ? "Plan" : "Build") + " mode ---",
+             false});
+      }
+    }
+  }
+
   // ── main window ──
   ImGui::SetNextWindowPos(ImVec2(0, 0));
   ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
@@ -542,6 +561,15 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
     }
     if (ui.input_buf[0] == '\0')
       ImGui::EndDisabled();
+  }
+
+  // ── mode indicator (same line as Cancel/Send) ──
+  {
+    auto mode_str = (ui.mode == Mode::Plan) ? "[Plan]" : "[Build]";
+    auto mode_color = (ui.mode == Mode::Plan) ? IM_COL32(100, 180, 255, 255) : IM_COL32(100, 255, 100, 255);
+    auto label = std::string(mode_str) + "  [Tab]";
+    ImGui::SameLine(0, 16);
+    ImGui::TextColored(ImColor(mode_color), "%s", label.c_str());
   }
 
   ImGui::End(); // main window

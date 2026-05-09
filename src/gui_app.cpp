@@ -39,8 +39,6 @@ int gui_main(Config cfg) {
   ImGui::CreateContext();
   ImGuiIO& io = ImGui::GetIO();
   io.IniFilename = NULL;
-  io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-
   ImGui::StyleColorsDark();
 
   ImFont* mono_font = nullptr;

@@ -8,7 +8,22 @@ ChatSession::ChatSession(Config config)
   tools_.add_defaults(safe_dir_);
 }
 
-void ChatSession::clear() { conversation_.clear(); }
+void ChatSession::clear() {
+  conversation_.clear();
+}
+
+void ChatSession::set_mode(Mode m) {
+  if (m == mode_) return;
+  mode_ = m;
+  tools_.set_mode(m);
+  std::string instruction =
+      (m == Mode::Plan)
+          ? "[Mode] You are now in Plan mode (read-only). "
+            "Available tools: list_files, read_file, grep_files. "
+            "Do not use write_file, edit_file, or run_bash \xe2\x80\x94 they will be rejected."
+          : "[Mode] You are now in Build mode. All tools are available.";
+  conversation_.add_system(std::move(instruction));
+}
 
 Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
   auto snapshot = conversation_.size();
