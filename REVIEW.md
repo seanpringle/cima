@@ -67,7 +67,7 @@
 │                     └────────────┘               │
 │     ┌──────────────┐                             │
 │     │ToolRegistry  │                             │
-│     │(7 tools)     │                             │
+│     │(8 tools)     │                             │
 │     └──────────────┘                             │
 └─────────────────────────────────────────────────┘
 ```
@@ -241,7 +241,7 @@ The discovered value becomes the compaction budget baseline. The `LLM_CONTEXT_LI
 
 **File:** `chat.cpp` line 36, `tools.cpp` lines 565–575
 
-`tools_.to_openai_tools()` serializes **all 7 tool definitions** to JSON on every API request. The tools don't change between calls (except when the mode toggles, which affects which tools are advertised). This is wasted work and adds a small but unnecessary overhead to each request payload.
+`tools_.to_openai_tools()` serializes **all 8 tool definitions** to JSON on every API request. The tools don't change between calls (except when the mode toggles, which affects which tools are advertised). This is wasted work and adds a small but unnecessary overhead to each request payload.
 
 **Impact:** Minor. The 7 tool schemas total maybe 2–4 KB uncompressed. But it's an easy fix.
 
@@ -401,7 +401,13 @@ The model can create and edit files but cannot delete or rename them. Must use `
 {"path": "file.cpp", "start_line": 45, "end_line": 78}
 ```
 
-**Status:** ❌ **Not addressed.**
+**Implementation:**
+- Parameters: `path` (required), `start_line` (default 1), `end_line` (optional, reads to EOF), `max_lines` (default 200, max 500)
+- Output format: `<line_num>: <content>` with truncation trailer for remaining lines
+- Available in Plan mode (read-only, like `read_file`)
+- 14 test cases, 111/111 all tests pass
+
+**Status:** ✅ **Implemented.** Commit `a7b8c25`.
 
 #### `search_symbols` (CTags / LSP integration)
 
@@ -488,12 +494,13 @@ Running tests with structured output (pass/fail counts, test names). Currently r
 
 ## 7. Appendix: Tool Inventory
 
-### Current Tools (7)
+### Current Tools (8)
 
 | Tool | Parameters | Max Output | Timeout | Plan Mode |
 |------|-----------|------------|---------|-----------|
 | `list_files` | `path` (string) | unbounded | none | ✓ allowed |
 | `read_file` | `path`, `offset` (int), `max_lines` (int) | 400 lines | none | ✓ allowed |
+| `read_file_lines` | `path`, `start_line` (int), `end_line` (int), `max_lines` (int) | 500 lines | none | ✓ allowed |
 | `grep_files` | `pattern`, `path` (string) | 200 matches | 10s | ✓ allowed |
 | `write_file` | `path`, `content` (string) | none | none | ✗ blocked |
 | `edit_file` | `path`, `search`, `replace` | brief msg | none | ✗ blocked |
@@ -506,6 +513,7 @@ Running tests with structured output (pass/fail counts, test names). Currently r
 |------|-----------|------------|---------|-----------|----------|
 | `apply_patch` | `path`, `patch` (unified diff) | brief msg | 10s | ✗ blocked | P1 |
 | `project_tree` | `path` (string), `max_depth` (int, default 5), `max_lines` (int, default 500) | 500 lines | 5s | ✓ allowed | P1 ✅ |
+| `read_file_lines` | `path`, `start_line` (int), `end_line` (int), `max_lines` (int) | 500 lines | none | ✓ allowed | P2 ✅ |
 | `git_status` | none | brief | 10s | ✓ allowed | P1 |
 | `git_diff` | `staged` (bool) | 500 lines | 10s | ✓ allowed | P1 |
 | `git_log` | `max_count` (int) | 50 commits | 10s | ✓ allowed | P1 |
@@ -545,6 +553,7 @@ Running tests with structured output (pass/fail counts, test names). Currently r
 | 2025-01-XX | `8deebc7` | Selective retention compaction (3-phase: drop → summarize → slide) |
 | 2025-01-XX | `4df848e` | Discover context window from API via `/v1/models` |
 | 2026-05-10 | `c69b3ae` | Add `project_tree` tool — recursive UTF-8 tree with depth/line limits, permission-safe iteration, Plan mode support |
+| 2026-05-XX | `a7b8c25` | Add `read_file_lines` tool — read specific 1-indexed line ranges (`start_line`/`end_line`) with line-numbered output, max_lines cap, Plan mode support |
 
 ---
 
