@@ -316,6 +316,10 @@ void render_content(const string& text) {
                 TableNextRow();
                 for (size_t i = 0; src.starts_with("|") && !src.starts_with("|\n"); i++) {
                     src.remove_prefix(1);
+                    if (i >= headers.size()) {
+                        scanTableCell();
+                        break;
+                    }
                     TableSetColumnIndex(i);
                     parseText(scanTableCell());
                 }
