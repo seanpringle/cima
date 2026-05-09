@@ -119,6 +119,116 @@ CURLcode ChatClient::perform_with_retry(CURL* curl, long& http_code, std::string
     return CURLE_OK;
 }
 
+// ── Low-level HTTP GET ──
+Result<std::string> ChatClient::http_get(const std::string& url) {
+    auto* headers = make_headers();
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        curl_slist_free_all(headers);
+        return std::unexpected(std::string("curl_easy_init failed"));
+    }
+
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+    curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "llm-chat/0.1");
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+    curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+    curl_easy_setopt(curl, CURLOPT_CAINFO, nullptr);
+
+    std::string body;
+    long http_code = 0;
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_body);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body);
+
+    CURLcode res = perform_with_retry(curl, http_code, body);
+    curl_easy_cleanup(curl);
+    curl_slist_free_all(headers);
+
+    if (res != CURLE_OK) {
+        return std::unexpected(std::string("curl error: ") + curl_easy_strerror(res));
+    }
+    if (http_code != 200) {
+        return std::unexpected("HTTP " + std::to_string(http_code));
+    }
+    return body;
+}
+
+// ── Discover context window from API metadata ──
+// Tries a best-effort query of the /v1/models endpoint and extracts the
+// model's context window size. The field name varies by backend:
+//   "context_window"       — Anthropic, some OpenAI-compatible
+//   "max_model_len"        — vLLM, TGI, many OSS backends
+//   "max_context_length"   — some OpenAI-compatible
+//   "inputTokenLimit"      — Google Gemini
+//   "context_length"       — llama.cpp, some OSS backends
+// Returns 0 if discovery fails (caller should fall back).
+int ChatClient::fetch_model_context_limit(const std::string& model) {
+    // Try the /v1/models endpoint (OpenAI-compatible convention).
+    auto body = http_get(models_url());
+    if (!body) {
+        return 0;
+    }
+
+    json j;
+    try {
+        j = json::parse(*body);
+    } catch (...) {
+        return 0;
+    }
+
+    // The response can be either an object with a "data" array (OpenAI list)
+    // or a single model object (some backends return the model directly).
+    json model_obj;
+
+    // Try "data" array first (OpenAI-style: {"object":"list","data":[{...}]})
+    if (j.is_object() && j.contains("data") && j["data"].is_array()) {
+        for (const auto& entry : j["data"]) {
+            if (entry.value("id", "") == model || entry.value("name", "") == model) {
+                model_obj = entry;
+                break;
+            }
+        }
+        // If we didn't find the specific model, try the first one
+        if (model_obj.is_null() && !j["data"].empty()) {
+            model_obj = j["data"][0];
+        }
+    } else if (j.is_object() && j.value("id", "") == model) {
+        // Single model object
+        model_obj = j;
+    }
+
+    if (model_obj.is_null()) {
+        return 0;
+    }
+
+    // Known field names across backends, in priority order
+    static const char* const kContextFields[] = {
+        "context_window",
+        "max_model_len",
+        "max_context_length",
+        "context_length",
+        "inputTokenLimit",
+        "max_input_tokens",
+        "max_total_tokens",
+    };
+
+    for (const auto& field : kContextFields) {
+        auto it = model_obj.find(field);
+        if (it != model_obj.end() && it->is_number_integer()) {
+            int val = it->get<int>();
+            if (val > 0) {
+                return val;
+            }
+        }
+    }
+
+    return 0;
+}
+
 Result<json> ChatClient::chat(const json& payload) {
     std::string payload_str = payload.dump();
     std::string body;

@@ -24,8 +24,13 @@ class ChatClient {
     Result<json> chat(const json& payload);
     Result<void> stream_chat(const json& payload, SSEParser::Callbacks callbacks);
 
+    // Query the API for model metadata, returning the context window size if found.
+    // Returns 0 if the endpoint doesn't expose it (caller should use a default).
+    int fetch_model_context_limit(const std::string& model);
+
     const std::string& last_raw_response() const { return raw_response_; }
     std::string url() const { return api_base_ + "/chat/completions"; }
+    std::string models_url() const { return api_base_ + "/models"; }
 
   private:
     static constexpr int kMaxRetries = 3;
@@ -34,6 +39,9 @@ class ChatClient {
     struct curl_slist* make_headers() const;
     bool should_retry(long http_code) const;
     CURLcode perform_with_retry(CURL* curl, long& http_code, std::string& body);
+
+    // Low-level HTTP GET helper
+    Result<std::string> http_get(const std::string& url);
 
     std::string api_base_;
     std::string api_key_;

@@ -127,7 +127,8 @@ TEST_CASE("ChatSession max tool iterations", "[chat]") {
     CHECK_FALSE(result);
     CHECK(result.error().find("Maximum tool call iterations") !=
           std::string::npos);
-    CHECK(call_count == 10);
+    // One extra call for model discovery (GET /v1/models), then 10 tool iterations
+    CHECK(call_count == 11);
 }
 
 // ===================================================================
