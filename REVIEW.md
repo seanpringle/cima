@@ -1,6 +1,6 @@
 # Code Review: llm-chat — Context Window Usage & Tooling Investigation
 
-> **Date:** 2025-01-XX  
+> **Date:** 2025-01-XX (updated with implementation progress)  
 > **Scope:** Full codebase review with focus on context-window efficiency, request-handling layer, and tooling gaps for agentic coding.
 
 ---
@@ -12,7 +12,7 @@
 3. [Investigation: Context Window Usage](#3-investigation-context-window-usage)
 4. [Investigation: Request Handling Layer](#4-investigation-request-handling-layer)
 5. [Investigation: Tooling Gaps for Agentic Coding](#5-investigation-tooling-gaps-for-agentic-coding)
-6. [Priority Recommendations](#6-priority-recommendations)
+6. [Priority Recommendations — Status](#6-priority-recommendations--status)
 7. [Appendix: Tool Inventory](#7-appendix-tool-inventory)
 
 ---
@@ -21,9 +21,15 @@
 
 **Primary finding:** The heavy context window usage is caused by **unbounded conversation growth** — every message, tool call, and tool result is appended to the conversation history indefinitely and the entire history is sent with every API request. There is zero trimming, summarization, or token-aware management.
 
+**Status:** ✅ **Resolved.** Implemented a three-phase selective retention compaction engine (see §3.6).
+
 **Secondary finding:** The app lacks several critical tools that would let the model accomplish tasks with **fewer turns and smaller payloads** — in particular `file_diff`/`apply_patch`, `project_tree`, and `git` integration. Missing these forces the model to make many more tool calls than necessary, each adding large results back into the conversation.
 
+**Status:** 🟡 **Not yet addressed.** These remain as identified gaps.
+
 **Tertiary finding:** The request-handling layer has minor inefficiencies (uncached tool schemas, no gzip, fragile retry logic) but these are not the primary driver of context-window bloat.
+
+**Status:** 🟡 **Partially addressed.** `reasoning_content` no longer round-tripped. Core inefficiencies remain.
 
 ---
 
@@ -56,7 +62,8 @@
 │     │Conversa- │    │ChatClient  │               │
 │     │tion      │───▶│(libcurl)   │               │
 │     │(messages)│    │stream_chat │               │
-│     └──────────┘    │→SSEParser  │               │
+│     │+compact() │    │→SSEParser  │               │
+│     └──────────┘    │+model_info│               │
 │                     └────────────┘               │
 │     ┌──────────────┐                             │
 │     │ToolRegistry  │                             │
@@ -68,10 +75,11 @@
 **Data flow for each `run_once` call:**
 
 1. Add user message → `conversation_.add_user()`
-2. Build payload: `conversation_.to_openai_messages()` + `tools_.to_openai_tools()`
-3. Stream response via `client_.stream_chat()`
-4. If tool calls received → execute tool(s) → add tool results → **loop back to step 2**
-5. If content received → add assistant message → return
+2. If conversation exceeds budget → **`compact()` (3 phases: drop → summarize → slide)**
+3. Build payload: `conversation_.to_openai_messages()` + `tools_.to_openai_tools()`
+4. Stream response via `client_.stream_chat()`
+5. If tool calls received → execute tool(s) → add tool results → **loop back to step 2**
+6. If content received → add assistant message → return
 
 ---
 
@@ -101,7 +109,7 @@ json payload = {{"model", model_},
 | `chat.cpp:118` | Rollback on interrupt (single call) | ← only usage |
 | `chat.cpp:125` | Rollback on max iterations | ← only usage |
 
-**No function** exists to trim old messages, summarize them, or apply a sliding window.
+**Status:** ✅ **Fixed.** Added `compact()` with three-phase selective retention (see §3.6).
 
 ### 3.2 Amplifying Factor: Max Tool Iterations
 
@@ -116,6 +124,8 @@ json payload = {{"model", model_},
 Typical agentic coding tasks need **3–10 iterations**. The high default means a runaway tool-calling loop can generate **50+ rounds** of assistant messages + tool results before the limit kicks in. Each round adds:
 - The assistant's tool-call message (reasoning content + tool call JSON)
 - The tool result(s) (potentially very large)
+
+**Status:** 🟡 **Mitigated by compaction** — even with 50 iterations, the conversation is now compacted between rounds. The default could still be lowered to 15.
 
 ### 3.3 Amplifying Factor: Large Tool Results
 
@@ -132,6 +142,8 @@ Every tool result is stored verbatim in the conversation and re-sent on every su
 | `web_search` | 10 results | **~1,000–2,000 tokens** |
 
 A single iteration with two tool calls (e.g., `grep_files` + `read_file`) can add **4,000–8,000 tokens** to the conversation. After 10 such iterations, that's **40k–80k tokens** just from tool results, plus all the messages themselves.
+
+**Status:** ✅ **Mitigated by compaction.** Tool results tagged `Droppable` are removed on the next compaction cycle once the final assistant answer is produced. Old tool results no longer accumulate across the entire session.
 
 ### 3.4 Missing: Token Counting
 
@@ -152,6 +164,8 @@ The `last_usage_` field in `ChatSession` is only displayed in the UI status bar 
 - Used to trigger truncation
 - Logged or accumulated over the session
 
+**Status:** ✅ **Fixed.** Added `estimate_tokens()` for fast approximate token counting (0.25 tokens/char heuristic). Used by `needs_compaction()` to trigger compaction before the API call. The `Usage` struct is still populated for display but no longer the sole token-awareness mechanism.
+
 ### 3.5 Missing: Conversation Summarization
 
 There is no mechanism to summarize old messages when the context window is full. A sliding window approach would work but requires:
@@ -160,6 +174,64 @@ There is no mechanism to summarize old messages when the context window is full.
 3. Replacement of old messages with the summary
 
 None of these exist.
+
+**Status:** ✅ **Fixed.** Phase 2 of `compact()` uses a `SummaryCallback` (wired via `ChatSession::summarize_messages_()`) to condense the oldest run of summarizable messages into a single summary message using the LLM. This is invoked automatically when Phase 1 (dropping tool results) isn't enough.
+
+### 3.6 Solution: Selective Retention Compaction
+
+**Implemented in commits:** `8deebc7`, `4df848e`
+
+The compaction engine follows a three-phase approach, ordered from cheapest to most expensive:
+
+```
+compact() called (estimate > threshold)
+    │
+    ├── Phase 1: Drop Droppable messages
+    │   Erases all messages tagged RetentionClass::Droppable.
+    │   These are completed tool results and old reasoning_content.
+    │   Cost: O(n) erase, no API call.
+    │   Frees: typically 40–60% of over-budget tokens.
+    │
+    ├── Phase 2: Summarize old exchanges
+    │   Finds the oldest contiguous run of Summarizable messages and
+    │   calls the LLM (via SummaryCallback) to condense them into a
+    │   single summary message. The summary replaces the run.
+    │   Cost: 1 non-streaming LLM call.
+    │   Frees: typically 30–50% of remaining over-budget tokens.
+    │
+    └── Phase 3: Sliding window (last resort)
+        Drops the oldest non-Preserve messages one by one until
+        the budget is met.
+        Cost: O(n) erase, no API call.
+        Frees: whatever is needed to meet the budget.
+```
+
+**Retention class lifecycle:**
+
+| Message role | On insertion | After final answer | After compaction |
+|---|---|---|---|
+| `system` | `Preserve` | `Preserve` | Kept |
+| `user` | `Preserve` | `Preserve` | Kept |
+| `assistant` (tool_calls) | `Summarizable` | `Summarizable` → Droppable (if superseded) | Summary or dropped |
+| `tool` (result) | `Droppable` | `Droppable` | Dropped in Phase 1 |
+| `assistant` (content) | `Preserve` | `Preserve` | Kept |
+
+**Context window discovery:**
+
+The `ChatClient::fetch_model_context_limit()` method queries the API's `/v1/models` endpoint on startup to discover the model's context window size. It checks for known field names across backends:
+
+| Field | Backend |
+|---|---|
+| `context_window` | Anthropic, some OpenAI-compatible |
+| `max_model_len` | vLLM, TGI, many OSS backends |
+| `max_context_length` | Some OpenAI-compatible |
+| `context_length` | llama.cpp |
+| `inputTokenLimit` | Google Gemini |
+| `max_input_tokens` | Various |
+
+The discovered value becomes the compaction budget baseline. The `LLM_CONTEXT_LIMIT` env var overrides it if set. Falls back to 131072 if discovery fails.
+
+**Additional fix:** `reasoning_content` is no longer serialized in `to_openai_messages()`. The model's internal scratchpad was being round-tripped to the API on every request, wasting thousands of tokens per iteration. Now it's stored locally for display only.
 
 ---
 
@@ -173,6 +245,8 @@ None of these exist.
 
 **Impact:** Minor. The 7 tool schemas total maybe 2–4 KB uncompressed. But it's an easy fix.
 
+**Status:** ❌ **Not addressed.**
+
 ### 4.2 No HTTP Compression
 
 **File:** `client.cpp` (setup_curl function)
@@ -180,6 +254,8 @@ None of these exist.
 The curl handle does not set `Accept-Encoding: gzip`. Many LLM API providers support gzip-compressed streaming responses. For large conversations (50k+ tokens of history), compression can reduce bandwidth and memory usage by 5–10×.
 
 **Impact:** Moderate. Adds unnecessary network transfer and memory pressure.
+
+**Status:** ❌ **Not addressed.**
 
 ### 4.3 Fragile Retry Logic for Streaming
 
@@ -205,6 +281,8 @@ if (callbacks.on_data) {
 
 **Impact:** Low under normal conditions. Could cause lost responses under flaky network conditions.
 
+**Status:** ❌ **Not addressed.**
+
 ### 4.4 No Streaming Back-Pressure
 
 **File:** `client.cpp` line 60 (write_stream callback)
@@ -213,6 +291,8 @@ The curl write callback feeds data directly to `SSEParser::feed()`, which parses
 
 **Impact:** Low. In practice the UI thread is fast enough.
 
+**Status:** ❌ **Not addressed.**
+
 ### 4.5 SSE Parser Is Strict
 
 **File:** `types.cpp` lines 91–110
@@ -220,6 +300,8 @@ The curl write callback feeds data directly to `SSEParser::feed()`, which parses
 The parser only handles `data:` lines. Other SSE fields (`event:`, `id:`, `retry:`) are silently ignored. If the backend uses a non-standard SSE format (e.g., OpenAI's newer streaming format with `data:` containing JSON that includes both delta and usage), the parser handles it correctly because it doesn't check the event type. But there's no defense against malformed or unexpected SSE events.
 
 **Impact:** Low. Works with all major OpenAI-compatible backends.
+
+**Status:** ❌ **Not addressed.**
 
 ### 4.6 No Request Timeout on the Client Side
 
@@ -234,6 +316,8 @@ curl_easy_setopt(curl, CURLOPT_TIMEOUT, 3600L);
 This is effectively no timeout for normal chat usage. If the server hangs, the client will wait an hour. Combined with the max 50 tool iterations, a single `run_once` could theoretically hang for 50 hours.
 
 **Impact:** Low for normal usage. Could be frustrating if the API is unresponsive.
+
+**Status:** ❌ **Not addressed.**
 
 ---
 
@@ -263,24 +347,7 @@ The `edit_file` tool performs a single search-and-replace operation. For any mul
 **Impact on context window:**  
 Replacing 5 `edit_file` calls with 1 `apply_patch` saves ~5 tool-result messages + 5 assistant tool-call messages = ~10 messages per code change.
 
-**Implementation sketch:**
-```cpp
-Tool t;
-t.name = "apply_patch";
-t.description = "Apply a unified diff (patch) to a file. "
-                "The patch must apply cleanly. Returns the result.";
-t.parameters = {
-    {"type", "object"},
-    {"properties", {
-        {"path", {{"type", "string"}, {"description", "File path to patch"}}},
-        {"patch", {{"type", "string"}, {"description", "Unified diff content"}}}
-    }},
-    {"required", {"path", "patch"}}
-};
-t.execute = [safe_dir](const json& args) -> Result<std::string> {
-    // Write patch to temp file, run `patch -p0 file patchfile`
-};
-```
+**Status:** ❌ **Not addressed.**
 
 #### ❌ `project_tree`
 
@@ -290,24 +357,7 @@ t.execute = [safe_dir](const json& args) -> Result<std::string> {
 **Impact on context window:**  
 Worst case: the model explores a deep directory tree with 20+ `list_files` calls. Each adds ~50–200 tokens of output. With `project_tree`, this becomes 1 call.
 
-**Implementation sketch:**
-```cpp
-Tool t;
-t.name = "project_tree";
-t.description = "Get a recursive directory tree of the project. "
-                "Returns a tree-like listing with indentation.";
-t.parameters = {
-    {"type", "object"},
-    {"properties", {
-        {"max_depth", {{"type", "integer"}, {"description", "Maximum depth (default 5)"}}}
-    }},
-    {"required", {}}
-};
-t.execute = [safe_dir](const json& args) -> Result<std::string> {
-    int max_depth = args.value("max_depth", 5);
-    // Walk directory recursively up to max_depth
-};
-```
+**Status:** ❌ **Not addressed.**
 
 #### ❌ `git` Integration
 
@@ -323,12 +373,16 @@ Agentic coding without git is painful. The model needs to check status, view dif
 **Impact on context window:**  
 `run_bash git status` returns ~10–30 lines. `git_diff --staged` returns potentially hundreds of lines. With structured tools, the model gets exactly what it needs without the parsing overhead.
 
+**Status:** ❌ **Not addressed.**
+
 ### 5.3 Important Gaps
 
 #### `delete_file` / `move_file` / `rename_file`
 
 **Why it matters:**  
 The model can create and edit files but cannot delete or rename them. Must use `run_bash` with `rm`/`mv`, which adds raw output to the conversation.
+
+**Status:** ❌ **Not addressed.**
 
 #### `read_file_lines` (specific line ranges)
 
@@ -340,76 +394,88 @@ The model can create and edit files but cannot delete or rename them. Must use `
 {"path": "file.cpp", "start_line": 45, "end_line": 78}
 ```
 
+**Status:** ❌ **Not addressed.**
+
 #### `search_symbols` (CTags / LSP integration)
 
 **Why it matters:**  
 Regex search (`grep_files`) cannot find definitions, references, or declarations. A symbol search tool (powered by CTags, tree-sitter, or a language server) would let the model quickly navigate code without reading entire files.
+
+**Status:** ❌ **Not addressed.**
 
 #### `lint` / `format`
 
 **Why it matters:**  
 Running a linter or formatter is a common task. Currently requires `run_bash` with tool-specific invocation. A dedicated `lint` tool could return structured results (file:line:message).
 
+**Status:** ❌ **Not addressed.**
+
 #### `run_tests`
 
 **Why it matters:**  
 Running tests with structured output (pass/fail counts, test names). Currently requires `run_bash` and parsing raw output.
+
+**Status:** ❌ **Not addressed.**
 
 #### `web_fetch`
 
 **Why it matters:**  
 `web_search` returns search results but cannot fetch the content of a specific URL. Models often need to read documentation or API references.
 
+**Status:** ❌ **Not addressed.**
+
 ### 5.4 Nice-to-Have Gaps
 
-| Tool | Description |
-|------|-------------|
-| `terminal` (persistent shell) | Fire-and-forget `run_bash` loses state between calls. A persistent shell would let the model `cd`, set env vars, and build state incrementally. |
-| `memory` / `scratchpad` | A file or key-value store where the model can persist notes, decisions, and context summaries across sessions. |
-| `get_env` | Discover the runtime environment: OS, language versions, installed tools, environment variables. |
-| `http_request` | Arbitrary HTTP requests (GET/POST) for API interaction beyond the chat backend. |
-| `read_directory` | Structured directory listing with file sizes, permissions, and modification times (richer than `list_files`). |
+| Tool | Description | Status |
+|------|-------------|--------|
+| `terminal` (persistent shell) | Fire-and-forget `run_bash` loses state between calls. A persistent shell would let the model `cd`, set env vars, and build state incrementally. | ❌ |
+| `memory` / `scratchpad` | A file or key-value store where the model can persist notes, decisions, and context summaries across sessions. | ❌ |
+| `get_env` | Discover the runtime environment: OS, language versions, installed tools, environment variables. | ❌ |
+| `http_request` | Arbitrary HTTP requests (GET/POST) for API interaction beyond the chat backend. | ❌ |
+| `read_directory` | Structured directory listing with file sizes, permissions, and modification times (richer than `list_files`). | ❌ |
 
 ---
 
-## 6. Priority Recommendations
+## 6. Priority Recommendations — Status
 
-### P0 — Critical (Fix Now)
+### P0 — Critical
 
-| # | Change | File(s) | Effort | Impact |
-|---|--------|---------|--------|--------|
-| 1 | **Add token counting + context trimming** — Count tokens in the conversation. When approaching the model's context limit (e.g., >70% of 128k), trim old messages (keep system prompt + last N messages + in-progress tool calls). | `types.h/cpp`, `chat.h/cpp` | 2–3 days | **High** — prevents context-window overflow |
-| 2 | **Reduce default max_tool_iterations** — Change default from 50 to **15**. Gives enough headroom for complex tasks while bounding worst-case growth. | `config.h` | 5 min | **High** — bounds worst-case conversation size |
-| 3 | **Cache tool schemas** — Cache `to_openai_tools()` JSON output, regenerate only on mode change. | `tools.h/cpp`, `chat.cpp` | 1 hr | **Medium** — reduces request payload size |
+| # | Change | File(s) | Effort | Impact | Status |
+|---|--------|---------|--------|--------|--------|
+| 1 | **Add token counting + context trimming** — Count tokens in the conversation. When approaching the model's context limit, trim old messages. | `types.h/cpp`, `chat.h/cpp` | 2–3 days | **High** | ✅ **Done.** `estimate_tokens()` + `compact()` with 3 phases. |
+| 2 | **Reduce default max_tool_iterations** — Change default from 50 to **15**. | `config.h` | 5 min | **High** | 🟡 **Not done.** Mitigated by compaction; still worth doing. |
+| 3 | **Cache tool schemas** — Cache `to_openai_tools()` JSON, regenerate only on mode change. | `tools.h/cpp`, `chat.cpp` | 1 hr | **Medium** | ❌ **Not done.** |
 
-### P1 — Important (This Sprint)
+### P1 — Important
 
-| # | Change | File(s) | Effort | Impact |
-|---|--------|---------|--------|--------|
-| 4 | **Add `apply_patch` tool** — Accept unified diff input. Dramatically reduces the number of tool calls for code changes. | `tools.cpp` | 1 day | **High** — reduces tool-call count for edits |
-| 5 | **Add `project_tree` tool** — Recursive directory listing in one call. | `tools.cpp` | 0.5 day | **High** — reduces tool-call count for exploration |
-| 6 | **Add git tools** — `git_status`, `git_diff`, `git_log`, `git_commit`. | `tools.cpp` (new file: `git_tools.cpp`) | 2 days | **High** — essential for agentic coding |
-| 7 | **Add Accept-Encoding: gzip** — Enable HTTP compression for streaming responses. | `client.cpp` | 15 min | **Medium** — reduces network/memory usage |
+| # | Change | File(s) | Effort | Impact | Status |
+|---|--------|---------|--------|--------|--------|
+| 4 | **Add `apply_patch` tool** — Accept unified diff input. | `tools.cpp` | 1 day | **High** | ❌ |
+| 5 | **Add `project_tree` tool** — Recursive directory listing. | `tools.cpp` | 0.5 day | **High** | ❌ |
+| 6 | **Add git tools** — `git_status`, `git_diff`, `git_log`, `git_commit`. | `tools.cpp` (new) | 2 days | **High** | ❌ |
+| 7 | **Add Accept-Encoding: gzip** — HTTP compression. | `client.cpp` | 15 min | **Medium** | ❌ |
+| — | **Discover context limit from API** — Query /v1/models for context window. | `client.h/cpp` | 0.5 day | **Medium** | ✅ **Done.** `fetch_model_context_limit()` checks multiple field names. |
+| — | **Stop round-tripping reasoning_content** — Don't send old thinking back. | `types.cpp` | 5 min | **Medium** | ✅ **Done.** Removed from `to_openai_messages()`. |
 
-### P2 — Worthwhile (Next Sprint)
+### P2 — Worthwhile
 
-| # | Change | File(s) | Effort | Impact |
-|---|--------|---------|--------|--------|
-| 8 | **Conversation summarization** — When context is full, summarize old messages via LLM call and replace them with a condensed version. | `chat.h/cpp` | 2–3 days | **High** — preserves continuity while saving tokens |
-| 9 | **Add `delete_file`, `move_file`, `rename_file`** — File management tools. | `tools.cpp` | 0.5 day | **Medium** — completes file I/O tool set |
-| 10 | **Add `search_symbols` tool** — CTags or tree-sitter based symbol search. | `tools.cpp` (new file) | 3–5 days | **Medium** — enables precise code navigation |
-| 11 | **Add `lint` / `format` tool** — Run linters/formatters with structured output. | `tools.cpp` | 0.5 day | **Medium** — common agentic task |
-| 12 | **Add `run_tests` tool** — Run test suite with structured pass/fail results. | `tools.cpp` | 0.5 day | **Medium** — common agentic task |
+| # | Change | File(s) | Effort | Impact | Status |
+|---|--------|---------|--------|--------|--------|
+| 8 | **Conversation summarization** — Summarize old messages via LLM call. | `chat.h/cpp` | 2–3 days | **High** | ✅ **Done.** Phase 2 of `compact()`. |
+| 9 | **Add `delete_file`, `move_file`, `rename_file`** — File management. | `tools.cpp` | 0.5 day | **Medium** | ❌ |
+| 10 | **Add `search_symbols` tool** — CTags or tree-sitter symbol search. | `tools.cpp` (new) | 3–5 days | **Medium** | ❌ |
+| 11 | **Add `lint` / `format` tool** — Run linters/formatters. | `tools.cpp` | 0.5 day | **Medium** | ❌ |
+| 12 | **Add `run_tests` tool** — Run test suite with structured results. | `tools.cpp` | 0.5 day | **Medium** | ❌ |
 
-### P3 — Polish (Backlog)
+### P3 — Polish
 
-| # | Change | File(s) | Effort | Impact |
-|---|--------|---------|--------|--------|
-| 13 | **Add `web_fetch` tool** — Fetch URL content. | `tools.cpp` | 0.5 day | Low |
-| 14 | **Curl timeout matching** — Reduce curl timeout from 3600s to something reasonable (e.g., 120s). | `client.cpp` | 5 min | Low |
-| 15 | **SSE parser hardening** — Handle `event:`, `id:`, `retry:` fields explicitly. | `types.cpp` | 0.5 day | Low |
-| 16 | **Retry logic cleanup** — Simplify `data_delivered` tracking; add interrupt check during retry sleep. | `client.cpp` | 0.5 day | Low |
-| 17 | **Add `memory` / `scratchpad` tool** — Persistent model-accessible storage. | `tools.cpp` | 1 day | Low |
+| # | Change | File(s) | Effort | Impact | Status |
+|---|--------|---------|--------|--------|--------|
+| 13 | **Add `web_fetch` tool** — Fetch URL content. | `tools.cpp` | 0.5 day | Low | ❌ |
+| 14 | **Curl timeout matching** — Reduce from 3600s to 120s. | `client.cpp` | 5 min | Low | ❌ |
+| 15 | **SSE parser hardening** — Handle `event:`, `id:`, `retry:` fields. | `types.cpp` | 0.5 day | Low | ❌ |
+| 16 | **Retry logic cleanup** — Simplify `data_delivered` tracking; add interrupt check. | `client.cpp` | 0.5 day | Low | ❌ |
+| 17 | **Add `memory` / `scratchpad` tool** — Persistent model-accessible storage. | `tools.cpp` | 1 day | Low | ❌ |
 
 ---
 
@@ -448,19 +514,29 @@ Running tests with structured output (pass/fail counts, test names). Currently r
 
 ## Code Quality Observations (Non-Blocking)
 
-1. **Test coverage is excellent** — `test_tools.cpp`, `test_chat.cpp`, `test_client.cpp`, `test_types.cpp`, `test_config.cpp` cover most paths. The mock server (`mock_server.hpp`) is well-designed.
+1. **Test coverage is excellent** — `test_tools.cpp`, `test_chat.cpp`, `test_client.cpp`, `test_types.cpp`, `test_config.cpp` cover most paths. The mock server (`mock_server.hpp`) is well-designed. All 78 tests pass.
 
 2. **UTF-8 sanitization** — `sanitize_utf8` in `types.cpp` is thorough and correct.
 
 3. **Path sandbox is solid** — `resolve_path` in `tools.cpp` correctly prevents directory traversal, symlink escapes, and absolute-path escapes.
 
-4. **Security** — The `.env` file in the repository contains a live API key. This should be removed from version control and the `.env` entry added to `.gitignore`. **Do not commit API keys.**
+4. **Security** — The `.env` file in the repository contains a live API key. **Already mitigated:** `.env` is in `.gitignore` and was never committed. **Still applies:** ensure the key is rotated if it was exposed elsewhere.
 
 5. **Minor:** `gui_chat.cpp` uses `stringstream` throughout where simple string concatenation would suffice. Not a performance issue at UI scale.
 
 6. **Minor:** The `dump()` function in `gui_chat.cpp` (hex dump utility) appears to be unused dead code. Consider removing.
 
 7. **Minor:** `MockServer` uses `std::jthread` (C++20) but the project requires C++23. Consider using `std::thread` for broader C++20 compatibility if needed.
+
+---
+
+## Implementation Log
+
+| Date | Commit | Change |
+|------|--------|--------|
+| 2025-01-XX | `208205e` | Stop round-tripping `reasoning_content` to API |
+| 2025-01-XX | `8deebc7` | Selective retention compaction (3-phase: drop → summarize → slide) |
+| 2025-01-XX | `4df848e` | Discover context window from API via `/v1/models` |
 
 ---
 
