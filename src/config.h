@@ -10,12 +10,12 @@ extern std::atomic<bool> g_interrupted;
 template <typename T> using Result = std::expected<T, std::string>;
 
 struct Config {
-  std::string api_base = "http://127.0.0.1:11000/v1";
-  std::string api_key;
-  std::string model = "deepseek-v4-flash";
-  std::string system_prompt = "You are a helpful assistant.";
-  std::string safe_dir;
-  int max_tool_iterations = 25;
+    std::string api_base = "http://127.0.0.1:11000/v1";
+    std::string api_key;
+    std::string model = "deepseek-v4-flash";
+    std::string system_prompt = "You are a helpful assistant.";
+    std::string safe_dir;
+    int max_tool_iterations = 25;
 
-  static Config from_env();
+    static Config from_env();
 };

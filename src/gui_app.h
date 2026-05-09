@@ -14,17 +14,17 @@
 enum class EntryType { UserText, Reasoning, Content, ToolCall, ModeSwitch };
 
 struct DisplayEntry {
-  EntryType type;
-  std::string text;
-  bool is_streaming = false;
-  int seq = 0;
+    EntryType type;
+    std::string text;
+    bool is_streaming = false;
+    int seq = 0;
 };
 
 struct AsyncChatState {
-  std::mutex mutex;
-  std::vector<std::pair<std::string, OutputType>> pending;
-  std::atomic<bool> running{false};
-  std::future<Result<ChatResult>> future;
+    std::mutex mutex;
+    std::vector<std::pair<std::string, OutputType>> pending;
+    std::atomic<bool> running{false};
+    std::future<Result<ChatResult>> future;
 };
 
 int gui_main(Config cfg);

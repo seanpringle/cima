@@ -1,10 +1,12 @@
 ---
 Language: Cpp
 BasedOnStyle: LLVM
-IndentWidth: 2
-TabWidth: 2
+AlignAfterOpenBracket: DontAlign
+AlignOperands: DontAlign
+IndentWidth: 4
+TabWidth: 4
 UseTab: Never
-ColumnLimit: 180
+ColumnLimit: 100
 AllowAllParametersOfDeclarationOnNextLine: true
 BinPackArguments: false
 BinPackParameters: false
