@@ -23,12 +23,12 @@ ChatSession::ChatSession(Config config)
 
     // Try to discover context limit from the API. Only use it if the user
     // didn't explicitly set LLM_CONTEXT_LIMIT (config.context_limit still
-    // has the default 131072 if unset — we can't distinguish that, but the
+    // has the default 300000 if unset — we can't distinguish that, but the
     // env var takes precedence because we only override if discovery succeeds
     // and we treat config as the baseline). If the user set the env var to
     // something, config.context_limit will already reflect it. Discovery
     // only fills in if config.context_limit is still the hardcoded default.
-    if (config.context_limit == 131072) {
+    if (config.context_limit == 300000) {
         int discovered = client_.fetch_model_context_limit(model_);
         if (discovered > 0) {
             context_limit_ = static_cast<size_t>(discovered);

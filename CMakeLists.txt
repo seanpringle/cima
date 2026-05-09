@@ -23,6 +23,52 @@ find_package(CURL REQUIRED)
 find_package(SDL3 REQUIRED)
 find_package(Catch2 REQUIRED)
 
+# ── libgit2 (try pkg-config first, fall back to FetchContent) ──
+# Note: we deliberately avoid find_package(libgit2) because Debian/Ubuntu
+# packages ship a broken CMake config that sets INTERFACE_INCLUDE_DIRECTORIES
+# to /usr/include/git2 instead of /usr/include, causing conflicts with
+# the system <stdint.h>.  pkg-config provides the correct include path.
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+    pkg_check_modules(LIBGIT2 libgit2)
+endif()
+
+if(LIBGIT2_FOUND)
+    message(STATUS "Found libgit2 (pkg-config): ${LIBGIT2_LIBRARIES}")
+    add_library(llmchat_git2 INTERFACE IMPORTED)
+    target_include_directories(llmchat_git2 INTERFACE ${LIBGIT2_INCLUDE_DIRS})
+    target_link_libraries(llmchat_git2 INTERFACE ${LIBGIT2_LIBRARIES})
+    if(LIBGIT2_LINK_LIBRARIES)
+        target_link_libraries(llmchat_git2 INTERFACE ${LIBGIT2_LINK_LIBRARIES})
+    endif()
+else()
+    include(FetchContent)
+    FetchContent_Declare(libgit2
+        GIT_REPOSITORY https://github.com/libgit2/libgit2.git
+        GIT_TAG v1.8.4
+        GIT_SHALLOW TRUE
+    )
+    # Suppress libgit2's own test/tool builds to speed up the fetch
+    set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(BUILD_CLAR OFF CACHE BOOL "" FORCE)
+    set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(REGEX_BACKEND "builtin" CACHE STRING "" FORCE)
+    FetchContent_MakeAvailable(libgit2)
+
+    message(STATUS "libgit2 fetched from upstream")
+    if(NOT TARGET llmchat_git2)
+        add_library(llmchat_git2 INTERFACE IMPORTED)
+        if(TARGET Git2::git2)
+            target_link_libraries(llmchat_git2 INTERFACE Git2::git2)
+        elseif(TARGET libgit2::libgit2)
+            target_link_libraries(llmchat_git2 INTERFACE libgit2::libgit2)
+        else()
+            message(FATAL_ERROR "libgit2 fetched but no expected target found (Git2::git2 or libgit2::libgit2)")
+        endif()
+    endif()
+endif()
+# ────────────────────────────────────────────────────────────────────
+
 add_library(llmchat
     src/config.cpp
     src/types.cpp
@@ -34,6 +80,7 @@ target_include_directories(llmchat PUBLIC src)
 target_link_libraries(llmchat PUBLIC
     nlohmann_json::nlohmann_json
     CURL::libcurl
+    llmchat_git2
 )
 
 add_executable(llm-chat

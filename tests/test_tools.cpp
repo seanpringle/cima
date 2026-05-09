@@ -111,7 +111,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
 
     json tools = reg.to_openai_tools();
     REQUIRE(tools.is_array());
-    REQUIRE(tools.size() == 11);
+    REQUIRE(tools.size() == 12);
 
     // Check structure of first tool
     CHECK(tools[0]["type"] == "function");
@@ -129,7 +129,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
     CHECK(names == std::set<std::string>{
                        "list_files", "read_file", "read_file_lines", "grep_files", "write_file",
                        "edit_file", "apply_patch", "run_bash", "web_search", "web_fetch",
-                       "project_tree"});
+                       "project_tree", "git_status"});
 }
 
 // ===================================================================
@@ -325,6 +325,145 @@ TEST_CASE("project_tree default parameters", "[tools][project_tree]") {
     REQUIRE(result);
     CHECK(result->find("sub/") != std::string::npos);
     CHECK(result->find("note.txt") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+// ===================================================================
+// git_status
+// ===================================================================
+
+// Helper: create a temp directory with a git repo and an initial commit.
+static std::string make_git_repo() {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    auto r = reg.execute("run_bash", R"({"command": "git init"})");
+    REQUIRE(r);
+
+    reg.execute("run_bash",
+        R"({"command": "git config user.email test@test.com"})");
+    reg.execute("run_bash",
+        R"({"command": "git config user.name Test"})");
+
+    std::ofstream(sd + "/README.md") << "# Test\n";
+    reg.execute("run_bash", R"({"command": "git add -A"})");
+    reg.execute("run_bash", R"({"command": "git commit -m 'initial commit'"})");
+    return sd;
+}
+
+TEST_CASE("git_status clean repo", "[tools][git_status]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    auto result = reg.execute("git_status", "{}");
+    REQUIRE(result);
+    CHECK(*result == "(clean — no changes)");
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_status modified tracked file", "[tools][git_status]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    // Modify the tracked file
+    std::ofstream(sd + "/README.md") << "# Modified\n";
+
+    auto result = reg.execute("git_status", "{}");
+    REQUIRE(result);
+    CHECK(result->find(" M README.md") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_status staged add", "[tools][git_status]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    // Create a new file and stage it
+    std::ofstream(sd + "/newfile.txt") << "new\n";
+    reg.execute("run_bash", R"({"command": "git add newfile.txt"})");
+
+    auto result = reg.execute("git_status", "{}");
+    REQUIRE(result);
+    CHECK(result->find("A  newfile.txt") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_status staged delete", "[tools][git_status]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    reg.execute("run_bash", R"({"command": "git rm README.md"})");
+
+    auto result = reg.execute("git_status", "{}");
+    REQUIRE(result);
+    CHECK(result->find("D  README.md") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_status untracked file", "[tools][git_status]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    std::ofstream(sd + "/untracked.txt") << "hello\n";
+
+    auto result = reg.execute("git_status", "{}");
+    REQUIRE(result);
+    CHECK(result->find("?? untracked.txt") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_status mixed staged and unstaged", "[tools][git_status]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    // Stage a modification, then modify again without staging
+    std::ofstream(sd + "/README.md") << "# Modified\n";
+    reg.execute("run_bash", R"({"command": "git add README.md"})");
+    std::ofstream(sd + "/README.md") << "# Modified again\n";
+
+    auto result = reg.execute("git_status", "{}");
+    REQUIRE(result);
+    // Both index and worktree show modified -> "MM"
+    CHECK(result->find("MM README.md") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_status not a git repo", "[tools][git_status]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    // sd has no .git directory
+    auto result = reg.execute("git_status", "{}");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("not a git repository") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_status available in plan mode", "[tools][git_status]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+    reg.set_mode(Mode::Plan);
+
+    auto result = reg.execute("git_status", "{}");
+    // Should succeed in Plan mode (read-only tool)
+    REQUIRE(result);
 
     fs::remove_all(sd);
 }

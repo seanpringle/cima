@@ -5,6 +5,11 @@
 #include <cstdlib>
 #include <cstring>
 #include <curl/curl.h>
+#include <git2.h>
+
+// Initialize libgit2 at module load time.
+// git_libgit2_init() is ref-counted and safe to call multiple times.
+static const bool g_git_init = (git_libgit2_init(), true);
 #include <fcntl.h>
 #include <fstream>
 #include <future>
@@ -57,6 +62,62 @@ Result<std::string> resolve_path(const std::string& raw_path, const std::string&
     }
 
     return std::unexpected("path must be under " + sd);
+}
+
+// ===================================================================
+// Git helpers
+// ===================================================================
+
+// Open the git repository at or walking up from safe_dir.
+// Returns the repo handle or an error string.
+// Caller must git_repository_free() the handle on success.
+static Result<git_repository*> open_git_repo(const std::string& safe_dir) {
+    git_repository* repo = nullptr;
+    int err = git_repository_open_ext(&repo, safe_dir.c_str(),
+        GIT_REPOSITORY_OPEN_CROSS_FS, nullptr);
+    if (err != 0) {
+        const git_error* e = git_error_last();
+        return std::unexpected(
+            "not a git repository: " +
+            (e ? std::string(e->message) : std::string("unknown error")));
+    }
+    return repo;
+}
+
+// Convert libgit2 status flags to porcelain v1 characters.
+// Returns the character for the index (staging area) status.
+// Porcelain v1: ' ' = clean, 'M' = modified, 'A' = added, 'D' = deleted,
+// 'R' = renamed, 'T' = type change.
+// Special case: if the file is untracked (GIT_STATUS_WT_NEW alone),
+// both index and worktree show '?'.
+static char status_char_for_index(unsigned int flags) {
+    if (flags & GIT_STATUS_INDEX_NEW)        return 'A';
+    if (flags & GIT_STATUS_INDEX_MODIFIED)   return 'M';
+    if (flags & GIT_STATUS_INDEX_DELETED)    return 'D';
+    if (flags & GIT_STATUS_INDEX_RENAMED)    return 'R';
+    if (flags & GIT_STATUS_INDEX_TYPECHANGE) return 'T';
+    // If the only change is untracked in the worktree, show '?' in index too
+    if (flags & GIT_STATUS_WT_NEW &&
+        !(flags & (GIT_STATUS_INDEX_NEW | GIT_STATUS_INDEX_MODIFIED |
+                   GIT_STATUS_INDEX_DELETED | GIT_STATUS_INDEX_RENAMED |
+                   GIT_STATUS_INDEX_TYPECHANGE))) {
+        return '?';
+    }
+    return ' ';
+}
+
+// Returns the character for the working tree status.
+// Porcelain v1: ' ' = clean, 'M' = modified, 'D' = deleted, '?' = untracked,
+// '!' = ignored, 'U' = conflicted.
+static char status_char_for_workdir(unsigned int flags) {
+    if (flags & GIT_STATUS_WT_NEW)           return '?';
+    if (flags & GIT_STATUS_WT_MODIFIED)      return 'M';
+    if (flags & GIT_STATUS_WT_DELETED)       return 'D';
+    if (flags & GIT_STATUS_WT_RENAMED)       return 'R';
+    if (flags & GIT_STATUS_WT_TYPECHANGE)    return 'T';
+    if (flags & GIT_STATUS_IGNORED)          return '!';
+    if (flags & GIT_STATUS_CONFLICTED)       return 'U';
+    return ' ';
 }
 
 // ===================================================================
@@ -973,6 +1034,104 @@ static Tool make_web_fetch_tool() {
 }
 
 // ===================================================================
+// git_status tool
+// ===================================================================
+
+static Tool make_git_status_tool(const std::string& safe_dir) {
+    Tool t;
+    t.name = "git_status";
+    t.description =
+        "Return the working tree status in short format (like 'git status --short').\n"
+        "Each line uses the two-character porcelain format:\n"
+        "  XY <path>\n"
+        "where X is the index status and Y is the working tree status.\n"
+        "  ' ' = unmodified, M = modified, A = added, D = deleted, "
+        "R = renamed, C = copied, U = updated, ? = untracked, ! = ignored\n"
+        "Output is sorted by path and capped at 200 entries.";
+    t.timeout_sec = 10;
+    t.parameters = {{"type", "object"},
+        {"properties", json::object()},
+        {"required", json::array()}};
+
+    t.execute = [safe_dir](const json& /*args*/) -> Result<std::string> {
+        // Open repo
+        auto repo_res = open_git_repo(safe_dir);
+        if (!repo_res) {
+            return std::unexpected(repo_res.error());
+        }
+        git_repository* repo = *repo_res;
+        auto cleanup = std::unique_ptr<git_repository, decltype(&git_repository_free)>(
+            repo, git_repository_free);
+
+        // Collect status entries
+        struct Entry {
+            std::string path;
+            char x; // index status
+            char y; // working tree status
+        };
+        std::vector<Entry> entries;
+        const int max_entries = 200;
+
+        git_status_options opts = GIT_STATUS_OPTIONS_INIT;
+        opts.flags = GIT_STATUS_OPT_INCLUDE_UNTRACKED
+                   | GIT_STATUS_OPT_RECURSE_UNTRACKED_DIRS
+                   | GIT_STATUS_OPT_INCLUDE_IGNORED
+                   | GIT_STATUS_OPT_SORT_CASE_SENSITIVELY;
+
+        struct CbPayload {
+            std::vector<Entry>* out;
+            int max;
+        };
+        CbPayload payload{&entries, max_entries};
+
+        auto cb = [](const char* path, unsigned int status_flags, void* data) -> int {
+            auto* p = static_cast<CbPayload*>(data);
+            if (static_cast<int>(p->out->size()) >= p->max)
+                return 1; // abort iteration
+
+            Entry e;
+            e.path = path ? path : "";
+            e.x = status_char_for_index(status_flags);
+            e.y = status_char_for_workdir(status_flags);
+            p->out->push_back(std::move(e));
+            return 0; // continue
+        };
+
+        int err = git_status_foreach_ext(repo, &opts, cb, &payload);
+        if (err < 0 && err != GIT_EUSER) {
+            const git_error* e = git_error_last();
+            return std::unexpected("git_status error: " +
+                (e ? std::string(e->message) : std::string("unknown")));
+        }
+
+        // Sort by path
+        std::sort(entries.begin(), entries.end(),
+            [](const Entry& a, const Entry& b) { return a.path < b.path; });
+
+        // Format output
+        std::string result;
+        bool truncated = (entries.size() >= static_cast<size_t>(max_entries));
+        size_t count = truncated ? max_entries : entries.size();
+        for (size_t i = 0; i < count; i++) {
+            const auto& e = entries[i];
+            result += e.x;
+            result += e.y;
+            result += ' ';
+            result += e.path;
+            result += '\n';
+        }
+        if (truncated) {
+            result += "...(truncated, >" + std::to_string(entries.size()) + " files)";
+        }
+        if (result.empty()) {
+            result = "(clean — no changes)";
+        }
+        return result;
+    };
+    return t;
+}
+
+// ===================================================================
 // project_tree tool
 // ===================================================================
 
@@ -1624,6 +1783,7 @@ void ToolRegistry::add_defaults(const std::string& safe_dir,
     add(make_web_search_tool(search_api_key, search_engine_id, search_endpoint));
     add(make_project_tree_tool(safe_dir));
     add(make_web_fetch_tool());
+    add(make_git_status_tool(safe_dir));
 }
 
 json ToolRegistry::to_openai_tools() const {
