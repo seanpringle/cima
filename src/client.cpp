@@ -74,6 +74,10 @@ static CURL* setup_curl(
     // curl finds the system trust store automatically.
     curl_easy_setopt(curl, CURLOPT_CAINFO, nullptr);
 
+    // Enable transparent decompression (gzip, deflate, etc.).
+    // libcurl will send Accept-Encoding and auto-decompress the response.
+    curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
+
     curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progress_cb);
     curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
 
@@ -138,6 +142,8 @@ Result<std::string> ChatClient::http_get(const std::string& url) {
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
     curl_easy_setopt(curl, CURLOPT_CAINFO, nullptr);
+
+    curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
 
     std::string body;
     long http_code = 0;
