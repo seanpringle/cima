@@ -10,13 +10,14 @@ std::string sanitize_utf8(const std::string& s) {
     size_t i = 0;
     while (i < s.size()) {
         auto b = static_cast<unsigned char>(s[i]);
+
         if (b <= 0x7F) {
             result += s[i];
             i += 1;
         } else if (b >= 0xC2 && b <= 0xDF && i + 1 < s.size() &&
             static_cast<unsigned char>(s[i + 1]) >= 0x80 &&
             static_cast<unsigned char>(s[i + 1]) <= 0xBF) {
-            result += s.substr(i, 2);
+            result.append(s, i, 2); // Optimized
             i += 2;
         } else if (b >= 0xE0 && b <= 0xEF && i + 2 < s.size()) {
             auto c1 = static_cast<unsigned char>(s[i + 1]);
@@ -26,8 +27,9 @@ std::string sanitize_utf8(const std::string& s) {
                 ok = ok && (c1 >= 0xA0);
             if (b == 0xED)
                 ok = ok && (c1 <= 0x9F);
+
             if (ok) {
-                result += s.substr(i, 3);
+                result.append(s, i, 3); // Optimized
                 i += 3;
             } else {
                 result += "\xEF\xBF\xBD";
@@ -43,8 +45,9 @@ std::string sanitize_utf8(const std::string& s) {
                 ok = ok && (c1 >= 0x90);
             if (b == 0xF4)
                 ok = ok && (c1 <= 0x8F);
+
             if (ok) {
-                result += s.substr(i, 4);
+                result.append(s, i, 4); // Optimized
                 i += 4;
             } else {
                 result += "\xEF\xBF\xBD";
