@@ -544,7 +544,7 @@ Running tests with structured output (pass/fail counts, test names). Currently r
 | 2025-01-XX | `208205e` | Stop round-tripping `reasoning_content` to API |
 | 2025-01-XX | `8deebc7` | Selective retention compaction (3-phase: drop → summarize → slide) |
 | 2025-01-XX | `4df848e` | Discover context window from API via `/v1/models` |
-| 2026-05-10 | `HEAD` | Add `project_tree` tool — recursive UTF-8 tree with depth/line limits, permission-safe iteration, Plan mode support |
+| 2026-05-10 | `c69b3ae` | Add `project_tree` tool — recursive UTF-8 tree with depth/line limits, permission-safe iteration, Plan mode support |
 
 ---
 
