@@ -49,8 +49,6 @@ static CURL* setup_curl(const std::string& url, struct curl_slist* headers, cons
 
   curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
   curl_easy_setopt(curl, CURLOPT_TIMEOUT, 3600L);
-  curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 32L);
-  curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, 300L);
 
   curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
   curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
