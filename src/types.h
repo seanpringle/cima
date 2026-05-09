@@ -92,7 +92,7 @@ class Conversation {
     void add_assistant(
         std::string content, std::string reasoning = {}, std::vector<ToolCall> tool_calls = {});
     void add_tool(const std::string& tool_call_id, const std::string& content);
-    void add_system(std::string content);
+    void set_system_prompt(const std::string& content) { system_prompt_ = content; }
     size_t size() const { return messages_.size(); }
     void truncate(size_t n);
     void clear();

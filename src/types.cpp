@@ -227,10 +227,6 @@ void Conversation::add_tool(const std::string& tool_call_id, const std::string& 
     messages_.push_back(Message{.role = "tool", .content = content, .tool_call_id = tool_call_id});
 }
 
-void Conversation::add_system(std::string content) {
-    messages_.push_back(Message{.role = "system", .content = std::move(content)});
-}
-
 void Conversation::truncate(size_t n) {
     if (n < messages_.size()) {
         messages_.resize(n);

@@ -111,7 +111,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
 
     json tools = reg.to_openai_tools();
     REQUIRE(tools.is_array());
-    REQUIRE(tools.size() == 6);
+    REQUIRE(tools.size() == 7);
 
     // Check structure of first tool
     CHECK(tools[0]["type"] == "function");
@@ -128,7 +128,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
     }
     CHECK(names == std::set<std::string>{
                        "list_files", "read_file", "grep_files", "write_file",
-                       "edit_file", "run_bash"});
+                       "edit_file", "run_bash", "web_search"});
 }
 
 // ===================================================================
@@ -626,21 +626,24 @@ struct MockHttpServer {
 // web_search
 // ===================================================================
 
-TEST_CASE("web_search requires api key", "[tools][web_search]") {
+TEST_CASE("web_search always registered", "[tools][web_search]") {
+    // web_search is always registered now, even without API key
     ToolRegistry reg;
-    // No search_api_key — web_search should not be registered
     reg.add_defaults("/tmp");
+    // Should not return "unknown tool"
     auto result = reg.execute("web_search", R"({"query": "hello"})");
-    CHECK_FALSE(result);
-    CHECK(result.error().find("unknown tool") != std::string::npos);
+    REQUIRE(result);
+    CHECK(result->find("1.") != std::string::npos);
 }
 
-TEST_CASE("web_search with api key but no engine/endpoint", "[tools][web_search]") {
+TEST_CASE("web_search falls back to wikipedia when no engine/endpoint", "[tools][web_search]") {
+    // With only api_key (no engine_id, no endpoint), falls back to Wikipedia
     ToolRegistry reg;
     reg.add_defaults("/tmp", "my-api-key", "", "");
     auto result = reg.execute("web_search", R"({"query": "hello"})");
-    CHECK_FALSE(result);
-    CHECK(result.error().find("SEARCH_ENGINE_ID") != std::string::npos);
+    // Should succeed via Wikipedia fallback
+    REQUIRE(result);
+    CHECK(result->find("1.") != std::string::npos);
 }
 
 TEST_CASE("web_search empty query rejected", "[tools][web_search]") {

@@ -17,6 +17,10 @@ int main(int argc, char* argv[]) {
                 << "  MODEL               Model name\n"
                 << "  SYSTEM_PROMPT       System prompt\n"
                 << "  SAFE_DIR            Tool sandbox directory\n"
+                << "  SEARCH_API_KEY      Google Custom Search API key (for web_search)\n"
+                << "  SEARCH_ENGINE_ID    Google Custom Search engine ID\n"
+                << "  SEARCH_ENDPOINT     Custom search endpoint with {query} placeholder\n"
+                << "                     (default: Wikipedia opensearch, no key needed)\n"
                 << std::flush;
             return 0;
         }

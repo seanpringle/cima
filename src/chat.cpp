@@ -4,7 +4,8 @@
 
 ChatSession::ChatSession(Config config)
     : model_(std::move(config.model)), safe_dir_(std::move(config.safe_dir)),
-      max_iterations_(config.max_tool_iterations), conversation_(std::move(config.system_prompt)),
+      base_system_prompt_(config.system_prompt),
+      max_iterations_(config.max_tool_iterations), conversation_(config.system_prompt),
       client_(std::move(config.api_base), std::move(config.api_key)) {
     tools_.add_defaults(safe_dir_, config.search_api_key, config.search_engine_id,
         config.search_endpoint);
@@ -15,12 +16,16 @@ ChatSession::ChatSession(Config config)
 void ChatSession::clear() { conversation_.clear(); }
 
 void ChatSession::inject_mode_instruction() {
-    std::string instruction = (mode_ == Mode::Plan)
+    std::string mode_instruction = (mode_ == Mode::Plan)
         ? "[Mode] You are now in Plan mode (read-only). "
           "Available tools: list_files, read_file, grep_files, web_search. "
           "Do not use write_file, edit_file, or run_bash \xe2\x80\x94 they will be rejected."
         : "[Mode] You are now in Build mode. All tools are available.";
-    conversation_.add_system(std::move(instruction));
+    // Embed the mode instruction directly into the system prompt, so that all
+    // system content stays at the beginning of the conversation (required by
+    // some API backends). The base system prompt is preserved for re-injection
+    // when the mode toggles.
+    conversation_.set_system_prompt(base_system_prompt_ + "\n\n" + mode_instruction);
 }
 
 void ChatSession::set_mode(Mode m) {

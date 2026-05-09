@@ -537,9 +537,11 @@ static Tool make_web_search_tool(const std::string& api_key,
     const std::string& endpoint_override) {
     Tool t;
     t.name = "web_search";
-    t.description = "Search the web. Returns up to 10 results with titles, snippets, and URLs. "
-                    "Configure via SEARCH_API_KEY and either SEARCH_ENGINE_ID (Google CSE) or "
-                    "SEARCH_ENDPOINT (custom URL with {query} placeholder).";
+    t.description =
+        "Search the web. Returns up to 10 results with titles, snippets, and URLs. "
+        "By default uses the Wikipedia opensearch API (no key required). "
+        "To use Google Custom Search, set SEARCH_API_KEY + SEARCH_ENGINE_ID. "
+        "For a custom endpoint, set SEARCH_ENDPOINT with a {query} placeholder.";
     t.timeout_sec = 15;
     t.parameters = {{"type", "object"},
         {"properties",
@@ -555,14 +557,16 @@ static Tool make_web_search_tool(const std::string& api_key,
         if (query.size() > 200)
             query = query.substr(0, 200);
 
-        if (api_key.empty())
-            return std::unexpected(
-                "web_search requires SEARCH_API_KEY to be configured");
+        // Determine which backend to use
+        bool use_google = !api_key.empty() && !engine_id.empty();
+        bool use_custom = !endpoint_override.empty();
+        bool use_wikipedia = !use_google && !use_custom;
 
         // Build the request URL
         std::string url;
-        if (!endpoint_override.empty()) {
-            // Custom endpoint — substitute {query}
+        std::string response_format_hint; // "google", "wikipedia", "custom"
+        if (use_custom) {
+            response_format_hint = "custom";
             url = endpoint_override;
             auto pos = url.find("{query}");
             if (pos != std::string::npos) {
@@ -572,8 +576,8 @@ static Tool make_web_search_tool(const std::string& api_key,
                 url.replace(pos, 7, encoded);
                 curl_free(encoded);
             }
-        } else if (!engine_id.empty()) {
-            // Google Custom Search Engine
+        } else if (use_google) {
+            response_format_hint = "google";
             char* enc_key = curl_easy_escape(nullptr, api_key.c_str(), 0);
             char* enc_cx = curl_easy_escape(nullptr, engine_id.c_str(), 0);
             char* enc_q = curl_easy_escape(nullptr, query.c_str(), 0);
@@ -589,8 +593,14 @@ static Tool make_web_search_tool(const std::string& api_key,
             curl_free(enc_cx);
             curl_free(enc_q);
         } else {
-            return std::unexpected(
-                "web_search requires either SEARCH_ENGINE_ID or SEARCH_ENDPOINT to be configured");
+            // Wikipedia opensearch fallback — no API key required
+            response_format_hint = "wikipedia";
+            char* enc_q = curl_easy_escape(nullptr, query.c_str(), 0);
+            if (!enc_q)
+                return std::unexpected("curl_easy_escape failed");
+            url = "https://en.wikipedia.org/w/api.php?action=opensearch&search=" +
+                std::string(enc_q) + "&format=json&limit=10&origin=*";
+            curl_free(enc_q);
         }
 
         // libcurl GET
@@ -637,29 +647,54 @@ static Tool make_web_search_tool(const std::string& api_key,
             return std::unexpected("web_search JSON parse error: " + std::string(e.what()));
         }
 
-        // Format results (Google CSE structure; custom endpoints should match)
-        if (!j.contains("items") || !j["items"].is_array() || j["items"].empty()) {
-            return std::string("(no results found)");
+        // Format results based on backend
+        if (response_format_hint == "wikipedia") {
+            // Wikipedia opensearch: ["query", ["title",...], ["desc",...], ["url",...]]
+            if (!j.is_array() || j.size() < 4 || !j[1].is_array() || j[1].empty()) {
+                return std::string("(no results found)");
+            }
+            std::string result;
+            int rank = 1;
+            for (size_t i = 0; i < j[1].size() && rank <= 10; i++) {
+                std::string title = j[1][i].get<std::string>();
+                std::string snippet = j[2].is_array() && i < j[2].size()
+                    ? j[2][i].get<std::string>()
+                    : "";
+                std::string link = j[3].is_array() && i < j[3].size()
+                    ? j[3][i].get<std::string>()
+                    : "";
+                result += std::to_string(rank) + ". " + title + "\n";
+                if (!snippet.empty())
+                    result += "   " + snippet + "\n";
+                if (!link.empty())
+                    result += "   " + link + "\n";
+                result += "\n";
+                rank++;
+            }
+            return result;
+        } else {
+            // Google CSE or custom endpoint: expects {"items": [...]}
+            if (!j.contains("items") || !j["items"].is_array() || j["items"].empty()) {
+                return std::string("(no results found)");
+            }
+            std::string result;
+            int rank = 1;
+            for (const auto& item : j["items"]) {
+                if (rank > 10)
+                    break;
+                std::string title = item.value("title", "(no title)");
+                std::string snippet = item.value("snippet", "");
+                std::string link = item.value("link", "");
+                result += std::to_string(rank) + ". " + title + "\n";
+                if (!snippet.empty())
+                    result += "   " + snippet + "\n";
+                if (!link.empty())
+                    result += "   " + link + "\n";
+                result += "\n";
+                rank++;
+            }
+            return result;
         }
-
-        std::string result;
-        int rank = 1;
-        for (const auto& item : j["items"]) {
-            if (rank > 10)
-                break;
-            std::string title = item.value("title", "(no title)");
-            std::string snippet = item.value("snippet", "");
-            std::string link = item.value("link", "");
-            result += std::to_string(rank) + ". " + title + "\n";
-            if (!snippet.empty())
-                result += "   " + snippet + "\n";
-            if (!link.empty())
-                result += "   " + link + "\n";
-            result += "\n";
-            rank++;
-        }
-
-        return result;
     };
     return t;
 }
@@ -680,9 +715,10 @@ void ToolRegistry::add_defaults(const std::string& safe_dir,
     add(make_write_file_tool(safe_dir));
     add(make_edit_file_tool(safe_dir));
     add(make_run_bash_tool(safe_dir));
-    if (!search_api_key.empty()) {
-        add(make_web_search_tool(search_api_key, search_engine_id, search_endpoint));
-    }
+    // Always register web_search — falls back to Wikipedia opensearch if no
+    // credentials are configured. Google CSE or a custom endpoint can be used
+    // by setting the appropriate environment variables.
+    add(make_web_search_tool(search_api_key, search_engine_id, search_endpoint));
 }
 
 json ToolRegistry::to_openai_tools() const {

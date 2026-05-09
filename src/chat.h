@@ -36,6 +36,7 @@ class ChatSession {
   private:
     std::string model_;
     std::string safe_dir_;
+    std::string base_system_prompt_;
     int max_iterations_ = 100;
     Mode mode_ = Mode::Plan;
     void inject_mode_instruction();
