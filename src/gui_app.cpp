@@ -186,15 +186,33 @@ int gui_main(Config cfg) {
 
 
 
-        // ── Left panel (60%) with Planner/Builder tabs + Right panel (40%) with Plan ──
+        // ── Left panel (40%) with Plan + Right panel (60%) with Planner/Builder tabs ──
         {
             ImVec2 content = GetContentRegionAvail();
             float separator_w = GetStyle().ItemSpacing.x;
-            float left_width = content.x * 0.6f;
+            float left_width = content.x * 0.4f;
             float right_width = content.x - left_width - separator_w * 3;
 
-            // Left panel with tab bar
-            BeginChild("##agent_panel", ImVec2(left_width - separator_w, content.y), true);
+            // Left panel: Plan document
+            BeginChild("##plan_panel", ImVec2(left_width - separator_w, content.y), true);
+            Text("Plan");
+            Separator();
+            auto plan_result = PlanBoard::instance().read_plan();
+            if (plan_result) {
+                render_content(*plan_result);
+            } else {
+                TextDisabled("(empty plan)");
+            }
+            EndChild();
+
+            SameLine();
+
+            // Vertical separator
+            SeparatorEx(ImGuiSeparatorFlags_Vertical);
+            SameLine();
+
+            // Right panel with tab bar
+            BeginChild("##agent_panel", ImVec2(right_width, content.y), true);
             if (BeginTabBar("##agent_tabs")) {
                 // Compute flags: only pass SetSelected when we explicitly requested a switch
                 // AND this is the target tab.
@@ -217,24 +235,6 @@ int gui_main(Config cfg) {
 
                 // Clear the switch-request flag after consuming it.
                 s_tab_switch_requested = false;
-            }
-            EndChild();
-
-            SameLine();
-
-            // Vertical separator
-            SeparatorEx(ImGuiSeparatorFlags_Vertical);
-            SameLine();
-
-            // Right panel: Plan document
-            BeginChild("##plan_panel", ImVec2(right_width, content.y), true);
-            Text("Plan");
-            Separator();
-            auto plan_result = PlanBoard::instance().read_plan();
-            if (plan_result) {
-                render_content(*plan_result);
-            } else {
-                TextDisabled("(empty plan)");
             }
             EndChild();
         }
