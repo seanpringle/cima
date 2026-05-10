@@ -300,17 +300,49 @@ static int leave_span_cb(MD_SPANTYPE type, void* detail, void* userdata) {
     return 0;
 }
 
+// Like TextUnformatted() but without an implicit newline after the text.
+// Uses CalcTextSize() + GetContentRegionAvail() to handle wrapping inline.
+// Falls back to TextUnformatted() behavior for multi-line wrapped fragments.
+static void TextUnformattedInline(const char* text_begin, const char* text_end = nullptr) {
+    if (text_begin == text_end)
+        return;
+
+    float line_height = GetTextLineHeight();
+    float text_width = CalcTextSize(text_begin, text_end).x;
+    float avail_width = GetContentRegionAvail().x;
+
+    // Check if we're at the start of the current line.
+    // At line start GetCursorPos().x ~ GetCursorStartPos().x;
+    // after SameLine() cursor X is further right.
+    bool at_line_start = (GetCursorPos().x <= GetCursorStartPos().x + 1.0f);
+
+    // If we're mid-line and the text doesn't fit, wrap to next line.
+    if (!at_line_start && text_width > avail_width) {
+        NewLine();
+    }
+
+    // Render (handles internal word-wrapping when PushTextWrapPos is active).
+    TextUnformatted(text_begin, text_end);
+
+    // If the rendered text wrapped to multiple lines within this single call,
+    // leave the cursor where ItemSize placed it (end of wrapped block).
+    // Otherwise stay inline so the next fragment continues on the same line.
+    if (GetItemRectSize().y <= line_height * 1.1f) {
+        SameLine(0, 0);
+    }
+}
+
 static int text_cb(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata) {
     auto& ctx = *static_cast<RenderCtx*>(userdata);
     switch (type) {
     case MD_TEXT_NORMAL:
-        TextUnformatted(text, text + size);
+        TextUnformattedInline(text, text + size);
         break;
     case MD_TEXT_CODE:
         if (ctx.in_code_block) {
             ctx.code_buf.append(text, size);
         } else {
-            TextUnformatted(text, text + size);
+            TextUnformattedInline(text, text + size);
         }
         break;
     case MD_TEXT_BR:
@@ -320,10 +352,10 @@ static int text_cb(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* us
         TextUnformatted(" ");
         break;
     case MD_TEXT_ENTITY:
-        TextUnformatted(text, text + size);
+        TextUnformattedInline(text, text + size);
         break;
     case MD_TEXT_NULLCHAR:
-        TextUnformatted("\xef\xbf\xbd");
+        TextUnformattedInline("\xef\xbf\xbd");
         break;
     case MD_TEXT_HTML:
     case MD_TEXT_LATEXMATH:
