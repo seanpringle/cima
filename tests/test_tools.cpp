@@ -2204,17 +2204,23 @@ TEST_CASE("web_search always registered", "[tools][web_search]") {
     // Should not return "unknown tool"
     auto result = reg.execute("web_search", R"({"query": "hello"})");
     REQUIRE(result);
-    CHECK(result->find("1.") != std::string::npos);
+    // Default DDG response should contain the query term or results
+    bool found = result->find("hello") != std::string::npos ||
+                 result->find("Hello") != std::string::npos;
+    CHECK(found);
 }
 
-TEST_CASE("web_search falls back to wikipedia when no engine/endpoint", "[tools][web_search]") {
-    // With only api_key (no engine_id, no endpoint), falls back to Wikipedia
+TEST_CASE("web_search falls back to duckduckgo when no engine/endpoint", "[tools][web_search]") {
+    // With only api_key (no engine_id, no endpoint), falls back to DuckDuckGo
     ToolRegistry reg;
     reg.add_defaults("/tmp", "my-api-key", "", "");
     auto result = reg.execute("web_search", R"({"query": "hello"})");
-    // Should succeed via Wikipedia fallback
+    // Should succeed via DuckDuckGo fallback
     REQUIRE(result);
-    CHECK(result->find("1.") != std::string::npos);
+    // DDG returns the abstract text or heading containing the query term
+    bool found = result->find("hello") != std::string::npos ||
+                 result->find("Hello") != std::string::npos;
+    CHECK(found);
 }
 
 TEST_CASE("web_search empty query rejected", "[tools][web_search]") {

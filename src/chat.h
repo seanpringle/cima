@@ -5,7 +5,11 @@
 #include "tools.h"
 #include "types.h"
 
+#include <nlohmann/json.hpp>
+
 #include <string>
+
+using json = nlohmann::json;
 
 struct ChatResult {
     std::string content;
@@ -39,6 +43,7 @@ class ChatSession {
     std::string model_;
     std::string safe_dir_;
     std::string base_system_prompt_;
+    std::string api_key_;        // stored for subagent inheritance
     int max_iterations_ = 100;  // overridden by config.max_tool_iterations
     size_t context_limit_;
     size_t compact_threshold_;
@@ -52,4 +57,13 @@ class ChatSession {
     // Summarization callback for conversation compaction
     std::optional<std::string> summarize_messages_(
         const std::vector<Message>& msgs, size_t max_tokens);
+
+    // Subagent delegation
+    Result<std::string> run_subagent_(const json& args);
+    Result<ChatResult> run_subagent_session_(
+        const std::string& subagent_name,
+        const std::string& task,
+        const std::string& model_override,
+        const std::string& api_base_override,
+        const std::string& api_key_override);
 };

@@ -2752,39 +2752,129 @@ void ToolRegistry::add_defaults(const std::string& safe_dir,
     const std::string& search_api_key,
     const std::string& search_engine_id,
     const std::string& search_endpoint) {
-    add(make_list_files_tool(safe_dir));
-    add(make_read_file_tool(safe_dir));
-    add(make_read_file_lines_tool(safe_dir));
-    add(make_grep_files_tool(safe_dir));
-    add(make_write_file_tool(safe_dir));
-    add(make_edit_file_tool(safe_dir));
-    add(make_apply_patch_tool(safe_dir));
-    add(make_run_bash_tool(safe_dir));
-    // Always register web_search — falls back to DuckDuckGo Instant Answer API
-    // if no credentials are configured. Rate-limited to 1 req/s with exponential
-    // backoff on HTTP 429. Google CSE or a custom endpoint can be used by
-    // setting the appropriate environment variables.
-    add(make_web_search_tool(search_api_key, search_engine_id, search_endpoint));
-    add(make_project_tree_tool(safe_dir));
-    add(make_web_fetch_tool());
-    add(make_git_status_tool(safe_dir));
-    add(make_git_diff_tool(safe_dir));
-    add(make_git_log_tool(safe_dir));
-    add(make_git_add_tool(safe_dir));
-    add(make_git_commit_tool(safe_dir));
-    add(make_delete_file_tool(safe_dir));
-    add(make_move_file_tool(safe_dir));
-    add(make_rename_file_tool(safe_dir));
+    // ── Read-only tools ──
+    {
+        auto t = make_list_files_tool(safe_dir);
+        t.permission = ToolPermission::ReadOnly;
+        add(std::move(t));
+    }
+    {
+        auto t = make_read_file_tool(safe_dir);
+        t.permission = ToolPermission::ReadOnly;
+        add(std::move(t));
+    }
+    {
+        auto t = make_read_file_lines_tool(safe_dir);
+        t.permission = ToolPermission::ReadOnly;
+        add(std::move(t));
+    }
+    {
+        auto t = make_grep_files_tool(safe_dir);
+        t.permission = ToolPermission::ReadOnly;
+        add(std::move(t));
+    }
+    {
+        auto t = make_project_tree_tool(safe_dir);
+        t.permission = ToolPermission::ReadOnly;
+        add(std::move(t));
+    }
+    {
+        auto t = make_web_search_tool(search_api_key, search_engine_id, search_endpoint);
+        t.permission = ToolPermission::ReadOnly;
+        add(std::move(t));
+    }
+    {
+        auto t = make_web_fetch_tool();
+        t.permission = ToolPermission::ReadOnly;
+        add(std::move(t));
+    }
+    {
+        auto t = make_git_status_tool(safe_dir);
+        t.permission = ToolPermission::ReadOnly;
+        add(std::move(t));
+    }
+    {
+        auto t = make_git_diff_tool(safe_dir);
+        t.permission = ToolPermission::ReadOnly;
+        add(std::move(t));
+    }
+    {
+        auto t = make_git_log_tool(safe_dir);
+        t.permission = ToolPermission::ReadOnly;
+        add(std::move(t));
+    }
+
+    // ── Write tools ──
+    {
+        auto t = make_write_file_tool(safe_dir);
+        t.permission = ToolPermission::Write;
+        add(std::move(t));
+    }
+    {
+        auto t = make_edit_file_tool(safe_dir);
+        t.permission = ToolPermission::Write;
+        add(std::move(t));
+    }
+    {
+        auto t = make_apply_patch_tool(safe_dir);
+        t.permission = ToolPermission::Write;
+        add(std::move(t));
+    }
+    {
+        auto t = make_run_bash_tool(safe_dir);
+        t.permission = ToolPermission::Write;
+        add(std::move(t));
+    }
+    {
+        auto t = make_git_add_tool(safe_dir);
+        t.permission = ToolPermission::Write;
+        add(std::move(t));
+    }
+    {
+        auto t = make_git_commit_tool(safe_dir);
+        t.permission = ToolPermission::Write;
+        add(std::move(t));
+    }
+    {
+        auto t = make_delete_file_tool(safe_dir);
+        t.permission = ToolPermission::Write;
+        add(std::move(t));
+    }
+    {
+        auto t = make_move_file_tool(safe_dir);
+        t.permission = ToolPermission::Write;
+        add(std::move(t));
+    }
+    {
+        auto t = make_rename_file_tool(safe_dir);
+        t.permission = ToolPermission::Write;
+        add(std::move(t));
+    }
 }
 
 json ToolRegistry::to_openai_tools() const {
+    return to_openai_tools(nullptr);
+}
+
+json ToolRegistry::to_openai_tools(const std::set<std::string>* only_these) const {
     json arr = json::array();
     for (const auto& t : tools_) {
+        if (only_these && !only_these->count(t.name))
+            continue;
         arr.push_back({{"type", "function"},
             {"function",
                 {{"name", t.name}, {"description", t.description}, {"parameters", t.parameters}}}});
     }
     return arr;
+}
+
+std::set<std::string> ToolRegistry::tool_names_by_permission(ToolPermission perm) const {
+    std::set<std::string> names;
+    for (const auto& t : tools_) {
+        if (t.permission == perm)
+            names.insert(t.name);
+    }
+    return names;
 }
 
 Result<std::string> ToolRegistry::execute(const std::string& name, const std::string& args_json) {

@@ -1,10 +1,12 @@
 #include "chat.h"
+#include "subagent.h"
 
 #include <future>
 
 ChatSession::ChatSession(Config config)
     : model_(std::move(config.model)), safe_dir_(std::move(config.safe_dir)),
       base_system_prompt_(config.system_prompt),
+      api_key_(config.api_key),
       max_iterations_(config.max_tool_iterations),
       context_limit_(static_cast<size_t>(config.context_limit)),
       compact_threshold_(static_cast<size_t>(config.compact_threshold)),
@@ -13,6 +15,46 @@ ChatSession::ChatSession(Config config)
     tools_.add_defaults(safe_dir_, config.search_api_key, config.search_engine_id,
         config.search_endpoint);
     tools_.set_mode(mode_);
+
+    // ── Subagent delegation tool (available in all modes) ──
+    {
+        Tool t;
+        t.name = "run_subagent";
+        t.permission = ToolPermission::Internal;
+        t.description =
+            "Delegate a task to a subagent with a fresh context. "
+            "Use this for research, exploration, or any task that "
+            "benefits from isolated context or a different model.\n\n"
+            "Available subagents:\n"
+            "  explore — read-only research assistant (file reading, "
+            "web search, git status/diff/log)\n"
+            "  general — full-access assistant (all tools except "
+            "subagent delegation)\n\n"
+            "The subagent runs independently and returns its findings "
+            "as a tool result. The subagent conversation is NOT merged "
+            "into the primary context — only the final result is returned.";
+        t.parameters = {{"type", "object"},
+            {"properties",
+                {{"name",
+                    {{"type", "string"},
+                        {"enum", {"explore", "general"}},
+                        {"description", "Which subagent to use"}}},
+                    {"task",
+                        {{"type", "string"},
+                            {"description",
+                                "The task or question for the subagent"}}},
+                    {"model",
+                        {{"type", "string"},
+                            {"description",
+                                "Override model (optional, defaults to "
+                                "primary session's model)"}}}}},
+            {"required", {"name", "task"}}};
+        // Capture the config by value for the api_base/api_key fallback.
+        t.execute = [this, config](const json& args) -> Result<std::string> {
+            return run_subagent_(args);
+        };
+        tools_.add(std::move(t));
+    }
 
     // Wire up the summary callback for compaction
     conversation_.set_summary_callback(
@@ -239,4 +281,227 @@ std::optional<std::string> ChatSession::summarize_messages_(
     } catch (...) {
         return std::nullopt;
     }
+}
+
+// ===================================================================
+// Subagent delegation
+// ===================================================================
+
+Result<std::string> ChatSession::run_subagent_(const json& args) {
+    auto name = args.value("name", std::string());
+    auto task = args.value("task", std::string());
+    auto model_override = args.value("model", std::string());
+
+    if (name.empty()) {
+        return std::unexpected("subagent name is required");
+    }
+    if (task.empty()) {
+        return std::unexpected("task is required");
+    }
+
+    // Look up the subagent definition
+    const auto* def = find_builtin_subagent(name);
+    if (!def) {
+        return std::unexpected(
+            "unknown subagent: " + name +
+            ". Available: explore, general");
+    }
+
+    // Determine endpoint override (default to primary's if not specified)
+    std::string api_base = def->api_base.empty() ? "" : def->api_base;
+    std::string api_key = def->api_key.empty() ? "" : def->api_key;
+
+    if (output_cb_) {
+        output_cb_("[Subagent: " + def->display_name + " started]",
+            OutputType::ToolInvocation);
+    }
+
+    auto result = run_subagent_session_(
+        name, task, model_override, api_base, api_key);
+
+    if (output_cb_) {
+        output_cb_("[Subagent: " + def->display_name + " finished]",
+            OutputType::ToolInvocation);
+    }
+
+    if (!result) {
+        return std::unexpected(result.error());
+    }
+    return result->content;
+}
+
+Result<ChatResult> ChatSession::run_subagent_session_(
+    const std::string& subagent_name,
+    const std::string& task,
+    const std::string& model_override,
+    const std::string& api_base_override,
+    const std::string& api_key_override) {
+
+    // Determine which model to use
+    std::string subagent_model = model_override.empty() ? model_ : model_override;
+
+    // Determine which endpoint to use
+    std::string subagent_api_base;
+    std::string subagent_api_key;
+    if (api_base_override.empty()) {
+        // Use primary's endpoint: need the base URL without "/chat/completions"
+        subagent_api_base = client_.url();
+        auto suffix = subagent_api_base.rfind("/chat/completions");
+        if (suffix != std::string::npos) {
+            subagent_api_base = subagent_api_base.substr(0, suffix);
+        }
+        // Inherit the primary's API key
+        subagent_api_key = api_key_;
+    } else {
+        subagent_api_base = api_base_override;
+        subagent_api_key = api_key_override.empty() ? api_key_ : api_key_override;
+    }
+
+    // Create a ChatClient for the subagent (always new to avoid state sharing)
+    ChatClient subagent_client(subagent_api_base, subagent_api_key);
+
+    // Look up the subagent definition for system prompt and tool config
+    auto* def = find_builtin_subagent(subagent_name);
+    std::string system_prompt = def ? def->system_prompt
+        : "You are a helpful assistant.";
+
+    Conversation subagent_conv(system_prompt);
+    subagent_conv.add_user(task);
+
+    // Build the subagent's tool registry
+    ToolRegistry subagent_tools;
+    subagent_tools.set_mode(mode_);
+
+    // Determine which tools the subagent gets
+    std::set<std::string> allowed_tools;
+    if (def) {
+        if (def->name == "explore") {
+            // Read-only tools only
+            allowed_tools = tools_.tool_names_by_permission(ToolPermission::ReadOnly);
+        } else {
+            // All tools except run_subagent
+            for (const auto& t : tools_.tools()) {
+                if (t.name != "run_subagent") {
+                    allowed_tools.insert(t.name);
+                }
+            }
+        }
+    } else {
+        // Fallback: all tools except run_subagent
+        for (const auto& t : tools_.tools()) {
+            if (t.name != "run_subagent") {
+                allowed_tools.insert(t.name);
+            }
+        }
+    }
+
+    // Register the allowed tools on the subagent registry
+    for (const auto& t : tools_.tools()) {
+        if (allowed_tools.count(t.name)) {
+            subagent_tools.add(t);
+        }
+    }
+
+    // Subagent loop
+    const int max_subagent_iters = 25;
+    std::string last_content;
+    std::vector<std::string> trace;
+
+    for (int iter = 0; iter < max_subagent_iters; iter++) {
+        if (g_interrupted) {
+            return std::unexpected("Interrupted during subagent execution");
+        }
+
+        json payload = {
+            {"model", subagent_model},
+            {"messages", subagent_conv.to_openai_messages()},
+            {"tools", subagent_tools.to_openai_tools(&allowed_tools)},
+            {"stream", false},
+        };
+
+        auto result = subagent_client.chat(payload);
+        if (!result) {
+            auto msg = result.error();
+            auto raw = subagent_client.last_raw_response();
+            if (!raw.empty()) {
+                msg += " | raw: " + raw.substr(0, 500);
+            }
+            return std::unexpected(std::move(msg));
+        }
+
+        const json& data = *result;
+        if (!data.contains("choices") || data["choices"].empty()) {
+            return std::unexpected("subagent: empty response from API");
+        }
+
+        const auto& choice = data["choices"][0];
+        const auto& message = choice["message"];
+
+        // Extract content
+        std::string content;
+        auto c_it = message.find("content");
+        if (c_it != message.end() && c_it->is_string()) {
+            content = c_it->get<std::string>();
+        }
+
+        // Extract tool calls
+        auto tc_it = message.find("tool_calls");
+        if (tc_it != message.end() && tc_it->is_array() && !tc_it->empty()) {
+            std::vector<ToolCall> calls;
+            for (const auto& tc : *tc_it) {
+                ToolCall call;
+                call.index = tc.value("index", 0);
+                call.id = tc.value("id", std::string());
+                if (tc.contains("function")) {
+                    call.name = tc["function"].value("name", std::string());
+                    call.arguments = tc["function"].value("arguments", std::string());
+                }
+                calls.push_back(std::move(call));
+            }
+
+            // Add assistant message with tool calls to conversation
+            subagent_conv.add_assistant("", "", calls);
+
+            // Execute each tool
+            for (const auto& call : calls) {
+                if (g_interrupted) {
+                    return std::unexpected("Interrupted during subagent tool execution");
+                }
+
+                std::string trace_line = "#" + std::to_string(iter + 1) +
+                    " " + call.name + "(" + call.arguments + ")";
+                trace.push_back(trace_line);
+
+                auto tr = subagent_tools.execute(call.name, call.arguments);
+                std::string result_str = tr ? *tr : tr.error();
+                subagent_conv.add_tool(call.id, result_str);
+
+                // Also add tool result to trace (truncated)
+                if (result_str.size() > 200) {
+                    trace.push_back("  -> (" + std::to_string(result_str.size()) + " bytes)");
+                } else {
+                    trace.push_back("  -> " + result_str);
+                }
+            }
+            continue;
+        }
+
+        // Content response — we're done
+        last_content = content;
+        // Build the result with a trace
+        std::string result_body;
+        result_body += "--- Subagent result ---\n\n";
+        result_body += last_content;
+        if (!trace.empty()) {
+            result_body += "\n\n--- Subagent trace ---\n";
+            for (const auto& line : trace) {
+                result_body += line + "\n";
+            }
+        }
+        return ChatResult{std::move(result_body), std::string()};
+    }
+
+    return std::unexpected(
+        "Subagent reached maximum iterations (" +
+        std::to_string(max_subagent_iters) + ")");
 }
