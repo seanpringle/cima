@@ -577,23 +577,8 @@ void render_chat_ui(TabInfo& tab, bool& done) {
 
     // ── tab toolbar (within the tab content area) ──
     {
-        // Left side: title editing
-
-        // Title editing (inline)
-        PushID("title_edit");
-        SetNextItemWidth(200);
-        if (InputText("##title", ui.title_buf, sizeof(ui.title_buf),
-                ImGuiInputTextFlags_EnterReturnsTrue)) {
-            tab.title = ui.title_buf;
-        }
-        SameLine();
-        if (SmallButton("Rename")) {
-            tab.title = ui.title_buf;
-        }
-        PopID();
-
-        // Right side: controls
-        SameLine(0, 20);
+        // Controls (left-aligned)
+        SameLine(0, 0);
         if (SmallButton("Clear")) {
             session.clear();
             ui.entries.clear();
