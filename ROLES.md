@@ -19,7 +19,6 @@ Workflow:
 2. User switches to Builder tab -> Builder reads plan with read_plan
 3. Builder implements, tests, calls comment_plan with summary
 4. User switches to Planner -> Planner reviews, may call comment_plan with feedback
-5. Optionally user asks subagent to review -> subagent calls comment_plan
-6. Builder reads new comments, iterates, repeats
-7. Once done, Builder commits changes
-8. User clears both sessions for next task
+5. Builder reads new comments, iterates, repeats
+6. Once done, Builder commits changes
+7. User clears both sessions for next task
