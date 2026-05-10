@@ -23,6 +23,24 @@ find_package(CURL REQUIRED)
 find_package(SDL3 REQUIRED)
 find_package(Catch2 REQUIRED)
 
+# ── md4c (Markdown parser) ──
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+    pkg_check_modules(MD4C md4c)
+endif()
+if(MD4C_FOUND)
+    message(STATUS "Found md4c: ${MD4C_LIBRARIES}")
+    add_library(llmchat_md4c INTERFACE IMPORTED)
+    target_include_directories(llmchat_md4c INTERFACE ${MD4C_INCLUDE_DIRS})
+    target_link_libraries(llmchat_md4c INTERFACE ${MD4C_LIBRARIES})
+else()
+    find_library(MD4C_LIB md4c REQUIRED)
+    message(STATUS "Found md4c (find_library): ${MD4C_LIB}")
+    add_library(llmchat_md4c INTERFACE IMPORTED)
+    target_link_libraries(llmchat_md4c INTERFACE ${MD4C_LIB})
+endif()
+# ────────────────────────────────────────────────────────────────────────
+
 # ── libgit2 (try pkg-config first, fall back to FetchContent) ──
 # Note: we deliberately avoid find_package(libgit2) because Debian/Ubuntu
 # packages ship a broken CMake config that sets INTERFACE_INCLUDE_DIRECTORIES
@@ -98,7 +116,7 @@ add_executable(llm-chat
 target_include_directories(llm-chat PRIVATE ${imgui_SOURCE_DIR})
 target_include_directories(llm-chat PRIVATE ${imgui_SOURCE_DIR}/backends)
 target_compile_definitions(llm-chat PRIVATE IMGUI_USE_WCHAR32=1)
-target_link_libraries(llm-chat PRIVATE llmchat SDL3::SDL3)
+target_link_libraries(llm-chat PRIVATE llmchat SDL3::SDL3 llmchat_md4c)
 
 add_executable(test_config tests/test_config.cpp)
 target_link_libraries(test_config PRIVATE llmchat Catch2::Catch2WithMain)
