@@ -37,6 +37,9 @@ struct Config {
         " In [BUILD] mode you may use all tools.\n"
         " In [BUILD] mode first implement the approved plan if it exists.\n"
         " In [BUILD] mode second implement any explicit instructions from the user.\n"
+        " User instructions are formatted with a mode prefix: [<mode>] <instructions>\n"
+        " Interpret the user's instructions based on the specified mode's rules.\n"
+        " You must not change modes by yourself.\n"
     ;
 
     static Config from_env();
