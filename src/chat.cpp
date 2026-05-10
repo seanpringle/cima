@@ -14,13 +14,14 @@ ChatSession::ChatSession(Config config, TabType tab_type)
       conversation_(tab_type == TabType::Planner ? config.planner_prompt : config.builder_prompt),
       client_(std::move(config.api_base), std::move(config.api_key)) {
     tools_.add_defaults(safe_dir_, config.read_only_paths, config.search_api_key,
-        config.search_engine_id, config.search_endpoint);
+        config.search_engine_id, config.search_endpoint,
+        /*include_write=*/tab_type_ != TabType::Planner);
 
     // Register job tools for both types, but omit close_job for builders
     if (tab_type_ == TabType::Planner) {
         add_job_tools(tools_);
     } else {
-        // Register all job tools except close_job
+        // Register all job tools except close_job and edit_job
         tools_.add(make_open_job_tool());
         tools_.add(make_list_jobs_tool());
         tools_.add(make_read_job_tool());

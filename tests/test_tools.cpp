@@ -135,6 +135,44 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
                        "delete_file", "move_file", "rename_file"});
 }
 
+TEST_CASE("ToolRegistry without write tools (Planner-style)", "[tools][registry]") {
+    ToolRegistry reg;
+    reg.add_defaults("/tmp", {}, "", "", "", /*include_write=*/false);
+
+    json tools = reg.to_openai_tools();
+    REQUIRE(tools.is_array());
+    // 10 read-only tools: list_files, read_file, read_file_lines, grep_files,
+    // project_tree, web_search, web_fetch, git_status, git_diff, git_log
+    REQUIRE(tools.size() == 10);
+
+    // No write tools should be present
+    std::set<std::string> names;
+    for (const auto& t : tools) {
+        names.insert(t["function"]["name"].get<std::string>());
+    }
+    CHECK(names.find("write_file") == names.end());
+    CHECK(names.find("edit_file") == names.end());
+    CHECK(names.find("apply_patch") == names.end());
+    CHECK(names.find("run_bash") == names.end());
+    CHECK(names.find("git_add") == names.end());
+    CHECK(names.find("git_commit") == names.end());
+    CHECK(names.find("delete_file") == names.end());
+    CHECK(names.find("move_file") == names.end());
+    CHECK(names.find("rename_file") == names.end());
+
+    // Read-only tools should be present
+    CHECK(names.find("list_files") != names.end());
+    CHECK(names.find("read_file") != names.end());
+    CHECK(names.find("read_file_lines") != names.end());
+    CHECK(names.find("grep_files") != names.end());
+    CHECK(names.find("project_tree") != names.end());
+    CHECK(names.find("web_search") != names.end());
+    CHECK(names.find("web_fetch") != names.end());
+    CHECK(names.find("git_status") != names.end());
+    CHECK(names.find("git_diff") != names.end());
+    CHECK(names.find("git_log") != names.end());
+}
+
 // ===================================================================
 // list_files
 // ===================================================================

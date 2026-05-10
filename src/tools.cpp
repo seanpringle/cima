@@ -2786,7 +2786,8 @@ void ToolRegistry::add_defaults(const std::string& safe_dir,
     const std::vector<std::string>& read_only_paths,
     const std::string& search_api_key,
     const std::string& search_engine_id,
-    const std::string& search_endpoint) {
+    const std::string& search_endpoint,
+    bool include_write) {
     // ── Read-only tools (receive whitelist for extra path access) ──
     {
         auto t = make_list_files_tool(safe_dir, read_only_paths);
@@ -2840,50 +2841,52 @@ void ToolRegistry::add_defaults(const std::string& safe_dir,
     }
 
     // ── Write tools ──
-    {
-        auto t = make_write_file_tool(safe_dir);
-        t.permission = ToolPermission::Write;
-        add(std::move(t));
-    }
-    {
-        auto t = make_edit_file_tool(safe_dir);
-        t.permission = ToolPermission::Write;
-        add(std::move(t));
-    }
-    {
-        auto t = make_apply_patch_tool(safe_dir);
-        t.permission = ToolPermission::Write;
-        add(std::move(t));
-    }
-    {
-        auto t = make_run_bash_tool(safe_dir);
-        t.permission = ToolPermission::Write;
-        add(std::move(t));
-    }
-    {
-        auto t = make_git_add_tool(safe_dir);
-        t.permission = ToolPermission::Write;
-        add(std::move(t));
-    }
-    {
-        auto t = make_git_commit_tool(safe_dir);
-        t.permission = ToolPermission::Write;
-        add(std::move(t));
-    }
-    {
-        auto t = make_delete_file_tool(safe_dir);
-        t.permission = ToolPermission::Write;
-        add(std::move(t));
-    }
-    {
-        auto t = make_move_file_tool(safe_dir);
-        t.permission = ToolPermission::Write;
-        add(std::move(t));
-    }
-    {
-        auto t = make_rename_file_tool(safe_dir);
-        t.permission = ToolPermission::Write;
-        add(std::move(t));
+    if (include_write) {
+        {
+            auto t = make_write_file_tool(safe_dir);
+            t.permission = ToolPermission::Write;
+            add(std::move(t));
+        }
+        {
+            auto t = make_edit_file_tool(safe_dir);
+            t.permission = ToolPermission::Write;
+            add(std::move(t));
+        }
+        {
+            auto t = make_apply_patch_tool(safe_dir);
+            t.permission = ToolPermission::Write;
+            add(std::move(t));
+        }
+        {
+            auto t = make_run_bash_tool(safe_dir);
+            t.permission = ToolPermission::Write;
+            add(std::move(t));
+        }
+        {
+            auto t = make_git_add_tool(safe_dir);
+            t.permission = ToolPermission::Write;
+            add(std::move(t));
+        }
+        {
+            auto t = make_git_commit_tool(safe_dir);
+            t.permission = ToolPermission::Write;
+            add(std::move(t));
+        }
+        {
+            auto t = make_delete_file_tool(safe_dir);
+            t.permission = ToolPermission::Write;
+            add(std::move(t));
+        }
+        {
+            auto t = make_move_file_tool(safe_dir);
+            t.permission = ToolPermission::Write;
+            add(std::move(t));
+        }
+        {
+            auto t = make_rename_file_tool(safe_dir);
+            t.permission = ToolPermission::Write;
+            add(std::move(t));
+        }
     }
 }
 

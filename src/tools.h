@@ -49,7 +49,8 @@ class ToolRegistry {
         const std::vector<std::string>& read_only_paths = {},
         const std::string& search_api_key = {},
         const std::string& search_engine_id = {},
-        const std::string& search_endpoint = {});
+        const std::string& search_endpoint = {},
+        bool include_write = true);
 
     json to_openai_tools() const;
     /// Return tools for OpenAI, filtered to only include tools whose names
