@@ -78,6 +78,40 @@ Result<void> JobBoard::close_job(const std::string& name) {
     return {};
 }
 
+Result<void> JobBoard::edit_job(const std::string& name,
+    const std::string& new_name,
+    const std::string& new_description) {
+    if (new_name.empty() && new_description.empty()) {
+        return std::unexpected(
+            "at least one of new_name or new_description must be provided");
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = jobs_.find(name);
+    if (it == jobs_.end()) {
+        return std::unexpected("job not found: \"" + name + "\"");
+    }
+
+    Job job = it->second; // copy
+
+    if (!new_name.empty()) {
+        if (new_name != name && jobs_.contains(new_name)) {
+            return std::unexpected(
+                "a job named \"" + new_name + "\" already exists");
+        }
+        job.name = new_name;
+    }
+
+    if (!new_description.empty()) {
+        job.description = new_description;
+    }
+
+    jobs_.erase(it);          // erase old key
+    jobs_[job.name] = job;    // insert with (possibly new) key
+
+    return {};
+}
+
 // ===================================================================
 // Tool: open_job
 // ===================================================================
@@ -229,6 +263,44 @@ Tool make_close_job_tool() {
 }
 
 // ===================================================================
+// Tool: edit_job
+// ===================================================================
+
+Tool make_edit_job_tool() {
+    Tool t;
+    t.name = "edit_job";
+    t.description = "Edit the name and/or description of an existing job. "
+                    "At least one of new_name or new_description must be provided.";
+    t.permission = ToolPermission::Write;
+    t.parameters = {{"type", "object"},
+        {"properties",
+            {{"name",
+                {{"type", "string"},
+                    {"description",
+                        "Name of the existing job to edit"}}},
+                {"new_name",
+                    {{"type", "string"},
+                        {"description",
+                            "New name for the job (optional, must be unique if provided)"}}},
+                {"new_description",
+                    {{"type", "string"},
+                        {"description",
+                            "New description for the job (optional)"}}}}},
+        {"required", {"name"}}};
+    t.execute = [](const json& args) -> Result<std::string> {
+        auto name = args.value("name", std::string());
+        auto new_name = args.value("new_name", std::string());
+        auto new_description = args.value("new_description", std::string());
+        auto result = JobBoard::instance().edit_job(name, new_name, new_description);
+        if (!result) {
+            return std::unexpected(result.error());
+        }
+        return "Job edited: \"" + (new_name.empty() ? name : new_name) + "\"";
+    };
+    return t;
+}
+
+// ===================================================================
 // Convenience: register all job tools
 // ===================================================================
 
@@ -238,4 +310,5 @@ void add_job_tools(ToolRegistry& registry) {
     registry.add(make_read_job_tool());
     registry.add(make_comment_job_tool());
     registry.add(make_close_job_tool());
+    registry.add(make_edit_job_tool());
 }
