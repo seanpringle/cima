@@ -3,6 +3,7 @@
 #include "imgui.h"
 
 #include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstring>
 #include <iomanip>
@@ -17,6 +18,10 @@ using std::stringstream;
 using std::vector;
 
 extern std::atomic<bool> g_interrupted;
+
+namespace {
+
+bool debug_markdown = false;
 
 string dump(const string_view s) {
     std::span<const uint8_t> buf((const uint8_t*)s.data(), s.size());
@@ -69,7 +74,28 @@ void text_unformatted_ellipsis(const string& text) {
     TextUnformatted(ss.str().c_str());
 }
 
-namespace {
+void text_unformatted_inline_wrap(const string& text) {
+    auto blit = [&](string_view chunk) {
+        auto size = CalcTextSize(chunk.data(), chunk.data() + chunk.size());
+        if (!(GetContentRegionAvail().x > size.x)) NewLine();
+        auto pos = GetCursorPos();
+        TextUnformatted(chunk.data(), chunk.data() + chunk.size());
+        SetCursorPos(ImVec2(pos.x + size.x, pos.y));
+    };
+
+    string_view cur(text);
+
+    while (cur.size()) {
+        if (std::isspace(cur.front())) {
+            blit(string_view(cur.data(),1));
+            cur.remove_prefix(1);
+            continue;
+        }
+        auto left = cur;
+        while (cur.size() && !std::isspace(cur.front())) cur.remove_prefix(1);
+        blit(string_view(left.data(), left.size()-cur.size()));
+    }
+}
 
 struct RenderCtx {
     int style_depth = 0;
@@ -80,6 +106,81 @@ struct RenderCtx {
     ImVec2 code_start;
     float code_width;
     ImDrawListSplitter code_splitter;
+    int list_levels = 0;
+
+    vector<float> indents;
+
+    void indent(float w) {
+        Indent(w);
+        indents.push_back(w);
+    }
+
+    void unindent() {
+        if (indents.size()) {
+            Unindent(indents.back());
+            indents.pop_back();
+        }
+    }
+
+    void newline(MD_BLOCKTYPE type) {
+        if (debug_markdown) {
+            GetWindowDrawList()->AddCircleFilled(GetCursorScreenPos(), 5, IM_COL32(255, 0, 0, 255));
+            ImVec2 tl(GetCursorScreenPos().x-5, GetCursorScreenPos().y-5);
+            ImVec2 br(GetCursorScreenPos().x+5, GetCursorScreenPos().y+5);
+            if (IsMouseHoveringRect(tl, br) && BeginTooltip()) {
+                string name = [&]() {
+                    switch (type) {
+                        case MD_BLOCK_DOC: return "MD_BLOCK_DOC";
+                        case MD_BLOCK_QUOTE: return "MD_BLOCK_QUOTE";
+                        case MD_BLOCK_UL: return "MD_BLOCK_UL";
+                        case MD_BLOCK_OL: return "MD_BLOCK_OL";
+                        case MD_BLOCK_LI: return "MD_BLOCK_LI";
+                        case MD_BLOCK_HR: return "MD_BLOCK_HR";
+                        case MD_BLOCK_H: return "MD_BLOCK_H";
+                        case MD_BLOCK_CODE: return "MD_BLOCK_CODE";
+                        case MD_BLOCK_HTML: return "MD_BLOCK_HTML";
+                        case MD_BLOCK_P: return "MD_BLOCK_P";
+                        case MD_BLOCK_TABLE: return "MD_BLOCK_TABLE";
+                        case MD_BLOCK_THEAD: return "MD_BLOCK_THEAD";
+                        case MD_BLOCK_TBODY: return "MD_BLOCK_TBODY";
+                        case MD_BLOCK_TR: return "MD_BLOCK_TR";
+                        case MD_BLOCK_TH: return "MD_BLOCK_TH";
+                        case MD_BLOCK_TD: return "MD_BLOCK_TD";
+                    }
+                    return "(unknown)";
+                }();
+                Text("%s", name.c_str());
+                EndTooltip();
+            }
+        }
+        NewLine();
+    }
+
+    void newline(MD_TEXTTYPE type) {
+        if (debug_markdown) {
+            GetWindowDrawList()->AddCircleFilled(GetCursorScreenPos(), 5, IM_COL32(255, 0, 0, 255));
+            ImVec2 tl(GetCursorScreenPos().x-5, GetCursorScreenPos().y-5);
+            ImVec2 br(GetCursorScreenPos().x+5, GetCursorScreenPos().y+5);
+            if (IsMouseHoveringRect(tl, br) && BeginTooltip()) {
+                string name = [&]() {
+                    switch (type) {
+                        case MD_TEXT_BR: return "MD_TEXT_BR";
+                        case MD_TEXT_SOFTBR: return "MD_TEXT_SOFTBR";
+                        case MD_TEXT_NORMAL: return "MD_TEXT_NORMAL";
+                        case MD_TEXT_NULLCHAR: return "MD_TEXT_NULLCHAR";
+                        case MD_TEXT_ENTITY: return "MD_TEXT_ENTITY";
+                        case MD_TEXT_CODE: return "MD_TEXT_CODE";
+                        case MD_TEXT_HTML: return "MD_TEXT_HTML";
+                        case MD_TEXT_LATEXMATH: return "MD_TEXT_LATEXMATH";
+                    }
+                    return "(unknown)";
+                }();
+                Text("%s", name.c_str());
+                EndTooltip();
+            }
+        }
+        NewLine();
+    }
 };
 
 static int enter_block_cb(MD_BLOCKTYPE type, void* detail, void* userdata) {
@@ -95,7 +196,10 @@ static int enter_block_cb(MD_BLOCKTYPE type, void* detail, void* userdata) {
         PushTextWrapPos(0);
         PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
         ctx.style_depth++;
-        (void)h->level;
+        for (auto i = 0; i < h->level; i++) {
+            text_unformatted_inline_wrap("#");
+        }
+        text_unformatted_inline_wrap(" ");
         break;
     }
     case MD_BLOCK_CODE: {
@@ -106,25 +210,37 @@ static int enter_block_cb(MD_BLOCKTYPE type, void* detail, void* userdata) {
         auto* dl = GetWindowDrawList();
         ctx.code_splitter.Split(dl, 2);
         ctx.code_splitter.SetCurrentChannel(dl, 1);
-        Indent();
-        NewLine();
+        ctx.indent(GetStyle().IndentSpacing);
+        ctx.newline(type);
         break;
     }
     case MD_BLOCK_HR:
         Separator();
         break;
     case MD_BLOCK_UL:
+        if (ctx.list_levels)
+            ctx.newline(type);
+        ctx.indent(GetStyle().IndentSpacing);
+        ctx.list_levels++;
         break;
     case MD_BLOCK_OL:
+        if (ctx.list_levels)
+            ctx.newline(type);
+        ctx.indent(GetStyle().IndentSpacing);
+        ctx.list_levels++;
         break;
     case MD_BLOCK_LI: {
         auto* li = static_cast<MD_BLOCK_LI_DETAIL*>(detail);
+        auto before = GetCursorPos();
         if (li->is_task) {
             string mark = (li->task_mark == 'x' || li->task_mark == 'X') ? "[x] " : "[ ] ";
-            TextUnformatted(mark.c_str());
+            text_unformatted_inline_wrap(mark);
         } else {
             Bullet();
         }
+        auto after = GetCursorPos();
+        SetCursorPos(before);
+        ctx.indent(after.x-before.x);
         break;
     }
     case MD_BLOCK_TABLE: {
@@ -159,7 +275,7 @@ static int enter_block_cb(MD_BLOCKTYPE type, void* detail, void* userdata) {
         break;
     }
     case MD_BLOCK_QUOTE:
-        Indent();
+        ctx.indent(GetStyle().IndentSpacing);
         PushStyleColor(ImGuiCol_Text, IM_COL32(180, 180, 180, 255));
         ctx.style_depth++;
         break;
@@ -176,13 +292,16 @@ static int leave_block_cb(MD_BLOCKTYPE type, void* detail, void* userdata) {
         break;
     case MD_BLOCK_P:
         PopTextWrapPos();
-        NewLine();
+        ctx.newline(type);
+        if (ctx.list_levels == 0)
+            ctx.newline(type);
         break;
     case MD_BLOCK_H:
         PopStyleColor();
         ctx.style_depth--;
         PopTextWrapPos();
-        NewLine();
+        ctx.newline(type);
+        ctx.newline(type);
         break;
     case MD_BLOCK_CODE: {
         // render buffered code text
@@ -202,29 +321,39 @@ static int leave_block_cb(MD_BLOCKTYPE type, void* detail, void* userdata) {
                         GetCursorScreenPos().y));
             }
         }
-        NewLine();
-        Unindent();
-        ImVec2 br(GetCursorScreenPos().x, GetCursorScreenPos().y);
+        ctx.newline(type);
+        ImVec2 br(GetCursorScreenPos().x + GetContentRegionAvail().x, GetCursorScreenPos().y);
         auto* dl = GetWindowDrawList();
         ctx.code_splitter.SetCurrentChannel(dl, 0);
-        dl->AddRectFilled(ctx.code_start, br, GetColorU32(ImGuiCol_FrameBgActive));
+        dl->AddRectFilled(ctx.code_start, br, GetColorU32(ImGuiCol_TableRowBgAlt));
         ctx.code_splitter.Merge(dl);
         ctx.in_code_block = false;
+        ctx.unindent();
+        ctx.newline(type);
         break;
     }
     case MD_BLOCK_HR:
-        NewLine();
+        ctx.newline(type);
         break;
     case MD_BLOCK_UL:
+        ctx.unindent();
+        if (ctx.list_levels < 2)
+            ctx.newline(type);
+        ctx.list_levels--;
         break;
     case MD_BLOCK_OL:
+        ctx.unindent();
+        if (ctx.list_levels < 2)
+            ctx.newline(type);
+        ctx.list_levels--;
         break;
     case MD_BLOCK_LI:
-        NewLine();
+        ctx.newline(type);
+        ctx.unindent();
         break;
     case MD_BLOCK_TABLE:
         EndTable();
-        NewLine();
+        ctx.newline(type);
         break;
     case MD_BLOCK_THEAD:
         break;
@@ -241,8 +370,8 @@ static int leave_block_cb(MD_BLOCKTYPE type, void* detail, void* userdata) {
     case MD_BLOCK_QUOTE:
         PopStyleColor();
         ctx.style_depth--;
-        Unindent();
-        NewLine();
+        ctx.unindent();
+        ctx.newline(type);
         break;
     case MD_BLOCK_HTML:
         break;
@@ -300,62 +429,31 @@ static int leave_span_cb(MD_SPANTYPE type, void* detail, void* userdata) {
     return 0;
 }
 
-// Like TextUnformatted() but without an implicit newline after the text.
-// Uses CalcTextSize() + GetContentRegionAvail() to handle wrapping inline.
-// Falls back to TextUnformatted() behavior for multi-line wrapped fragments.
-static void TextUnformattedInline(const char* text_begin, const char* text_end = nullptr) {
-    if (text_begin == text_end)
-        return;
-
-    float line_height = GetTextLineHeight();
-    float text_width = CalcTextSize(text_begin, text_end).x;
-    float avail_width = GetContentRegionAvail().x;
-
-    // Check if we're at the start of the current line.
-    // At line start GetCursorPos().x ~ GetCursorStartPos().x;
-    // after SameLine() cursor X is further right.
-    bool at_line_start = (GetCursorPos().x <= GetCursorStartPos().x + 1.0f);
-
-    // If we're mid-line and the text doesn't fit, wrap to next line.
-    if (!at_line_start && text_width > avail_width) {
-        NewLine();
-    }
-
-    // Render (handles internal word-wrapping when PushTextWrapPos is active).
-    TextUnformatted(text_begin, text_end);
-
-    // If the rendered text wrapped to multiple lines within this single call,
-    // leave the cursor where ItemSize placed it (end of wrapped block).
-    // Otherwise stay inline so the next fragment continues on the same line.
-    if (GetItemRectSize().y <= line_height * 1.1f) {
-        SameLine(0, 0);
-    }
-}
-
 static int text_cb(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata) {
     auto& ctx = *static_cast<RenderCtx*>(userdata);
     switch (type) {
     case MD_TEXT_NORMAL:
-        TextUnformattedInline(text, text + size);
+        text_unformatted_inline_wrap(string(text, size));
         break;
     case MD_TEXT_CODE:
         if (ctx.in_code_block) {
             ctx.code_buf.append(text, size);
         } else {
-            TextUnformattedInline(text, text + size);
+            text_unformatted_inline_wrap(string(text, size));
         }
         break;
     case MD_TEXT_BR:
         NewLine();
+        NewLine();
         break;
     case MD_TEXT_SOFTBR:
-        TextUnformatted(" ");
+        text_unformatted_inline_wrap(" ");
         break;
     case MD_TEXT_ENTITY:
-        TextUnformattedInline(text, text + size);
+        text_unformatted_inline_wrap(string(text, size));
         break;
     case MD_TEXT_NULLCHAR:
-        TextUnformattedInline("\xef\xbf\xbd");
+        text_unformatted_inline_wrap("\xef\xbf\xbd");
         break;
     case MD_TEXT_HTML:
     case MD_TEXT_LATEXMATH:
@@ -367,7 +465,10 @@ static int text_cb(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* us
 } // anonymous namespace
 
 void render_content(const string& text) {
-    string clean = text;
+    string_view trim(text);
+    while (trim.size() && std::isspace(trim.back())) trim.remove_suffix(1);
+
+    string clean(trim);
     clean.erase(
         std::remove_if(clean.begin(), clean.end(), [](auto c) { return c == '\r' || c == '\0'; }),
         clean.end());
@@ -532,6 +633,10 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
             Text("Current: %s", session.model().c_str());
             EndMenu();
         }
+        if (BeginMenu("Debug")) {
+            Checkbox("Markdown", &debug_markdown);
+            EndMenu();
+        }
         EndMenuBar();
     }
 
@@ -564,8 +669,6 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
                 if (entry.type == EntryType::Content && !entry.text.size())
                     continue;
 
-                if (i > 0)
-                    NewLine();
                 PushID(string("entry-" + std::to_string(i)).c_str());
 
                 stringstream ss;
@@ -576,6 +679,7 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
                     PushTextWrapPos(0);
                     ss << "You: " << entry.text;
                     TextUnformatted(ss.str().c_str());
+                    NewLine();
                     PopTextWrapPos();
                     PopStyleColor();
                     break;
@@ -598,6 +702,7 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
                         i++) {
                         text_unformatted_ellipsis(ui.entries[i + 1].text);
                     }
+                    NewLine();
                     PopTextWrapPos();
                     PopStyleColor();
                     break;
@@ -605,6 +710,8 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
 
                 PopID();
             }
+
+            NewLine();
 
             // auto-scroll
             float scroll_y = GetScrollY();
