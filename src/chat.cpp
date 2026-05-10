@@ -13,7 +13,6 @@ ChatSession::ChatSession(Config config)
     tools_.add_defaults(safe_dir_, config.search_api_key, config.search_engine_id,
         config.search_endpoint);
     tools_.set_mode(mode_);
-    inject_mode_instruction();
 
     // Wire up the summary callback for compaction
     conversation_.set_summary_callback(
@@ -44,30 +43,17 @@ size_t ChatSession::compact() {
     return conversation_.compact(context_limit_, compact_threshold_);
 }
 
-void ChatSession::inject_mode_instruction() {
-    std::string mode_instruction = (mode_ == Mode::Plan)
-        ? "[Mode] You are now in Plan mode (read-only). "
-          "Available tools: list_files, read_file, grep_files, project_tree, web_search, web_fetch. "
-          "Do not use write_file, edit_file, or run_bash \xe2\x80\x94 they will be rejected."
-        : "[Mode] You are now in Build mode. All tools are available.";
-    // Embed the mode instruction directly into the system prompt, so that all
-    // system content stays at the beginning of the conversation (required by
-    // some API backends). The base system prompt is preserved for re-injection
-    // when the mode toggles.
-    conversation_.set_system_prompt(base_system_prompt_ + "\n\n" + mode_instruction);
-}
-
 void ChatSession::set_mode(Mode m) {
     if (m == mode_)
         return;
     mode_ = m;
     tools_.set_mode(m);
-    inject_mode_instruction();
 }
 
 Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
     auto snapshot = conversation_.size();
-    conversation_.add_user(user_input);
+    std::string modePrefix = mode_ == Mode::Plan ? "[PLAN]": "[BUILD]";
+    conversation_.add_user(modePrefix + " " + user_input);
 
     for (int iter = 0; iter < max_iterations_; iter++) {
         // ── Compact if needed before building the API payload ──

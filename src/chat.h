@@ -43,7 +43,6 @@ class ChatSession {
     size_t context_limit_;
     size_t compact_threshold_;
     Mode mode_ = Mode::Plan;
-    void inject_mode_instruction();
     Conversation conversation_;
     ChatClient client_;
     ToolRegistry tools_;
