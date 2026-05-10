@@ -28,7 +28,7 @@ class ChatSession {
     Result<ChatResult> run_once(const std::string& user_input);
     void set_model(const std::string& m) { model_ = m; }
     void clear();
-    size_t compact();
+    void compact();
     const std::string& model() const { return model_; }
     void set_output_callback(OutputCallback cb) { output_cb_ = std::move(cb); }
     void set_mode(Mode m);

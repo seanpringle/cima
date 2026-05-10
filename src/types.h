@@ -42,8 +42,7 @@ void to_json(json& j, const ToolCall& tc);
 // ---------------------------------------------------------------------------
 
 enum class RetentionClass : uint8_t {
-    Preserve,       // system prompt, user intents, final assistant answers
-    Summarizable,   // old user/assistant exchanges that can be condensed
+    Preserve,       // system prompt, user intents, final answers
     Droppable,      // completed tool results, old reasoning, superseded tool calls
 };
 
@@ -58,7 +57,6 @@ struct Message {
     std::vector<ToolCall> tool_calls;   // for assistant tool_call msgs
     std::string tool_call_id;           // for tool result messages
     RetentionClass retain = RetentionClass::Preserve;
-    bool is_summary = false;            // true if produced by summarization compaction
 };
 
 // ---------------------------------------------------------------------------
@@ -138,14 +136,13 @@ class Conversation {
     const std::string& system_prompt() const { return system_prompt_; }
 
     // -- Compaction --
-    // Compact the conversation to stay within the given token budget.
-    // Returns number of tokens freed (estimate).
-    // compact_threshold_pct is the % of context_limit that triggers compaction.
-    // If summary_cb is provided, old exchanges may be condensed; otherwise
-    // only Droppable messages are removed and sliding window is used as
-    // a last resort.
+    // needs_compaction returns true if estimated total tokens exceed
+    // context_limit * compact_threshold_pct / 100.
+    // compact unconditionally removes Droppable messages and orphaned
+    // assistant tool_calls, then if a summary callback is set, summarizes
+    // all remaining messages into a single summary message.
     bool needs_compaction(size_t context_limit, size_t compact_threshold_pct) const;
-    size_t compact(size_t context_limit, size_t compact_threshold_pct);
+    void compact();
 
     void set_summary_callback(SummaryCallback cb) { summary_cb_ = std::move(cb); }
     size_t estimate_total_tokens() const;

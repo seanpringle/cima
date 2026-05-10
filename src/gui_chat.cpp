@@ -503,16 +503,8 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
                 ui.entries.clear();
             }
             if (MenuItem("Compact now")) {
-                size_t freed = session.compact();
-                if (freed > 0) {
-                    ui.entries.push_back(
-                        {EntryType::Content, "[\u2302 compacted " + std::to_string(freed) + " tokens]",
-                            false, ui.next_seq++});
-                } else {
-                    ui.entries.push_back(
-                        {EntryType::Content, "[compact: no tokens to free (below threshold)]", false,
-                            ui.next_seq++});
-                }
+                session.compact();
+                ui.entries.push_back({EntryType::Content, "[\u2302 compactions]", false, ui.next_seq++});
             }
             EndMenu();
         }

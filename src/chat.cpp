@@ -37,10 +37,8 @@ ChatSession::ChatSession(Config config)
 
 void ChatSession::clear() { conversation_.clear(); }
 
-size_t ChatSession::compact() {
-    if (!conversation_.needs_compaction(context_limit_, compact_threshold_))
-        return 0;
-    return conversation_.compact(context_limit_, compact_threshold_);
+void ChatSession::compact() {
+    conversation_.compact();
 }
 
 void ChatSession::set_mode(Mode m) {
@@ -58,11 +56,9 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
     for (int iter = 0; iter < max_iterations_; iter++) {
         // ── Compact if needed before building the API payload ──
         if (conversation_.needs_compaction(context_limit_, compact_threshold_)) {
-            size_t freed = conversation_.compact(context_limit_, compact_threshold_);
-            if (output_cb_ && freed > 0) {
-                output_cb_(
-                    "[\u2302 compacted " + std::to_string(freed) + " tokens]",
-                    OutputType::ToolInvocation);
+            conversation_.compact();
+            if (output_cb_) {
+                output_cb_("[\u2302 compaction]", OutputType::ToolInvocation);
             }
         }
 
