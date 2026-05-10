@@ -574,33 +574,6 @@ void render_chat_ui(TabInfo& tab, bool& done) {
         }
     }
 
-    // ── tab toolbar (within the tab content area) ──
-    {
-        // Controls (left-aligned)
-        SameLine(0, 0);
-        if (SmallButton("Clear")) {
-            session.clear();
-            ui.entries.clear();
-        }
-        SameLine();
-        if (SmallButton("Compact")) {
-            session.compact();
-            ui.entries.push_back({EntryType::Content, "[\u2302 compaction]", false, ui.next_seq++});
-        }
-        SameLine();
-        SetNextItemWidth(150);
-        PushID("model_input");
-        bool model_changed = InputText("##model", ui.model_buf, sizeof(ui.model_buf),
-            ImGuiInputTextFlags_EnterReturnsTrue);
-        PopID();
-        SameLine();
-        if (SmallButton("Model") || model_changed) {
-            session.set_model(ui.model_buf);
-        }
-    }
-
-    Separator();
-
     // ── tabs (Chat / Raw) ──
     float input_height = GetFrameHeightWithSpacing() * 3 + GetStyle().ItemSpacing.y * 2 +
         GetFrameHeightWithSpacing() + 8;
@@ -611,6 +584,29 @@ void render_chat_ui(TabInfo& tab, bool& done) {
     if (BeginTabBar("##chat_tabs")) {
         // ── Chat tab ──
         if (BeginTabItem("Chat")) {
+            // ── toolbar ──
+            if (SmallButton("Clear")) {
+                session.clear();
+                ui.entries.clear();
+            }
+            SameLine();
+            if (SmallButton("Compact")) {
+                session.compact();
+                ui.entries.push_back({EntryType::Content, "[\u2302 compaction]", false, ui.next_seq++});
+            }
+            SameLine();
+            SetNextItemWidth(150);
+            PushID("model_input");
+            bool model_changed = InputText("##model", ui.model_buf, sizeof(ui.model_buf),
+                ImGuiInputTextFlags_EnterReturnsTrue);
+            PopID();
+            SameLine();
+            if (SmallButton("Model") || model_changed) {
+                session.set_model(ui.model_buf);
+            }
+
+            Separator();
+
             BeginChild("##chat",
                 ImVec2(0, -input_height),
                 false,
