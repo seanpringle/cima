@@ -248,13 +248,7 @@ int gui_main(Config cfg) {
             for (int ti = 0; ti < (int)tabs.size(); ti++) {
                 auto& tab = tabs[ti];
 
-                // Build tab label — show custom title with type badge
                 std::string label = tab.title;
-                if (tab.type == TabType::Planner) {
-                    label += " [Planner]";
-                } else {
-                    label += " [Builder]";
-                }
 
                 bool open = true;
                 if (BeginTabItem(label.c_str(), &open,

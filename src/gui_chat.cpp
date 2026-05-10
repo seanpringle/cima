@@ -577,13 +577,7 @@ void render_chat_ui(TabInfo& tab, bool& done) {
 
     // ── tab toolbar (within the tab content area) ──
     {
-        // Left side: tab type badge and title editing
-        const char* type_str = (tab.type == TabType::Planner) ? "planner" : "builder";
-        ImVec4 type_color = (tab.type == TabType::Planner)
-            ? ImVec4(0.4f, 0.7f, 1.0f, 1.0f)
-            : ImVec4(0.4f, 1.0f, 0.4f, 1.0f);
-        TextColored(type_color, "[%s]", type_str);
-        SameLine();
+        // Left side: title editing
 
         // Title editing (inline)
         PushID("title_edit");
