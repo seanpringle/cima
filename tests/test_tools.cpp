@@ -111,7 +111,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
 
     json tools = reg.to_openai_tools();
     REQUIRE(tools.is_array());
-    REQUIRE(tools.size() == 14);
+    REQUIRE(tools.size() == 16);
 
     // Check structure of first tool
     CHECK(tools[0]["type"] == "function");
@@ -129,7 +129,8 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
     CHECK(names == std::set<std::string>{
                        "list_files", "read_file", "read_file_lines", "grep_files", "write_file",
                        "edit_file", "apply_patch", "run_bash", "web_search", "web_fetch",
-                       "project_tree", "git_status", "git_diff", "git_log"});
+                       "project_tree", "git_status", "git_diff", "git_log",
+                       "git_add", "git_commit"});
 }
 
 // ===================================================================
@@ -855,6 +856,227 @@ TEST_CASE("git_log max_count negative", "[tools][git_log]") {
     REQUIRE(result);
     // Should still work and show at least 1 commit
     CHECK(result->find("initial commit") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+// ===================================================================
+// git_add
+// ===================================================================
+
+TEST_CASE("git_add stage tracked file", "[tools][git_add]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    // Modify a tracked file
+    std::ofstream(sd + "/README.md") << "# Modified\n";
+
+    // Stage it
+    auto result = reg.execute("git_add", R"({"path": "README.md"})");
+    REQUIRE(result);
+    CHECK(result->find("ok") != std::string::npos);
+    CHECK(result->find("staged") != std::string::npos);
+
+    // Verify via git_status: should show "M " (staged modified)
+    auto status = reg.execute("git_status", "{}");
+    REQUIRE(status);
+    CHECK(status->find("M  README.md") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_add stage untracked file", "[tools][git_add]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    // Create a new untracked file
+    std::ofstream(sd + "/new.txt") << "new content\n";
+
+    // Stage it with explicit path
+    auto result = reg.execute("git_add", R"({"path": "new.txt"})");
+    REQUIRE(result);
+    CHECK(result->find("ok") != std::string::npos);
+
+    // Verify via git_status: should show "A " (staged added)
+    auto status = reg.execute("git_status", "{}");
+    REQUIRE(status);
+    CHECK(status->find("A  new.txt") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_add all stages everything", "[tools][git_add]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    // Create multiple changes
+    std::ofstream(sd + "/README.md") << "# Modified\n";
+    std::ofstream(sd + "/new.txt") << "new file\n";
+    std::ofstream(sd + "/another.txt") << "another file\n";
+
+    // Stage all changes
+    auto result = reg.execute("git_add", R"({"all": true})");
+    REQUIRE(result);
+    CHECK(result->find("ok") != std::string::npos);
+    CHECK(result->find("staged all") != std::string::npos);
+
+    // Verify via git_status: all three should show as staged
+    auto status = reg.execute("git_status", "{}");
+    REQUIRE(status);
+    CHECK(status->find("M  README.md") != std::string::npos);
+    CHECK(status->find("A  new.txt") != std::string::npos);
+    CHECK(status->find("A  another.txt") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_add not a git repo", "[tools][git_add]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    auto result = reg.execute("git_add", R"({"path": "."})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("not a git repository") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_add path traversal rejected", "[tools][git_add]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    auto result = reg.execute("git_add", R"({"path": "../../etc/passwd"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("path must be under") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_add blocked in plan mode", "[tools][git_add]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+    reg.set_mode(Mode::Plan);
+
+    std::ofstream(sd + "/README.md") << "# Modified\n";
+    auto result = reg.execute("git_add", R"({"path": "README.md"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("not available in Plan mode") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+// ===================================================================
+// git_commit
+// ===================================================================
+
+TEST_CASE("git_commit basic", "[tools][git_commit]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    // Stage a change
+    std::ofstream(sd + "/README.md") << "# Modified for commit\n";
+    auto add_result = reg.execute("git_add", R"({"path": "README.md"})");
+    REQUIRE(add_result);
+
+    // Commit
+    auto result = reg.execute("git_commit", R"({"message": "test commit"})");
+    REQUIRE(result);
+    CHECK(result->find("ok") != std::string::npos);
+    CHECK(result->find("committed") != std::string::npos);
+    CHECK(result->find("test commit") != std::string::npos);
+
+    // Verify via git_log
+    auto log = reg.execute("git_log", R"({"max_count": 1})");
+    REQUIRE(log);
+    CHECK(log->find("test commit") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_commit with all", "[tools][git_commit]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    // Modify a tracked file WITHOUT pre-staging — use --all
+    std::ofstream(sd + "/README.md") << "# Committed with --all\n";
+
+    auto result = reg.execute("git_commit",
+                              R"({"message": "commit with all", "all": true})");
+    REQUIRE(result);
+    CHECK(result->find("ok") != std::string::npos);
+    CHECK(result->find("commit with all") != std::string::npos);
+
+    // Verify via git_log
+    auto log = reg.execute("git_log", R"({"max_count": 1})");
+    REQUIRE(log);
+    CHECK(log->find("commit with all") != std::string::npos);
+
+    // Also verify working tree is clean
+    auto status = reg.execute("git_status", "{}");
+    REQUIRE(status);
+    CHECK(*status == "(clean — no changes)");
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_commit empty message rejected", "[tools][git_commit]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    auto result = reg.execute("git_commit", R"({"message": ""})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("commit message is required") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_commit no staged changes", "[tools][git_commit]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    // No changes made — nothing to commit
+    auto result = reg.execute("git_commit", R"({"message": "should fail"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("no changes to commit") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_commit not a git repo", "[tools][git_commit]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    auto result = reg.execute("git_commit", R"({"message": "test"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("not a git repository") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_commit blocked in plan mode", "[tools][git_commit]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+    reg.set_mode(Mode::Plan);
+
+    // Modify and stage first
+    std::ofstream(sd + "/README.md") << "# Modified\n";
+    reg.execute("git_add", R"({"path": "README.md"})");
+
+    auto result = reg.execute("git_commit", R"({"message": "plan mode test"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("not available in Plan mode") != std::string::npos);
 
     fs::remove_all(sd);
 }

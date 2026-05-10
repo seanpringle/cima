@@ -1577,6 +1577,220 @@ static Tool make_git_log_tool(const std::string& safe_dir) {
 }
 
 // ===================================================================
+// git_add tool
+// ===================================================================
+
+static Tool make_git_add_tool(const std::string& safe_dir) {
+    Tool t;
+    t.name = "git_add";
+    t.description =
+        "Stage file(s) for commit. Like 'git add <path>' or 'git add -A'.\n"
+        "If 'all' is true, stages all changes (added, modified, deleted) "
+        "in the entire working tree.\n"
+        "If 'path' is specified, only that file or pathspec is staged.\n"
+        "Use git_status first to see which files are changed, "
+        "then git_add to stage them, then git_commit to commit.";
+    t.timeout_sec = 10;
+    t.parameters = {{"type", "object"},
+        {"properties",
+            {{"path",
+                {{"type", "string"},
+                    {"description",
+                        "File path or pathspec to stage. "
+                        "Defaults to '.' (current directory). "
+                        "Must be under the safe directory."}}},
+             {"all",
+                {{"type", "boolean"},
+                    {"description",
+                        "If true, stage all changes (added, modified, deleted). "
+                        "Like 'git add -A'. Default false."}}}}},
+        {"required", json::array()}};
+
+    t.execute = [safe_dir](const json& args) -> Result<std::string> {
+        // Open git repository
+        auto repo_res = open_git_repo(safe_dir);
+        if (!repo_res) {
+            return std::unexpected(repo_res.error());
+        }
+        git_repository* repo = *repo_res;
+        auto repo_cleanup = std::unique_ptr<git_repository, decltype(&git_repository_free)>(
+            repo, git_repository_free);
+
+        bool all = args.value("all", false);
+        std::string path = args.value("path", std::string("."));
+
+        // Get the repository's index
+        git_index* index = nullptr;
+        int err = git_repository_index(&index, repo);
+        if (err) {
+            const git_error* e = git_error_last();
+            return std::unexpected("git_add error opening index: " +
+                (e ? std::string(e->message) : std::string("unknown error")));
+        }
+        auto index_cleanup = std::unique_ptr<git_index, decltype(&git_index_free)>(
+            index, git_index_free);
+
+        if (all) {
+            // Stage all changes (git add -A)
+            // Use NULL pathspec to cover the entire working tree
+            err = git_index_add_all(index, nullptr, GIT_INDEX_ADD_DEFAULT, nullptr, nullptr);
+            if (err) {
+                const git_error* e = git_error_last();
+                return std::unexpected("git_add error staging all changes: " +
+                    (e ? std::string(e->message) : std::string("unknown error")));
+            }
+        } else {
+            // Stage specific file
+            // Validate the path is under safe_dir
+            auto resolved = resolve_path(path, safe_dir);
+            if (!resolved) {
+                return std::unexpected(resolved.error());
+            }
+
+            // Convert the absolute resolved path to a path relative to the
+            // repository's working directory, as required by git_index_add_bypath.
+            const char* workdir_raw = git_repository_workdir(repo);
+            if (!workdir_raw) {
+                return std::unexpected("git_add: repository has no working directory");
+            }
+            std::string workdir(workdir_raw);
+            // Normalize: ensure trailing slash for prefix matching
+            if (!workdir.empty() && workdir.back() != '/') workdir += '/';
+
+            std::string abs_path = *resolved;
+            if (abs_path.size() > workdir.size() &&
+                abs_path.compare(0, workdir.size(), workdir) == 0) {
+                // Path is under workdir — make relative
+                std::string rel_path = abs_path.substr(workdir.size());
+                if (rel_path.empty()) {
+                    return std::unexpected("git_add: cannot stage the repository root");
+                }
+
+                err = git_index_add_bypath(index, rel_path.c_str());
+                if (err) {
+                    const git_error* e = git_error_last();
+                    return std::unexpected("git_add error staging '" + rel_path + "': " +
+                        (e ? std::string(e->message) : std::string("unknown error")));
+                }
+            } else {
+                return std::unexpected("git_add: path is outside the repository working directory");
+            }
+        }
+
+        // Write the index to persist changes
+        err = git_index_write(index);
+        if (err) {
+            const git_error* e = git_error_last();
+            return std::unexpected("git_add error writing index: " +
+                (e ? std::string(e->message) : std::string("unknown error")));
+        }
+
+        if (all) {
+            return std::string("ok (staged all changes)");
+        } else {
+            return std::string("ok (staged " + path + ")");
+        }
+    };
+    return t;
+}
+
+// ===================================================================
+// git_commit tool
+// ===================================================================
+
+static Tool make_git_commit_tool(const std::string& safe_dir) {
+    Tool t;
+    t.name = "git_commit";
+    t.description =
+        "Create a new commit with staged changes. Like 'git commit -m <message>'.\n"
+        "If 'all' is true, stages all changes before committing (like 'git commit -a').\n"
+        "Use git_status first to see which files are changed, "
+        "then git_add to stage them, then git_commit to commit.";
+    t.timeout_sec = 10;
+    t.parameters = {{"type", "object"},
+        {"properties",
+            {{"message",
+                {{"type", "string"},
+                    {"description", "Commit message."}}},
+             {"all",
+                {{"type", "boolean"},
+                    {"description",
+                        "If true, stage all changes before committing. "
+                        "Like 'git commit -a'. Default false."}}}}},
+        {"required", {"message"}}};
+
+    t.execute = [safe_dir](const json& args) -> Result<std::string> {
+        auto message = args.value("message", std::string());
+        if (message.empty()) {
+            return std::unexpected("commit message is required");
+        }
+
+        bool all = args.value("all", false);
+
+        // Open git repository
+        auto repo_res = open_git_repo(safe_dir);
+        if (!repo_res) {
+            return std::unexpected(repo_res.error());
+        }
+        git_repository* repo = *repo_res;
+        auto repo_cleanup = std::unique_ptr<git_repository, decltype(&git_repository_free)>(
+            repo, git_repository_free);
+
+        // If --all, stage all changes first
+        if (all) {
+            git_index* index = nullptr;
+            int err = git_repository_index(&index, repo);
+            if (err) {
+                const git_error* e = git_error_last();
+                return std::unexpected("git_commit error opening index: " +
+                    (e ? std::string(e->message) : std::string("unknown error")));
+            }
+            auto index_cleanup = std::unique_ptr<git_index, decltype(&git_index_free)>(
+                index, git_index_free);
+
+            err = git_index_add_all(index, nullptr, GIT_INDEX_ADD_DEFAULT, nullptr, nullptr);
+            if (err) {
+                const git_error* e = git_error_last();
+                return std::unexpected("git_commit error staging all changes: " +
+                    (e ? std::string(e->message) : std::string("unknown error")));
+            }
+
+            err = git_index_write(index);
+            if (err) {
+                const git_error* e = git_error_last();
+                return std::unexpected("git_commit error writing index: " +
+                    (e ? std::string(e->message) : std::string("unknown error")));
+            }
+        }
+
+        // Create the commit from the staging area
+        git_oid commit_oid;
+        git_commit_create_options opts = GIT_COMMIT_CREATE_OPTIONS_INIT;
+        // allow_empty_commit defaults to 0 (false) — this matches git behavior
+
+        int err = git_commit_create_from_stage(
+            &commit_oid, repo, message.c_str(), &opts);
+        if (err) {
+            const git_error* e = git_error_last();
+            if (err == GIT_EUNCHANGED) {
+                return std::unexpected("git_commit: no changes to commit. "
+                    "Use 'all: true' or stage changes first with git_add.");
+            }
+            return std::unexpected("git_commit error: " +
+                (e ? std::string(e->message) : std::string("unknown error")));
+        }
+
+        // Format short hash for confirmation
+        char hex[GIT_OID_HEXSZ + 1];
+        git_oid_tostr(hex, sizeof(hex), &commit_oid);
+        std::string short_hash(hex, 8);
+
+        return "ok (committed as " + short_hash + ": " + message + ")";
+    };
+    return t;
+}
+
+// ===================================================================
 // project_tree tool
 // ===================================================================
 
@@ -2231,6 +2445,8 @@ void ToolRegistry::add_defaults(const std::string& safe_dir,
     add(make_git_status_tool(safe_dir));
     add(make_git_diff_tool(safe_dir));
     add(make_git_log_tool(safe_dir));
+    add(make_git_add_tool(safe_dir));
+    add(make_git_commit_tool(safe_dir));
 }
 
 json ToolRegistry::to_openai_tools() const {
@@ -2252,7 +2468,7 @@ Result<std::string> ToolRegistry::execute(const std::string& name, const std::st
     // Plan mode restricts write/edit/bash at runtime
     if (mode_ == Mode::Plan &&
         (name == "write_file" || name == "edit_file" || name == "run_bash" ||
-            name == "apply_patch")) {
+            name == "apply_patch" || name == "git_add" || name == "git_commit")) {
         return std::unexpected("Tool '" + name +
             "' is not available in Plan mode (read-only). "
             "Available tools: list_files, read_file, read_file_lines, grep_files, "
