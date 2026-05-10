@@ -2918,17 +2918,6 @@ Result<std::string> ToolRegistry::execute(const std::string& name, const std::st
         return std::unexpected("unknown tool: " + name);
     }
 
-    // Plan mode restricts write/edit/bash at runtime
-    if (mode_ == Mode::Plan &&
-        (name == "write_file" || name == "edit_file" || name == "run_bash" ||
-            name == "apply_patch" || name == "git_add" || name == "git_commit" ||
-            name == "delete_file" || name == "move_file" || name == "rename_file")) {
-        return std::unexpected("Tool '" + name +
-            "' is not available in Plan mode (read-only). "
-            "Available tools: list_files, read_file, read_file_lines, grep_files, "
-            "project_tree, web_search, web_fetch, git_status, git_diff, git_log.");
-    }
-
     json args;
     try {
         args = json::parse(args_json);

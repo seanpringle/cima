@@ -543,7 +543,11 @@ static void drain_pending(ChatUIState& ui, AsyncChatState& chat) {
     chat.pending.clear();
 }
 
-void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session, bool& done) {
+void render_chat_ui(TabInfo& tab, bool& done) {
+    auto& ui = tab.ui_state;
+    auto& chat = *tab.chat_state;
+    auto& session = *tab.session;
+
     // ── check if chat finished (before drain, so the drain catches any last items) ──
     bool stream_ended = false;
     Result<ChatResult> result = std::unexpected(string("unknown error"));
@@ -571,97 +575,100 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
         }
     }
 
-    // ── mode toggle (Tab key, debounced to 500ms) ──
+    // ── tab toolbar (within the tab content area) ──
     {
-        static std::chrono::steady_clock::time_point last_mode_toggle;
-        if (!chat.running && IsKeyPressed(ImGuiKey_Tab, false)) {
-            auto now = std::chrono::steady_clock::now();
-            if (now - last_mode_toggle > std::chrono::milliseconds(500)) {
-                last_mode_toggle = now;
-                Mode new_mode = (ui.mode == Mode::Plan) ? Mode::Build : Mode::Plan;
-                ui.mode = new_mode;
-                session.set_mode(new_mode);
-            }
+        // Left side: tab type badge and title editing
+        const char* type_str = (tab.type == TabType::Planner) ? "planner" : "builder";
+        ImVec4 type_color = (tab.type == TabType::Planner)
+            ? ImVec4(0.4f, 0.7f, 1.0f, 1.0f)
+            : ImVec4(0.4f, 1.0f, 0.4f, 1.0f);
+        TextColored(type_color, "[%s]", type_str);
+        SameLine();
+
+        // Title editing (inline)
+        PushID("title_edit");
+        SetNextItemWidth(200);
+        if (InputText("##title", ui.title_buf, sizeof(ui.title_buf),
+                ImGuiInputTextFlags_EnterReturnsTrue)) {
+            tab.title = ui.title_buf;
+        }
+        SameLine();
+        if (SmallButton("Rename")) {
+            tab.title = ui.title_buf;
+        }
+        PopID();
+
+        // Right side: controls
+        SameLine(0, 20);
+        if (SmallButton("Clear")) {
+            session.clear();
+            ui.entries.clear();
+        }
+        SameLine();
+        if (SmallButton("Compact")) {
+            session.compact();
+            ui.entries.push_back({EntryType::Content, "[\u2302 compaction]", false, ui.next_seq++});
+        }
+        SameLine();
+        SetNextItemWidth(150);
+        PushID("model_input");
+        bool model_changed = InputText("##model", ui.model_buf, sizeof(ui.model_buf),
+            ImGuiInputTextFlags_EnterReturnsTrue);
+        PopID();
+        SameLine();
+        if (SmallButton("Model") || model_changed) {
+            session.set_model(ui.model_buf);
         }
     }
 
-    // ── main window ──
-    SetNextWindowPos(ImVec2(0, 0));
-    SetNextWindowSize(GetIO().DisplaySize);
-    Begin("llm-chat",
-        nullptr,
-        ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
-            ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus);
-
-    // ── menu bar ──
-    if (BeginMenuBar()) {
-        if (BeginMenu("File")) {
-            if (MenuItem("Exit", "Alt+F4"))
-                done = true;
-            EndMenu();
-        }
-        if (BeginMenu("Edit")) {
-            if (MenuItem("Clear conversation")) {
-                session.clear();
-                ui.entries.clear();
-            }
-            if (MenuItem("Compact now")) {
-                session.compact();
-                ui.entries.push_back({EntryType::Content, "[\u2302 compactions]", false, ui.next_seq++});
-            }
-            EndMenu();
-        }
-        if (BeginMenu("Mode")) {
-            Text("Current: %s", ui.mode == Mode::Plan ? "Plan" : "Build");
-            Separator();
-            if (MenuItem("Switch to Build (full access)", "Tab", false, ui.mode != Mode::Build)) {
-                ui.mode = Mode::Build;
-                session.set_mode(Mode::Build);
-            }
-            if (MenuItem("Switch to Plan (read-only)", "Tab", false, ui.mode != Mode::Plan)) {
-                ui.mode = Mode::Plan;
-                session.set_mode(Mode::Plan);
-            }
-            EndMenu();
-        }
-        if (BeginMenu("Model")) {
-            bool changed = InputText(
-                "Name", ui.model_buf, sizeof(ui.model_buf), ImGuiInputTextFlags_EnterReturnsTrue);
+    // ── Builder tab: job selector ──
+    if (tab.type == TabType::Builder) {
+        Separator();
+        auto names = JobBoard::instance().list_jobs();
+        if (names && !names->empty()) {
+            Text("Select a job to implement:");
             SameLine();
-            if (Button("Apply") || changed) {
-                session.set_model(ui.model_buf);
-            }
-            Text("Current: %s", session.model().c_str());
-            EndMenu();
-        }
-        if (BeginMenu("Debug")) {
-            Checkbox("Markdown", &debug_markdown);
-            EndMenu();
-        }
-        if (BeginMenu("Jobs")) {
-            auto names = JobBoard::instance().list_jobs();
-            if (names && !names->empty()) {
-                for (const auto& n : *names) {
-                    if (MenuItem(n.c_str())) {
-                        ui.open_job_windows.insert(n);
+            static int selected = -1;
+            PushID("job_selector");
+            if (BeginCombo("##job_combo",
+                    selected >= 0 && selected < (int)names->size()
+                        ? (*names)[selected].c_str()
+                        : "")) {
+                for (int i = 0; i < (int)names->size(); i++) {
+                    bool is_selected = (selected == i);
+                    if (Selectable((*names)[i].c_str(), is_selected)) {
+                        selected = i;
+                    }
+                    if (is_selected) {
+                        SetItemDefaultFocus();
                     }
                 }
-            } else {
-                Text("No open jobs");
+                EndCombo();
             }
-            EndMenu();
+            SameLine();
+            if (SmallButton("Start") && selected >= 0 && selected < (int)names->size()) {
+                string job_name = (*names)[selected];
+                string input = "Implement the job named: " + job_name;
+                push_entry(ui, EntryType::UserText, input, false);
+                start_chat(chat, session, std::move(input));
+                selected = -1;
+            }
+            PopID();
+        } else {
+            TextDisabled("No open jobs available.");
         }
-        EndMenuBar();
     }
 
-    // ── tabs (Chat / Debug) ──
+    Separator();
+
+    // ── tabs (Chat / Raw) ──
     float input_height = GetFrameHeightWithSpacing() * 3 + GetStyle().ItemSpacing.y * 2 +
         GetFrameHeightWithSpacing() + 8;
 
     if (ui.mono_font)
         PushFont(ui.mono_font);
 
-    if (BeginTabBar("##tabs")) {
+    if (BeginTabBar("##chat_tabs")) {
         // ── Chat tab ──
         if (BeginTabItem("Chat")) {
             BeginChild("##chat",
@@ -842,14 +849,15 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
             EndDisabled();
     }
 
-    // ── mode indicator (same line as Cancel/Send) ──
-    auto mode_str = (ui.mode == Mode::Plan) ? "[Plan]" : "[Build]";
-    auto mode_color =
-        (ui.mode == Mode::Plan) ? IM_COL32(100, 180, 255, 255) : IM_COL32(100, 255, 100, 255);
+    // ── type indicator (same line as Cancel/Send) ──
+    const char* type_str = (tab.type == TabType::Planner) ? "[planner]" : "[builder]";
+    auto type_color = (tab.type == TabType::Planner)
+        ? IM_COL32(100, 180, 255, 255)
+        : IM_COL32(100, 255, 100, 255);
     SameLine(0, 16);
-    TextColored(ImColor(mode_color), "%s", mode_str);
+    TextColored(ImColor(type_color), "%s", type_str);
 
-    // ── token usage indicator (after mode) ──
+    // ── token usage indicator (after type) ──
     {
         const auto& usage = session.last_usage();
         if (usage.total_tokens > 0) {
@@ -857,8 +865,6 @@ void render_chat_ui(ChatUIState& ui, AsyncChatState& chat, ChatSession& session,
             TextColored(ImColor(IM_COL32(180, 180, 180, 255)), "[%d tokens]", usage.total_tokens);
         }
     }
-
-    End(); // main window
 
     // ── job detail popups ──
     auto& open_windows = ui.open_job_windows;

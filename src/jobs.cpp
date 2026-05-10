@@ -120,7 +120,7 @@ Tool make_list_jobs_tool() {
     t.name = "list_jobs";
     t.description = "Return a list of open job names.";
     t.permission = ToolPermission::ReadOnly;
-    t.parameters = {{"type", "object"}, {"properties", {}}, {"required", {}}};
+    t.parameters = {{"type", "object"}, {"properties", json::object()}, {"required", json::array()}};
     t.execute = [](const json& /*args*/) -> Result<std::string> {
         auto names = JobBoard::instance().list_jobs();
         if (!names) {

@@ -35,10 +35,7 @@ struct Tool {
     std::function<Result<std::string>(const json& args)> execute;
 };
 
-// ---------------------------------------------------------------------------
-// Mode — controls which tools are allowed at runtime
-// ---------------------------------------------------------------------------
-enum class Mode { Plan, Build };
+
 
 // ---------------------------------------------------------------------------
 // ToolRegistry
@@ -53,8 +50,6 @@ class ToolRegistry {
         const std::string& search_api_key = {},
         const std::string& search_engine_id = {},
         const std::string& search_endpoint = {});
-    void set_mode(Mode m) { mode_ = m; }
-    Mode mode() const { return mode_; }
 
     json to_openai_tools() const;
     /// Return tools for OpenAI, filtered to only include tools whose names
@@ -70,5 +65,4 @@ class ToolRegistry {
   private:
     Tool* find(const std::string& name);
     std::vector<Tool> tools_;
-    Mode mode_ = Mode::Build;
 };

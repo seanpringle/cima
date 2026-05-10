@@ -58,7 +58,7 @@ TEST_CASE("ChatSession simple Q&A", "[chat]") {
     cfg.api_base = server.base_url();
     cfg.api_key = "";
     cfg.model = "test-model";
-    cfg.system_prompt = "You are helpful.";
+    cfg.planner_prompt = "You are helpful.";
     cfg.safe_dir = "/tmp";
 
     ChatSession session(std::move(cfg));
@@ -90,7 +90,7 @@ TEST_CASE("ChatSession tool call then content", "[chat]") {
     cfg.api_base = server.base_url();
     cfg.api_key = "";
     cfg.model = "test";
-    cfg.system_prompt = "You are helpful.";
+    cfg.planner_prompt = "You are helpful.";
     cfg.safe_dir = "/tmp";
 
     ChatSession session(std::move(cfg));
@@ -118,7 +118,7 @@ TEST_CASE("ChatSession max tool iterations", "[chat]") {
     cfg.api_base = server.base_url();
     cfg.api_key = "";
     cfg.model = "test";
-    cfg.system_prompt = "You are helpful.";
+    cfg.planner_prompt = "You are helpful.";
     cfg.safe_dir = "/tmp";
     cfg.max_tool_iterations = 10;
 
@@ -147,7 +147,7 @@ TEST_CASE("ChatSession reasoning content preserved", "[chat]") {
     cfg.api_base = server.base_url();
     cfg.api_key = "";
     cfg.model = "test";
-    cfg.system_prompt = "You are helpful.";
+    cfg.planner_prompt = "You are helpful.";
     cfg.safe_dir = "/tmp";
 
     ChatSession session(std::move(cfg));
@@ -191,7 +191,7 @@ TEST_CASE("ChatSession reasoning with tool calls", "[chat]") {
     cfg.api_base = server.base_url();
     cfg.api_key = "";
     cfg.model = "test";
-    cfg.system_prompt = "You are helpful.";
+    cfg.planner_prompt = "You are helpful.";
     cfg.safe_dir = "/tmp";
 
     ChatSession session(std::move(cfg));
@@ -237,7 +237,7 @@ TEST_CASE("ChatSession multi-chunk tool call args", "[chat]") {
     cfg.api_base = server.base_url();
     cfg.api_key = "";
     cfg.model = "test";
-    cfg.system_prompt = "test";
+    cfg.planner_prompt = "test";
     cfg.safe_dir = "/tmp";
 
     ChatSession session(std::move(cfg));
@@ -262,7 +262,7 @@ TEST_CASE("ChatSession clear preserves model and system", "[chat]") {
     cfg.api_base = server.base_url();
     cfg.api_key = "";
     cfg.model = "my-model";
-    cfg.system_prompt = "System prompt.";
+    cfg.planner_prompt = "System prompt.";
     cfg.safe_dir = "/tmp";
 
     ChatSession session(std::move(cfg));

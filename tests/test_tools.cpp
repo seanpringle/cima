@@ -301,7 +301,7 @@ TEST_CASE("project_tree available in plan mode", "[tools][project_tree]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
     reg.add_defaults(sd);
-    reg.set_mode(Mode::Plan);
+    
 
     fs::create_directories(sd + "/sub");
     std::ofstream(sd + "/sub/plan_file.txt") << "plan\n";
@@ -461,7 +461,7 @@ TEST_CASE("git_status available in plan mode", "[tools][git_status]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
     reg.add_defaults(sd);
-    reg.set_mode(Mode::Plan);
+    
 
     auto result = reg.execute("git_status", "{}");
     // Should succeed in Plan mode (read-only tool)
@@ -579,7 +579,7 @@ TEST_CASE("git_diff available in plan mode", "[tools][git_diff]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
     reg.add_defaults(sd);
-    reg.set_mode(Mode::Plan);
+    
 
     std::ofstream(sd + "/README.md") << "# Plan mode change\n";
 
@@ -801,7 +801,7 @@ TEST_CASE("git_log available in plan mode", "[tools][git_log]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
     reg.add_defaults(sd);
-    reg.set_mode(Mode::Plan);
+    
 
     // Should succeed in Plan mode (read-only tool)
     auto result = reg.execute("git_log", "{}");
@@ -958,20 +958,6 @@ TEST_CASE("git_add path traversal rejected", "[tools][git_add]") {
     fs::remove_all(sd);
 }
 
-TEST_CASE("git_add blocked in plan mode", "[tools][git_add]") {
-    auto sd = make_git_repo();
-    ToolRegistry reg;
-    reg.add_defaults(sd);
-    reg.set_mode(Mode::Plan);
-
-    std::ofstream(sd + "/README.md") << "# Modified\n";
-    auto result = reg.execute("git_add", R"({"path": "README.md"})");
-    CHECK_FALSE(result);
-    CHECK(result.error().find("not available in Plan mode") != std::string::npos);
-
-    fs::remove_all(sd);
-}
-
 // ===================================================================
 // git_commit
 // ===================================================================
@@ -1061,23 +1047,6 @@ TEST_CASE("git_commit not a git repo", "[tools][git_commit]") {
     auto result = reg.execute("git_commit", R"({"message": "test"})");
     CHECK_FALSE(result);
     CHECK(result.error().find("not a git repository") != std::string::npos);
-
-    fs::remove_all(sd);
-}
-
-TEST_CASE("git_commit blocked in plan mode", "[tools][git_commit]") {
-    auto sd = make_git_repo();
-    ToolRegistry reg;
-    reg.add_defaults(sd);
-    reg.set_mode(Mode::Plan);
-
-    // Modify and stage first
-    std::ofstream(sd + "/README.md") << "# Modified\n";
-    reg.execute("git_add", R"({"path": "README.md"})");
-
-    auto result = reg.execute("git_commit", R"({"message": "plan mode test"})");
-    CHECK_FALSE(result);
-    CHECK(result.error().find("not available in Plan mode") != std::string::npos);
 
     fs::remove_all(sd);
 }
@@ -1790,27 +1759,6 @@ TEST_CASE("apply_patch path traversal rejected", "[tools][apply_patch]") {
     fs::remove_all(sd);
 }
 
-TEST_CASE("apply_patch blocked in plan mode", "[tools][apply_patch]") {
-    auto sd = make_temp_dir();
-    ToolRegistry reg;
-    reg.add_defaults(sd);
-    reg.set_mode(Mode::Plan);
-
-    std::string patch = R"(--- a/x
-+++ b/x
-@@ -1 +1 @@
--old
-+new
-)";
-
-    auto result = reg.execute("apply_patch",
-        json{{"path", "test.txt"}, {"patch", patch}}.dump());
-    CHECK_FALSE(result);
-    CHECK(result.error().find("not available in Plan mode") != std::string::npos);
-
-    fs::remove_all(sd);
-}
-
 TEST_CASE("apply_patch multiple additions and deletions", "[tools][apply_patch]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
@@ -2321,7 +2269,7 @@ TEST_CASE("web_search available in plan mode", "[tools][web_search]") {
 
     ToolRegistry reg;
     reg.add_defaults("/tmp", {}, "test-key", "", server.url());
-    reg.set_mode(Mode::Plan);
+    
 
     auto result = reg.execute("web_search", R"({"query": "test"})");
     // Should succeed in Plan mode (read-only tool)
@@ -2441,7 +2389,7 @@ TEST_CASE("web_fetch available in plan mode", "[tools][web_fetch]") {
 
     ToolRegistry reg;
     reg.add_defaults("/tmp");
-    reg.set_mode(Mode::Plan);
+    
     std::string fetch_url = server.url().substr(0, server.url().find("?q="));
     auto result = reg.execute("web_fetch",
         R"({"url": ")" + fetch_url + R"("})");
@@ -2545,19 +2493,6 @@ TEST_CASE("delete_file path traversal rejected", "[tools][delete_file]") {
 
     auto result = reg.execute("delete_file", R"({"path": "../../etc/passwd"})");
     CHECK_FALSE(result);
-
-    fs::remove_all(sd);
-}
-
-TEST_CASE("delete_file blocked in plan mode", "[tools][delete_file]") {
-    auto sd = make_temp_dir();
-    ToolRegistry reg;
-    reg.add_defaults(sd);
-    reg.set_mode(Mode::Plan);
-
-    auto result = reg.execute("delete_file", R"({"path": "test.txt"})");
-    CHECK_FALSE(result);
-    CHECK(result.error().find("not available in Plan mode") != std::string::npos);
 
     fs::remove_all(sd);
 }
@@ -2686,20 +2621,6 @@ TEST_CASE("move_file path traversal rejected", "[tools][move_file]") {
     fs::remove_all(sd);
 }
 
-TEST_CASE("move_file blocked in plan mode", "[tools][move_file]") {
-    auto sd = make_temp_dir();
-    ToolRegistry reg;
-    reg.add_defaults(sd);
-    reg.set_mode(Mode::Plan);
-
-    auto result = reg.execute("move_file",
-        R"({"source": "a.txt", "destination": "b.txt"})");
-    CHECK_FALSE(result);
-    CHECK(result.error().find("not available in Plan mode") != std::string::npos);
-
-    fs::remove_all(sd);
-}
-
 TEST_CASE("move_file creates parent directories", "[tools][move_file]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
@@ -2817,20 +2738,6 @@ TEST_CASE("rename_file path traversal in source", "[tools][rename_file]") {
     auto result = reg.execute("rename_file",
         R"({"path": "../../etc/passwd", "new_name": "safe.txt"})");
     CHECK_FALSE(result);
-
-    fs::remove_all(sd);
-}
-
-TEST_CASE("rename_file blocked in plan mode", "[tools][rename_file]") {
-    auto sd = make_temp_dir();
-    ToolRegistry reg;
-    reg.add_defaults(sd);
-    reg.set_mode(Mode::Plan);
-
-    auto result = reg.execute("rename_file",
-        R"({"path": "a.txt", "new_name": "b.txt"})");
-    CHECK_FALSE(result);
-    CHECK(result.error().find("not available in Plan mode") != std::string::npos);
 
     fs::remove_all(sd);
 }

@@ -4,21 +4,30 @@
 
 #include <future>
 
-ChatSession::ChatSession(Config config)
+ChatSession::ChatSession(Config config, TabType tab_type)
     : model_(std::move(config.model)), safe_dir_(std::move(config.safe_dir)),
-      base_system_prompt_(config.system_prompt),
       api_key_(config.api_key),
       max_iterations_(config.max_tool_iterations),
       context_limit_(static_cast<size_t>(config.context_limit)),
       compact_threshold_(static_cast<size_t>(config.compact_threshold)),
-      conversation_(config.system_prompt),
+      tab_type_(tab_type),
+      conversation_(tab_type == TabType::Planner ? config.planner_prompt : config.builder_prompt),
       client_(std::move(config.api_base), std::move(config.api_key)) {
     tools_.add_defaults(safe_dir_, config.read_only_paths, config.search_api_key,
         config.search_engine_id, config.search_endpoint);
-    add_job_tools(tools_);
-    tools_.set_mode(mode_);
 
-    // ── Subagent delegation tool (available in all modes) ──
+    // Register job tools for both types, but omit close_job for builders
+    if (tab_type_ == TabType::Planner) {
+        add_job_tools(tools_);
+    } else {
+        // Register all job tools except close_job
+        tools_.add(make_open_job_tool());
+        tools_.add(make_list_jobs_tool());
+        tools_.add(make_read_job_tool());
+        tools_.add(make_comment_job_tool());
+    }
+
+    // ── Subagent delegation tool (available to all tab types) ──
     {
         Tool t;
         t.name = "run_subagent";
@@ -85,17 +94,9 @@ void ChatSession::compact() {
     conversation_.compact();
 }
 
-void ChatSession::set_mode(Mode m) {
-    if (m == mode_)
-        return;
-    mode_ = m;
-    tools_.set_mode(m);
-}
-
 Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
     auto snapshot = conversation_.size();
-    std::string modePrefix = mode_ == Mode::Plan ? "[PLAN]": "[BUILD]";
-    conversation_.add_user(modePrefix + " " + user_input);
+    conversation_.add_user(user_input);
 
     for (int iter = 0; iter < max_iterations_; iter++) {
         // ── Compact if needed before building the API payload ──
@@ -372,7 +373,6 @@ Result<ChatResult> ChatSession::run_subagent_session_(
 
     // Build the subagent's tool registry
     ToolRegistry subagent_tools;
-    subagent_tools.set_mode(mode_);
 
     // Determine which tools the subagent gets
     std::set<std::string> allowed_tools;

@@ -2,29 +2,52 @@
 
 #include "chat.h"
 #include "config.h"
+#include "types.h"
 
 #include <SDL3/SDL.h>
 
 #include <atomic>
 #include <future>
+#include <memory>
 #include <mutex>
+#include <set>
 #include <string>
 #include <vector>
-
-enum class EntryType { UserText, Reasoning, Content, ToolCall };
-
-struct DisplayEntry {
-    EntryType type;
-    std::string text;
-    bool is_streaming = false;
-    int seq = 0;
-};
 
 struct AsyncChatState {
     std::mutex mutex;
     std::vector<std::pair<std::string, OutputType>> pending;
     std::atomic<bool> running{false};
     std::future<Result<ChatResult>> future;
+};
+
+struct ImFont;
+
+struct ChatUIState {
+    std::vector<DisplayEntry> entries;
+    char input_buf[4096] = {};
+    bool auto_scroll = true;
+    bool request_cancel = false;
+    char model_buf[256] = {};
+    char title_buf[256] = {};
+    ImFont* mono_font = nullptr;
+    TabType tab_type = TabType::Planner;
+    int next_seq = 1;
+
+    // Jobs (for Builder job selector)
+    bool job_selector_active = false;
+
+    // Open job detail windows
+    std::set<std::string> open_job_windows;
+};
+
+struct TabInfo {
+    std::unique_ptr<ChatSession> session;
+    std::unique_ptr<AsyncChatState> chat_state;
+    ChatUIState ui_state;
+    int id = 0;
+    std::string title;
+    TabType type;
 };
 
 int gui_main(Config cfg);
