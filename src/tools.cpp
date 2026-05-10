@@ -1341,6 +1341,242 @@ static Tool make_git_diff_tool(const std::string& safe_dir) {
 }
 
 // ===================================================================
+// git_log tool
+// ===================================================================
+
+static Tool make_git_log_tool(const std::string& safe_dir) {
+    Tool t;
+    t.name = "git_log";
+    t.description =
+        "Return recent commit history.\n"
+        "Output formats:\n"
+        "  'short' (default): commit hash, author, date, subject\n"
+        "  'oneline': <hash_prefix> <subject>\n"
+        "  'full': commit hash, author, date, and full message body\n"
+        "Use 'branch' to specify a revision (branch, tag, commit hash, HEAD~N, etc.).\n"
+        "Defaults to HEAD (current branch tip).";
+    t.timeout_sec = 10;
+    t.parameters = {{"type", "object"},
+        {"properties",
+            {{"max_count",
+                {{"type", "integer"},
+                    {"description", "Maximum number of commits to return (default 10, max 50)"}}},
+             {"format",
+                {{"type", "string"},
+                    {"enum", {"oneline", "short", "full"}},
+                    {"description", "Output format: oneline, short (default), or full"}}},
+             {"branch",
+                {{"type", "string"},
+                    {"description", "Git revision to start from (e.g. 'main', 'HEAD~3', 'v1.0'). "
+                                   "Defaults to HEAD."}}}}},
+        {"required", json::array()}};
+
+    t.execute = [safe_dir](const json& args) -> Result<std::string> {
+        // Open repo
+        auto repo_res = open_git_repo(safe_dir);
+        if (!repo_res) {
+            return std::unexpected(repo_res.error());
+        }
+        git_repository* repo = *repo_res;
+        auto repo_cleanup = std::unique_ptr<git_repository, decltype(&git_repository_free)>(
+            repo, git_repository_free);
+
+        int max_count = args.value("max_count", 10);
+        if (max_count < 1) max_count = 1;
+        if (max_count > 50) max_count = 50;
+
+        std::string format = args.value("format", std::string("short"));
+        std::string branch = args.value("branch", std::string());
+
+        // Validate format
+        if (format != "oneline" && format != "short" && format != "full") {
+            return std::unexpected("git_log error: invalid format '" + format +
+                "'. Must be 'oneline', 'short', or 'full'.");
+        }
+
+        // Create revwalk
+        git_revwalk* walk = nullptr;
+        int err = git_revwalk_new(&walk, repo);
+        if (err) {
+            const git_error* e = git_error_last();
+            return std::unexpected("git_log error creating revwalk: " +
+                (e ? std::string(e->message) : std::string("unknown error")));
+        }
+        auto walk_cleanup = std::unique_ptr<git_revwalk, decltype(&git_revwalk_free)>(
+            walk, git_revwalk_free);
+
+        // Sort by time (newest first)
+        git_revwalk_sorting(walk, GIT_SORT_TIME);
+
+        // Push start revision
+        if (!branch.empty()) {
+            git_object* obj = nullptr;
+            err = git_revparse_single(&obj, repo, branch.c_str());
+            if (err) {
+                const git_error* e = git_error_last();
+                return std::unexpected("git_log error resolving '" + branch + "': " +
+                    (e ? std::string(e->message) : std::string("unknown error")));
+            }
+            auto obj_cleanup = std::unique_ptr<git_object, decltype(&git_object_free)>(
+                obj, git_object_free);
+
+            if (git_object_type(obj) != GIT_OBJECT_COMMIT) {
+                return std::unexpected("git_log error: '" + branch + "' is not a commit");
+            }
+
+            err = git_revwalk_push(walk, git_object_id(obj));
+            if (err) {
+                const git_error* e = git_error_last();
+                return std::unexpected("git_log error pushing revision: " +
+                    (e ? std::string(e->message) : std::string("unknown error")));
+            }
+        } else {
+            err = git_revwalk_push_head(walk);
+            if (err) {
+                // No HEAD (empty repo, unborn branch, etc.)
+                const git_error* e = git_error_last();
+                return std::unexpected("git_log error: " +
+                    (e ? std::string(e->message) : std::string("no commits found")));
+            }
+        }
+
+        // Walk commits
+        std::string result;
+        int count = 0;
+        const size_t max_chars = 16000;
+
+        git_oid oid;
+        while (git_revwalk_next(&oid, walk) == 0 && count < max_count) {
+            // Check output size cap (safety valve)
+            if (result.size() >= max_chars) {
+                result += "...(output truncated at " + std::to_string(max_chars) + " chars)";
+                break;
+            }
+
+            git_commit* commit = nullptr;
+            err = git_commit_lookup(&commit, repo, &oid);
+            if (err) continue; // skip corrupt commits
+
+            auto commit_cleanup = std::unique_ptr<git_commit, decltype(&git_commit_free)>(
+                commit, git_commit_free);
+
+            // Format commit hash
+            char hex[GIT_OID_HEXSZ + 1];
+            git_oid_tostr(hex, sizeof(hex), &oid);
+
+            // Get author
+            const git_signature* author = git_commit_author(commit);
+            std::string author_str = "unknown <unknown>";
+            if (author) {
+                author_str = (author->name ? author->name : "unknown");
+                author_str += " <";
+                author_str += (author->email ? author->email : "unknown");
+                author_str += ">";
+            }
+
+            // Format commit date/time
+            time_t commit_time = git_commit_time(commit);
+            int time_offset = git_commit_time_offset(commit); // minutes from UTC
+
+            // Apply offset to UTC to get local time
+            time_t local_epoch = commit_time + time_offset * 60;
+            struct tm local_tm{};
+            gmtime_r(&local_epoch, &local_tm);
+
+            char date_buf[64];
+            strftime(date_buf, sizeof(date_buf), "%Y-%m-%d %H:%M:%S", &local_tm);
+
+            char tz_buf[16];
+            int offset_hours = time_offset / 60;
+            int offset_mins = std::abs(time_offset) % 60;
+            char sign = (time_offset >= 0) ? '+' : '-';
+            snprintf(tz_buf, sizeof(tz_buf), " %c%02d%02d", sign,
+                     std::abs(offset_hours), offset_mins);
+
+            std::string date_str = std::string(date_buf) + tz_buf;
+
+            // Get commit message
+            const char* raw_msg = git_commit_message(commit);
+            std::string msg(raw_msg ? raw_msg : "");
+
+            // Extract subject (first line) and body
+            std::string subject = msg;
+            std::string body;
+            auto nl = msg.find('\n');
+            if (nl != std::string::npos) {
+                subject = msg.substr(0, nl);
+                size_t body_start = nl + 1;
+                // Skip leading blank lines in body
+                while (body_start < msg.size() &&
+                       (msg[body_start] == '\n' || msg[body_start] == '\r')) {
+                    body_start++;
+                }
+                if (body_start < msg.size()) {
+                    body = msg.substr(body_start);
+                    // Remove trailing newlines
+                    while (!body.empty() && (body.back() == '\n' || body.back() == '\r'))
+                        body.pop_back();
+                }
+            }
+
+            // Format output
+            if (format == "oneline") {
+                // <8-char hash> <subject>
+                std::string short_hash(hex, 8);
+                result += short_hash + " " + subject + "\n";
+            } else if (format == "full") {
+                result += "commit " + std::string(hex) + "\n";
+                result += "Author: " + author_str + "\n";
+                result += "Date:   " + date_str + "\n\n";
+
+                // Full message indented by 4 spaces (including subject + body)
+                std::string full_msg = msg;
+                // Remove trailing newlines
+                while (!full_msg.empty() &&
+                       (full_msg.back() == '\n' || full_msg.back() == '\r'))
+                    full_msg.pop_back();
+
+                if (!full_msg.empty()) {
+                    size_t pos = 0;
+                    while (pos < full_msg.size()) {
+                        result += "    ";
+                        auto next = full_msg.find('\n', pos);
+                        if (next == std::string::npos) {
+                            result += full_msg.substr(pos) + "\n";
+                            break;
+                        }
+                        result += full_msg.substr(pos, next - pos) + "\n";
+                        pos = next + 1;
+                    }
+                }
+                result += "---\n";
+            } else {
+                // short format (default)
+                result += "commit " + std::string(hex) + "\n";
+                result += "Author: " + author_str + "\n";
+                result += "Date:   " + date_str + "\n\n";
+                result += "    " + subject + "\n";
+                result += "---\n";
+            }
+
+            count++;
+        }
+
+        if (result.empty()) {
+            return std::string("(no commits)");
+        }
+
+        // Remove trailing separator
+        if (result.size() >= 4 && result.substr(result.size() - 4) == "---\n") {
+            result.resize(result.size() - 4);
+        }
+
+        return result;
+    };
+    return t;
+}
+
+// ===================================================================
 // project_tree tool
 // ===================================================================
 
@@ -1994,6 +2230,7 @@ void ToolRegistry::add_defaults(const std::string& safe_dir,
     add(make_web_fetch_tool());
     add(make_git_status_tool(safe_dir));
     add(make_git_diff_tool(safe_dir));
+    add(make_git_log_tool(safe_dir));
 }
 
 json ToolRegistry::to_openai_tools() const {
@@ -2019,7 +2256,7 @@ Result<std::string> ToolRegistry::execute(const std::string& name, const std::st
         return std::unexpected("Tool '" + name +
             "' is not available in Plan mode (read-only). "
             "Available tools: list_files, read_file, read_file_lines, grep_files, "
-            "project_tree, web_search, web_fetch, git_status, git_diff.");
+            "project_tree, web_search, web_fetch, git_status, git_diff, git_log.");
     }
 
     json args;

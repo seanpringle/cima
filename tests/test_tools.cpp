@@ -111,7 +111,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
 
     json tools = reg.to_openai_tools();
     REQUIRE(tools.is_array());
-    REQUIRE(tools.size() == 13);
+    REQUIRE(tools.size() == 14);
 
     // Check structure of first tool
     CHECK(tools[0]["type"] == "function");
@@ -129,7 +129,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
     CHECK(names == std::set<std::string>{
                        "list_files", "read_file", "read_file_lines", "grep_files", "write_file",
                        "edit_file", "apply_patch", "run_bash", "web_search", "web_fetch",
-                       "project_tree", "git_status", "git_diff"});
+                       "project_tree", "git_status", "git_diff", "git_log"});
 }
 
 // ===================================================================
@@ -626,6 +626,235 @@ TEST_CASE("git_diff output truncation", "[tools][git_diff]") {
     // The diff will show all 599 new lines as additions (since we replaced 1 line with 600)
     // Plus context. Should hit the 500-line limit.
     CHECK(result->find("truncated") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+// ===================================================================
+// git_log
+// ===================================================================
+
+TEST_CASE("git_log basic", "[tools][git_log]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    // Add a couple more commits
+    std::ofstream(sd + "/a.txt") << "hello\n";
+    reg.execute("run_bash", R"({"command": "git add a.txt && git commit -m 'add a.txt'"})");
+    std::ofstream(sd + "/b.txt") << "world\n";
+    reg.execute("run_bash", R"({"command": "git add b.txt && git commit -m 'add b.txt'"})");
+
+    auto result = reg.execute("git_log", "{}");
+    REQUIRE(result);
+
+    // Should show 3 commits (initial + 2 additions) in short format
+    CHECK(result->find("commit ") != std::string::npos);
+    CHECK(result->find("Author:") != std::string::npos);
+    CHECK(result->find("Date:") != std::string::npos);
+    CHECK(result->find("add b.txt") != std::string::npos);
+    CHECK(result->find("add a.txt") != std::string::npos);
+    CHECK(result->find("initial commit") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_log max_count", "[tools][git_log]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    // Add 2 more commits
+    std::ofstream(sd + "/a.txt") << "hello\n";
+    reg.execute("run_bash", R"({"command": "git add a.txt && git commit -m 'add a.txt'"})");
+    std::ofstream(sd + "/b.txt") << "world\n";
+    reg.execute("run_bash", R"({"command": "git add b.txt && git commit -m 'add b.txt'"})");
+
+    // Request only 1 commit
+    auto result = reg.execute("git_log", R"({"max_count": 1})");
+    REQUIRE(result);
+
+    // Should show only the most recent commit
+    CHECK(result->find("add b.txt") != std::string::npos);
+    CHECK(result->find("add a.txt") == std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_log format oneline", "[tools][git_log]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    std::ofstream(sd + "/a.txt") << "hello\n";
+    reg.execute("run_bash", R"({"command": "git add a.txt && git commit -m 'add a.txt'"})");
+
+    auto result = reg.execute("git_log", R"({"format": "oneline"})");
+    REQUIRE(result);
+
+    // Oneline format: no "commit ", no "Author:", no "Date:"
+    CHECK(result->find("commit ") == std::string::npos);
+    CHECK(result->find("Author:") == std::string::npos);
+    CHECK(result->find("Date:") == std::string::npos);
+    // Should have short hash prefix (8 hex chars) and subject
+    CHECK(result->size() < 200); // compact format
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_log format full", "[tools][git_log]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    // Commit with a multi-line message (-m for subject, -m for body)
+    auto r = reg.execute("run_bash",
+        R"({"command": "echo hello > new.txt && git add new.txt && git commit -m 'add new.txt' -m 'This is the second paragraph.'"})");
+    REQUIRE(r);
+
+    auto result = reg.execute("git_log", R"({"format": "full"})");
+    REQUIRE(result);
+
+    // Full format includes the body
+    CHECK(result->find("This is the second paragraph.") != std::string::npos);
+    // Should also have the subject
+    CHECK(result->find("add new.txt") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_log max_count cap", "[tools][git_log]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    // Add 55 commits (more than the max of 50)
+    for (int i = 0; i < 55; i++) {
+        std::ofstream(sd + "/f" + std::to_string(i) + ".txt") << std::to_string(i) << "\n";
+        auto r = reg.execute("run_bash",
+            R"({"command": "git add f)" + std::to_string(i) +
+                R"(.txt && git commit -m 'commit )" + std::to_string(i) + R"('"})");
+        REQUIRE(r);
+    }
+
+    auto result = reg.execute("git_log", R"({"max_count": 100})");
+    REQUIRE(result);
+
+    // Count "commit " at start of lines (not in subject text) to verify cap at 50
+    int count = 0;
+    size_t pos = 0;
+    while ((pos = result->find("commit ", pos)) != std::string::npos) {
+        // Only count if it's at the start of a line (pos == 0 or preceded by '\n')
+        if (pos == 0 || (*result)[pos - 1] == '\n') {
+            count++;
+        }
+        pos += 7;
+    }
+    CHECK(count == 50);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_log empty repo", "[tools][git_log]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    // Init but no commits
+    reg.execute("run_bash", R"({"command": "git init"})");
+
+    auto result = reg.execute("git_log", "{}");
+    CHECK_FALSE(result);
+    // On an empty repo (git init with no commits), HEAD reference doesn't exist
+    CHECK(result.error().find("reference") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_log not a git repo", "[tools][git_log]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    auto result = reg.execute("git_log", "{}");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("not a git repository") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_log invalid branch", "[tools][git_log]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    auto result = reg.execute("git_log", R"({"branch": "nonexistent-branch"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("nonexistent-branch") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_log available in plan mode", "[tools][git_log]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+    reg.set_mode(Mode::Plan);
+
+    // Should succeed in Plan mode (read-only tool)
+    auto result = reg.execute("git_log", "{}");
+    REQUIRE(result);
+    CHECK(result->find("commit ") != std::string::npos);
+    CHECK(result->find("initial commit") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_log custom branch", "[tools][git_log]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    // Add 2 commits
+    std::ofstream(sd + "/a.txt") << "hello\n";
+    reg.execute("run_bash", R"({"command": "git add a.txt && git commit -m 'add a.txt'"})");
+    std::ofstream(sd + "/b.txt") << "world\n";
+    reg.execute("run_bash", R"({"command": "git add b.txt && git commit -m 'add b.txt'"})");
+
+    // Start from HEAD~1 (skip the latest commit)
+    auto result = reg.execute("git_log", R"({"branch": "HEAD~1"})");
+    REQUIRE(result);
+
+    // Should show initial commit and add a.txt, but NOT add b.txt
+    CHECK(result->find("initial commit") != std::string::npos);
+    CHECK(result->find("add a.txt") != std::string::npos);
+    CHECK(result->find("add b.txt") == std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_log invalid format", "[tools][git_log]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    auto result = reg.execute("git_log", R"({"format": "invalid"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("invalid format") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_log max_count negative", "[tools][git_log]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    // Negative max_count should be clamped to 1
+    auto result = reg.execute("git_log", R"({"max_count": -5})");
+    REQUIRE(result);
+    // Should still work and show at least 1 commit
+    CHECK(result->find("initial commit") != std::string::npos);
 
     fs::remove_all(sd);
 }

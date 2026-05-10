@@ -25,7 +25,7 @@
 
 **Secondary finding:** The app lacks several critical tools that would let the model accomplish tasks with **fewer turns and smaller payloads** — in particular `file_diff`/`apply_patch`, `project_tree`, and `git` integration. Missing these forces the model to make many more tool calls than necessary, each adding large results back into the conversation.
 
-**Status:** 🟡 **Mostly addressed.** `project_tree`, `apply_patch`, `web_fetch`, `read_file_lines`, `git_status`, and `git_diff` implemented. `git_log` and `git_commit` remain as identified gaps.
+**Status:** 🟡 **Mostly addressed.** `project_tree`, `apply_patch`, `web_fetch`, `read_file_lines`, `git_status`, `git_diff`, and `git_log` implemented. `git_commit` remains as identified gap.
 
 **Tertiary finding:** The request-handling layer has minor inefficiencies (uncached tool schemas, no gzip, fragile retry logic) but these are not the primary driver of context-window bloat.
 
@@ -390,7 +390,7 @@ Agentic coding without git is painful. The model needs to check status, view dif
 **Sub-tools implemented:**
 - ✅ `git_status` — return changed/untracked files (libgit2-based porcelain format)
 - ✅ `git_diff` — return unified diff of staged/unstaged changes (libgit2-based, 500-line cap)
-- ❌ `git_log` — return recent commit history
+- ✅ `git_log` — return recent commit history (`max_count`, `format`, `branch` params; oneline/short/full formats; libgit2 revwalk; plan mode allowed; 12 test cases)
 - ❌ `git_commit` — stage and commit
 
 **Implementation details (`git_status`):**
@@ -410,7 +410,7 @@ Agentic coding without git is painful. The model needs to check status, view dif
 **Impact on context window:**  
 `run_bash git status` returned ~10–30 lines of ANSI-coloured output. The structured `git_status` returns clean `XY <path>` lines — typically 50% less. `git_diff` returns precisely the unified diff the model needs, without shell noise.
 
-**Status:** 🟡 **Partially addressed.** `git_status` and `git_diff` implemented. `git_log` and `git_commit` remain.
+**Status:** 🟡 **Partially addressed.** `git_status`, `git_diff`, and `git_log` implemented. `git_commit` remains.
 
 ### 5.3 Important Gaps
 
@@ -495,7 +495,7 @@ Running tests with structured output (pass/fail counts, test names). Currently r
 |---|--------|---------|--------|--------|--------|
 | 4 | **Add `apply_patch` tool** — Accept unified diff input. | `tools.cpp` | 1 day | **High** | ✅ **Done.** Built-in unified diff parser, multi-hunk, context validation, 10s timeout. |
 | 5 | **Add `project_tree` tool** — Recursive directory listing. | `tools.cpp` | 0.5 day | **High** | ✅ **Done.** UTF-8 tree, depth/line limits, `skip_permission_denied`. |
-| 6 | **Add git tools** — `git_status`, `git_diff`, `git_log`, `git_commit`. | `tools.cpp` | 2 days | **High** | 🟡 **Partial.** `git_status` done (libgit2, porcelain format, 200-entry cap). `git_diff` done (unified diff, staged/unstaged, 500-line cap). `git_log` and `git_commit` remain. |
+| 6 | **Add git tools** — `git_status`, `git_diff`, `git_log`, `git_commit`. | `tools.cpp` | 2 days | **High** | 🟡 **Partial.** `git_status` done (libgit2, porcelain format, 200-entry cap). `git_diff` done (unified diff, staged/unstaged, 500-line cap). `git_log` done (revwalk, oneline/short/full, branch support, 12 tests). `git_commit` remains. |
 | 7 | **Add Accept-Encoding: gzip** — HTTP compression. | `client.cpp` | 15 min | **Medium** | ✅ **Done.** `b67c7d1` |
 | — | **Discover context limit from API** — Query /v1/models for context window. | `client.h/cpp` | 0.5 day | **Medium** | ✅ **Done.** `fetch_model_context_limit()` checks multiple field names. |
 | — | **Stop round-tripping reasoning_content** — Don't send old thinking back. | `types.cpp` | 5 min | **Medium** | ✅ **Done.** Removed from `to_openai_messages()`. |
@@ -524,7 +524,7 @@ Running tests with structured output (pass/fail counts, test names). Currently r
 
 ## 7. Appendix: Tool Inventory
 
-### Current Tools (13)
+### Current Tools (14)
 
 | Tool | Parameters | Max Output | Timeout | Plan Mode |
 |------|-----------|------------|---------|-----------|
@@ -541,8 +541,9 @@ Running tests with structured output (pass/fail counts, test names). Currently r
 | `project_tree` | `path`, `max_depth`, `max_lines` | 500 lines | 5s | ✓ allowed |
 | `git_status` | none | 200 entries | 10s | ✓ allowed |
 | `git_diff` | `staged` (bool), `path` (string) | 500 lines / 16k chars | 10s | ✓ allowed |
+| `git_log` | `max_count` (int), `format` (string), `branch` (string) | 50 commits | 10s | ✓ allowed |
 
-### Proposed Additions (11)
+### Proposed Additions (10)
 
 | Tool | Parameters | Max Output | Timeout | Plan Mode | Priority |
 |------|-----------|------------|---------|-----------|----------|
@@ -551,7 +552,7 @@ Running tests with structured output (pass/fail counts, test names). Currently r
 | `read_file_lines` | `path`, `start_line` (int), `end_line` (int), `max_lines` (int) | 500 lines | none | ✓ allowed | P2 ✅ |
 | `git_status` | none | 200 entries | 10s | ✓ allowed | P1 ✅ |
 | `git_diff` | `staged` (bool), `path` (string) | 500 lines / 16k chars | 10s | ✓ allowed | P1 ✅ |
-| `git_log` | `max_count` (int) | 50 commits | 10s | ✓ allowed | P1 |
+| `git_log` | `max_count` (int), `format` (string), `branch` (string) | 50 commits | 10s | ✓ allowed | P1 ✅ |
 | `git_commit` | `message` (string), `all` (bool) | brief msg | 10s | ✗ blocked | P1 |
 | `delete_file` | `path` (string) | brief msg | none | ✗ blocked | P2 |
 | `move_file` | `source`, `destination` (string) | brief msg | none | ✗ blocked | P2 |
@@ -592,6 +593,7 @@ Running tests with structured output (pass/fail counts, test names). Currently r
 | 2026-05-XX | (current) | Add `apply_patch` tool — built-in unified diff parser, multi-hunk support, context validation, 10s timeout, Plan mode (blocked) |
 | 2026-05-XX | `b1b354d` | Add `git_status` tool — libgit2-based porcelain v1 status, 200-entry cap, sorted output, Plan mode support |
 | 2026-05-XX | `9da33cf` | Add `git_diff` tool — unified diff of staged/unstaged changes via libgit2, path filter, 500-line/16k-char cap, Plan mode support |
+| 2026-05-XX | (current) | Add `git_log` tool — libgit2 revwalk-based commit history with oneline/short/full formats, `max_count`/`format`/`branch` params, 50-commit cap, Plan mode support, 12 test cases |
 
 ---
 
