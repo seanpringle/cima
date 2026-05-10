@@ -3,6 +3,21 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <cstdlib>
+#include <cstring>
+
+// ===================================================================
+// Helpers
+// ===================================================================
+
+// Parse JSON body out of an HTTP request string
+static json parse_request_body(const std::string& http_request) {
+    auto hdr_end = http_request.find("\r\n\r\n");
+    if (hdr_end == std::string::npos) {
+        return nullptr;
+    }
+    auto body = http_request.substr(hdr_end + 4);
+    return json::parse(body, nullptr, false);
+}
 
 // ===================================================================
 // Helpers
@@ -66,6 +81,38 @@ TEST_CASE("ChatSession simple Q&A", "[chat]") {
     REQUIRE(result);
     CHECK(result->content == "Hello, World!");
     CHECK(result->reasoning.empty());
+}
+
+// ===================================================================
+// Payload includes reasoning_effort
+// ===================================================================
+
+TEST_CASE("ChatSession payload includes reasoning_effort", "[chat]") {
+    std::string last_request;
+    MockServer server(
+        [&](const std::string& req) -> std::string {
+            last_request = req;
+            return make_content_sse("Hello!");
+        },
+        true);
+
+    Config cfg;
+    cfg.api_base = server.base_url();
+    cfg.api_key = "";
+    cfg.model = "test-model";
+    cfg.reasoning_effort = "high";
+    cfg.context_limit = 1000;  // avoid model discovery request
+    cfg.planner_prompt = "You are helpful.";
+    cfg.safe_dir = "/tmp";
+
+    ChatSession session(std::move(cfg));
+    auto result = session.run_once("Say hi");
+    REQUIRE(result);
+
+    auto body = parse_request_body(last_request);
+    REQUIRE(!body.is_discarded());
+    REQUIRE(body.contains("reasoning_effort"));
+    CHECK(body["reasoning_effort"] == "high");
 }
 
 // ===================================================================

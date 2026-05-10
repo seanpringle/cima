@@ -5,7 +5,8 @@
 #include <future>
 
 ChatSession::ChatSession(Config config, TabType tab_type)
-    : model_(std::move(config.model)), safe_dir_(std::move(config.safe_dir)),
+    : model_(std::move(config.model)), reasoning_effort_(std::move(config.reasoning_effort)),
+      safe_dir_(std::move(config.safe_dir)),
       api_key_(config.api_key),
       max_iterations_(config.max_tool_iterations),
       context_limit_(static_cast<size_t>(config.context_limit)),
@@ -109,6 +110,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
         }
 
         json payload = {{"model", model_},
+            {"reasoning_effort", reasoning_effort_},
             {"messages", conversation_.to_openai_messages()},
             {"tools", tools_.to_openai_tools()},
             {"stream", true}};
@@ -269,6 +271,7 @@ std::optional<std::string> ChatSession::summarize_messages_(
 
     json payload = {
         {"model", model_},
+        {"reasoning_effort", reasoning_effort_},
         {"messages", summary_conv.to_openai_messages()},
         {"stream", false},
         {"max_tokens", static_cast<int>(std::min(max_tokens, size_t(1024)))},
@@ -417,6 +420,7 @@ Result<ChatResult> ChatSession::run_subagent_session_(
 
         json payload = {
             {"model", subagent_model},
+            {"reasoning_effort", reasoning_effort_},
             {"messages", subagent_conv.to_openai_messages()},
             {"tools", subagent_tools.to_openai_tools(&allowed_tools)},
             {"stream", false},

@@ -22,6 +22,7 @@ Config Config::from_env() {
     cfg.api_base = get_env("LLM_API", get_env("API_BASE", cfg.api_base));
     cfg.api_key = get_env("LLM_KEY", get_env("API_KEY", cfg.api_key));
     cfg.model = get_env("MODEL", cfg.model);
+    cfg.reasoning_effort = get_env("LLM_REASONING_EFFORT", get_env("REASONING_EFFORT", cfg.reasoning_effort));
     cfg.planner_prompt = get_env("LLM_PLANNER_PROMPT",
         get_env("PLANNER_PROMPT", cfg.planner_prompt));
     cfg.builder_prompt = get_env("LLM_BUILDER_PROMPT",

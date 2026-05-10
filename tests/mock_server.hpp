@@ -75,13 +75,13 @@ private:
             if (client < 0)
                 continue;
 
-            char buf[8192] = {};
+            std::vector<char> buf(65536, 0);
             // Read request headers + body.  Parse Content-Length to
             // determine how many body bytes we still need.
-            ssize_t n = read(client, buf, sizeof(buf) - 1);
+            ssize_t n = read(client, buf.data(), buf.size() - 1);
             if (n > 0) {
                 buf[n] = '\0';
-                std::string req(buf, n);
+                std::string req(buf.data(), n);
 
                 // Find Content-Length
                 long body_len = 0;
@@ -98,9 +98,9 @@ private:
                     long have = static_cast<long>(n) -
                                 static_cast<long>(hdr_end);
                     while (have < body_len &&
-                           static_cast<size_t>(n) < sizeof(buf) - 1) {
+                           static_cast<size_t>(n) < buf.size() - 1) {
                         ssize_t more =
-                            read(client, buf + n, sizeof(buf) - 1 - n);
+                            read(client, buf.data() + n, buf.size() - 1 - n);
                         if (more <= 0)
                             break;
                         n += more;
@@ -109,7 +109,7 @@ private:
                 }
 
                 buf[n] = '\0';
-                std::string request(buf, n);
+                std::string request(buf.data(), n);
                 std::string body = handler_(request);
 
                 std::string response;

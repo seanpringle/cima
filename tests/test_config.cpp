@@ -24,6 +24,8 @@ static void clear_all_config_env() {
     unset_env("API_BASE");
     unset_env("API_KEY");
     unset_env("MODEL");
+    unset_env("REASONING_EFFORT");
+    unset_env("LLM_REASONING_EFFORT");
     unset_env("LLM_PLANNER_PROMPT");
     unset_env("LLM_BUILDER_PROMPT");
     unset_env("PLANNER_PROMPT");
@@ -68,6 +70,39 @@ TEST_CASE("Config env vars", "[config]") {
     REQUIRE(cfg.planner_prompt == "Be brief.");
     REQUIRE(cfg.builder_prompt == "Do work.");
     REQUIRE(cfg.safe_dir == fs::weakly_canonical("/tmp"));
+}
+
+// ---------------------------------------------------------------------------
+// reasoning_effort defaults and env vars
+// ---------------------------------------------------------------------------
+
+TEST_CASE("Config reasoning_effort default", "[config]") {
+    clear_all_config_env();
+
+    auto cfg = Config::from_env();
+    REQUIRE(cfg.reasoning_effort == "high");
+}
+
+TEST_CASE("Config reasoning_effort env var", "[config]") {
+    clear_all_config_env();
+    set_env("LLM_REASONING_EFFORT", "low");
+    auto cfg = Config::from_env();
+    REQUIRE(cfg.reasoning_effort == "low");
+}
+
+TEST_CASE("Config reasoning_effort fallback env var", "[config]") {
+    clear_all_config_env();
+    set_env("REASONING_EFFORT", "medium");
+    auto cfg = Config::from_env();
+    REQUIRE(cfg.reasoning_effort == "medium");
+}
+
+TEST_CASE("Config reasoning_effort LLM_ prefix overrides fallback", "[config]") {
+    clear_all_config_env();
+    set_env("LLM_REASONING_EFFORT", "high");
+    set_env("REASONING_EFFORT", "low");
+    auto cfg = Config::from_env();
+    REQUIRE(cfg.reasoning_effort == "high");
 }
 
 // ---------------------------------------------------------------------------

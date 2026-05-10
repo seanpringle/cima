@@ -40,6 +40,7 @@ class ChatSession {
 
   private:
     std::string model_;
+    std::string reasoning_effort_;
     std::string safe_dir_;
     std::string api_key_;        // stored for subagent inheritance
     int max_iterations_ = 100;  // overridden by config.max_tool_iterations
