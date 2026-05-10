@@ -167,8 +167,12 @@ int gui_main(Config cfg) {
 
         // ── Tab key to toggle between Planner/Builder tabs ──
         static int s_active_agent_tab = 0;
-        if (ImGui::IsKeyPressed(ImGuiKey_Tab, false) && !ImGui::IsAnyItemActive()) {
-            s_active_agent_tab = (s_active_agent_tab + 1) % 2;
+        static bool s_tab_switch_requested = false;
+
+        // Use Ctrl+Tab to avoid conflicting with ImGui's widget-navigation Tab key.
+        // Only trigger when no widget is actively being edited.
+        if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Tab) && !ImGui::IsAnyItemActive()) {
+            s_tab_switch_requested = true;
         }
 
         // ── main window ──
@@ -192,15 +196,27 @@ int gui_main(Config cfg) {
             // Left panel with tab bar
             BeginChild("##agent_panel", ImVec2(left_width - separator_w, content.y), true);
             if (BeginTabBar("##agent_tabs")) {
-                if (BeginTabItem("Planner", nullptr, s_active_agent_tab == 0 ? ImGuiTabItemFlags_SetSelected : 0)) {
+                // Compute flags: only pass SetSelected when we explicitly requested a switch
+                // AND this is the target tab.
+                ImGuiTabItemFlags planner_flags = (s_tab_switch_requested && s_active_agent_tab == 1)
+                    ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
+                ImGuiTabItemFlags builder_flags = (s_tab_switch_requested && s_active_agent_tab == 0)
+                    ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
+
+                if (BeginTabItem("Planner", nullptr, planner_flags)) {
+                    s_active_agent_tab = 0;
                     render_chat_ui(planner_tab, done);
                     EndTabItem();
                 }
-                if (BeginTabItem("Builder", nullptr, s_active_agent_tab == 1 ? ImGuiTabItemFlags_SetSelected : 0)) {
+                if (BeginTabItem("Builder", nullptr, builder_flags)) {
+                    s_active_agent_tab = 1;
                     render_chat_ui(builder_tab, done);
                     EndTabItem();
                 }
                 EndTabBar();
+
+                // Clear the switch-request flag after consuming it.
+                s_tab_switch_requested = false;
             }
             EndChild();
 
