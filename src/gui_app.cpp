@@ -3,6 +3,7 @@
 #include "jobs.h"
 
 #include "imgui.h"
+#include "imgui_internal.h"
 #include "backends/imgui_impl_sdl3.h"
 #include "backends/imgui_impl_sdlrenderer3.h"
 
@@ -15,17 +16,6 @@ using namespace ImGui;
 
 extern std::atomic<bool> g_interrupted;
 
-static int next_planner_id = 0;
-static int next_builder_id = 0;
-
-static std::string make_tab_title(TabType type) {
-    if (type == TabType::Planner) {
-        return "Planner #" + std::to_string(++next_planner_id);
-    } else {
-        return "Builder #" + std::to_string(++next_builder_id);
-    }
-}
-
 int gui_main(Config cfg) {
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         SDL_Log("SDL_Init error: %s", SDL_GetError());
@@ -33,7 +23,7 @@ int gui_main(Config cfg) {
     }
 
     SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_RESIZABLE);
-    SDL_Window* window = SDL_CreateWindow("llm-chat", 1280, 1280, window_flags);
+    SDL_Window* window = SDL_CreateWindow("llm-chat", 1280, 720, window_flags);
     if (!window) {
         SDL_Log("SDL_CreateWindow error: %s", SDL_GetError());
         SDL_Quit();
@@ -112,30 +102,43 @@ int gui_main(Config cfg) {
     ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
     ImGui_ImplSDLRenderer3_Init(renderer);
 
-    // ── create the initial Planner tab ──
-    std::vector<TabInfo> tabs;
-    {
-        TabInfo tab;
-        tab.id = 0;
-        tab.type = TabType::Planner;
-        tab.title = make_tab_title(TabType::Planner);
-        tab.session = std::make_unique<ChatSession>(cfg, TabType::Planner);
-        tab.chat_state = std::make_unique<AsyncChatState>();
-        tab.ui_state.mono_font = mono_font;
-        tab.ui_state.tab_type = TabType::Planner;
-        strncpy(tab.ui_state.title_buf, tab.title.c_str(), sizeof(tab.ui_state.title_buf) - 1);
-        strncpy(tab.ui_state.model_buf, tab.session->model().c_str(),
-            sizeof(tab.ui_state.model_buf) - 1);
+    // ── create the two fixed panels: Planner (left) and Builder (right) ──
+    TabInfo planner_tab;
+    TabInfo builder_tab;
 
-        auto* cs = tab.chat_state.get();
-        tab.session->set_output_callback(
-            [cs](const std::string& text, OutputType type) {
-                std::lock_guard<std::mutex> lock(cs->mutex);
-                cs->pending.emplace_back(text, type);
-            });
+    // Planner
+    planner_tab.id = 0;
+    planner_tab.type = TabType::Planner;
+    planner_tab.title = "Planner";
+    planner_tab.session = std::make_unique<ChatSession>(cfg, TabType::Planner);
+    planner_tab.chat_state = std::make_unique<AsyncChatState>();
+    planner_tab.ui_state.mono_font = mono_font;
+    planner_tab.ui_state.tab_type = TabType::Planner;
+    strncpy(planner_tab.ui_state.title_buf, "Planner", sizeof(planner_tab.ui_state.title_buf) - 1);
+    strncpy(planner_tab.ui_state.model_buf, planner_tab.session->model().c_str(),
+        sizeof(planner_tab.ui_state.model_buf) - 1);
+    planner_tab.session->set_output_callback(
+        [cs = planner_tab.chat_state.get()](const std::string& text, OutputType type) {
+            std::lock_guard<std::mutex> lock(cs->mutex);
+            cs->pending.emplace_back(text, type);
+        });
 
-        tabs.push_back(std::move(tab));
-    }
+    // Builder
+    builder_tab.id = 1;
+    builder_tab.type = TabType::Builder;
+    builder_tab.title = "Builder";
+    builder_tab.session = std::make_unique<ChatSession>(cfg, TabType::Builder);
+    builder_tab.chat_state = std::make_unique<AsyncChatState>();
+    builder_tab.ui_state.mono_font = mono_font;
+    builder_tab.ui_state.tab_type = TabType::Builder;
+    strncpy(builder_tab.ui_state.title_buf, "Builder", sizeof(builder_tab.ui_state.title_buf) - 1);
+    strncpy(builder_tab.ui_state.model_buf, builder_tab.session->model().c_str(),
+        sizeof(builder_tab.ui_state.model_buf) - 1);
+    builder_tab.session->set_output_callback(
+        [cs = builder_tab.chat_state.get()](const std::string& text, OutputType type) {
+            std::lock_guard<std::mutex> lock(cs->mutex);
+            cs->pending.emplace_back(text, type);
+        });
 
     bool done = false;
     while (!done) {
@@ -150,8 +153,8 @@ int gui_main(Config cfg) {
 
         // If any chat is running and we're quitting, signal interrupt
         if (done) {
-            for (auto& tab : tabs) {
-                if (tab.chat_state->running) {
+            for (auto* tab : { &planner_tab, &builder_tab }) {
+                if (tab->chat_state->running) {
                     g_interrupted = true;
                     break;
                 }
@@ -174,51 +177,6 @@ int gui_main(Config cfg) {
         // ── menu bar ──
         if (BeginMenuBar()) {
             if (BeginMenu("File")) {
-                if (MenuItem("New Planner Tab")) {
-                    TabInfo new_tab;
-                    new_tab.id = tabs.empty() ? 0 : tabs.back().id + 1;
-                    new_tab.type = TabType::Planner;
-                    new_tab.title = make_tab_title(TabType::Planner);
-                    new_tab.session =
-                        std::make_unique<ChatSession>(cfg, TabType::Planner);
-                    new_tab.chat_state = std::make_unique<AsyncChatState>();
-                    new_tab.ui_state.mono_font = mono_font;
-                    new_tab.ui_state.tab_type = TabType::Planner;
-                    strncpy(new_tab.ui_state.title_buf, new_tab.title.c_str(),
-                        sizeof(new_tab.ui_state.title_buf) - 1);
-                    strncpy(new_tab.ui_state.model_buf,
-                        new_tab.session->model().c_str(),
-                        sizeof(new_tab.ui_state.model_buf) - 1);
-                    new_tab.session->set_output_callback(
-                        [chat_state = new_tab.chat_state.get()](const std::string& text, OutputType type) {
-                            std::lock_guard<std::mutex> lock(chat_state->mutex);
-                            chat_state->pending.emplace_back(text, type);
-                        });
-                    tabs.push_back(std::move(new_tab));
-                }
-                if (MenuItem("New Builder Tab")) {
-                    TabInfo new_tab;
-                    new_tab.id = tabs.empty() ? 0 : tabs.back().id + 1;
-                    new_tab.type = TabType::Builder;
-                    new_tab.title = make_tab_title(TabType::Builder);
-                    new_tab.session =
-                        std::make_unique<ChatSession>(cfg, TabType::Builder);
-                    new_tab.chat_state = std::make_unique<AsyncChatState>();
-                    new_tab.ui_state.mono_font = mono_font;
-                    new_tab.ui_state.tab_type = TabType::Builder;
-                    strncpy(new_tab.ui_state.title_buf, new_tab.title.c_str(),
-                        sizeof(new_tab.ui_state.title_buf) - 1);
-                    strncpy(new_tab.ui_state.model_buf,
-                        new_tab.session->model().c_str(),
-                        sizeof(new_tab.ui_state.model_buf) - 1);
-                    new_tab.session->set_output_callback(
-                        [chat_state = new_tab.chat_state.get()](const std::string& text, OutputType type) {
-                            std::lock_guard<std::mutex> lock(chat_state->mutex);
-                            chat_state->pending.emplace_back(text, type);
-                        });
-                    tabs.push_back(std::move(new_tab));
-                }
-                Separator();
                 if (MenuItem("Exit", "Alt+F4"))
                     done = true;
                 EndMenu();
@@ -228,10 +186,9 @@ int gui_main(Config cfg) {
                 if (names && !names->empty()) {
                     for (const auto& n : *names) {
                         if (MenuItem(n.c_str())) {
-                            // Open job detail window in all tabs
-                            for (auto& t : tabs) {
-                                t.ui_state.open_job_windows.insert(n);
-                            }
+                            // Open job detail window in both panels
+                            planner_tab.ui_state.open_job_windows.insert(n);
+                            builder_tab.ui_state.open_job_windows.insert(n);
                         }
                     }
                 } else {
@@ -242,46 +199,30 @@ int gui_main(Config cfg) {
             EndMenuBar();
         }
 
-        // ── tab bar ──
-        int tab_to_close = -1;
-        if (BeginTabBar("##tabs", ImGuiTabBarFlags_Reorderable | ImGuiTabBarFlags_FittingPolicyScroll)) {
-            for (int ti = 0; ti < (int)tabs.size(); ti++) {
-                auto& tab = tabs[ti];
+        // ── two fixed panels (50:50 horizontal split) ──
+        {
+            ImVec2 content = GetContentRegionAvail();
+            float split = content.x * 0.5f;
+            float separator_w = GetStyle().ItemSpacing.x;
 
-                std::string label = tab.title;
+            // Left panel (Planner)
+            BeginChild("##planner_panel", ImVec2(split - separator_w, content.y), true);
+            render_chat_ui(planner_tab, done);
+            EndChild();
 
-                bool open = true;
-                if (BeginTabItem(label.c_str(), &open,
-                        ImGuiTabItemFlags_NoCloseWithMiddleMouseButton)) {
-                    // This tab is now active — render its chat UI
-                    render_chat_ui(tab, done);
-                    EndTabItem();
-                }
+            SameLine();
 
-                if (!open) {
-                    tab_to_close = ti;
-                }
-            }
-            EndTabBar();
+            // Vertical separator
+            SeparatorEx(ImGuiSeparatorFlags_Vertical);
+            SameLine();
+
+            // Right panel (Builder)
+            BeginChild("##builder_panel", ImVec2(content.x - split - separator_w * 2, content.y), true);
+            render_chat_ui(builder_tab, done);
+            EndChild();
         }
 
         End(); // main window
-
-        // ── close tab after iteration (avoid invalidating iterators) ──
-        if (tab_to_close >= 0 && tab_to_close < (int)tabs.size()) {
-            // Ensure the chat is stopped
-            auto& tab = tabs[tab_to_close];
-            if (tab.chat_state->running) {
-                g_interrupted = true;
-                if (tab.chat_state->future.valid()) {
-                    tab.chat_state->future.wait();
-                    try { tab.chat_state->future.get(); } catch (...) {}
-                }
-                tab.chat_state->running = false;
-                g_interrupted = false;
-            }
-            tabs.erase(tabs.begin() + tab_to_close);
-        }
 
         ImGui::Render();
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
@@ -290,15 +231,15 @@ int gui_main(Config cfg) {
         SDL_RenderPresent(renderer);
     }
 
-    // ── clean up all tabs ──
-    for (auto& tab : tabs) {
-        if (tab.chat_state->running) {
+    // ── clean up both panels ──
+    for (auto* tab : { &planner_tab, &builder_tab }) {
+        if (tab->chat_state->running) {
             g_interrupted = true;
-            if (tab.chat_state->future.valid()) {
-                tab.chat_state->future.wait();
-                try { tab.chat_state->future.get(); } catch (...) {}
+            if (tab->chat_state->future.valid()) {
+                tab->chat_state->future.wait();
+                try { tab->chat_state->future.get(); } catch (...) {}
             }
-            tab.chat_state->running = false;
+            tab->chat_state->running = false;
         }
     }
     g_interrupted = false;

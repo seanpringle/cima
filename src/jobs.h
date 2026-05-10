@@ -35,6 +35,9 @@ class JobBoard {
     Result<Job> read_job(const std::string& name) const;
     Result<void> comment_job(const std::string& name, const std::string& comment);
     Result<void> close_job(const std::string& name);
+    Result<void> edit_job(const std::string& name,
+        const std::string& new_name,
+        const std::string& new_description);
 
   private:
     JobBoard() = default;
@@ -52,6 +55,7 @@ Tool make_list_jobs_tool();
 Tool make_read_job_tool();
 Tool make_comment_job_tool();
 Tool make_close_job_tool();
+Tool make_edit_job_tool();
 
-/// Convenience: register all five job tools on a ToolRegistry.
+/// Convenience: register all six job tools on a ToolRegistry.
 void add_job_tools(ToolRegistry& registry);

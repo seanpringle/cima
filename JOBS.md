@@ -4,6 +4,8 @@ open_job
   desc: Create a job ticket with an informative name and a detailed description, suitable for another agent to pick up.
   args: name (string, must be unique), description (detailed markdown document)
 
+
+
 list_jobs
   desc: Return a list of open jobs names
   result: array of open job names
