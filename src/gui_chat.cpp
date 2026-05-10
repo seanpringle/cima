@@ -7,6 +7,7 @@
 #include <cstring>
 #include <iomanip>
 #include <iostream>
+#include <md4c.h>
 #include <string>
 
 using namespace ImGui;
@@ -68,327 +69,295 @@ void text_unformatted_ellipsis(const string& text) {
     TextUnformatted(ss.str().c_str());
 }
 
-void render_content(const string& text) {
-    string copy = text;
-    copy.erase(
-        std::remove_if(copy.begin(), copy.end(), [](auto c) { return c == '\r' || c == '\0'; }),
-        copy.end());
+namespace {
 
-    string_view src(copy);
+struct RenderCtx {
+    int style_depth = 0;
+    int tables = 0;
+    // code block rendering
+    bool in_code_block = false;
+    string code_buf;
+    ImVec2 code_start;
+    float code_width;
+    ImDrawListSplitter code_splitter;
+};
 
-    auto canvas = GetContentRegionAvail();
-
-    auto parseText = [&](string_view txt) {
-        bool bold = false;
-        bool code = false;
-        int colors = 0;
-
-        PushStyleColor(ImGuiCol_Text, IM_COL32(200, 200, 200, 255));
-        colors++;
-
-        stringstream fragment;
-
-        auto flush = [&]() {
-            string str = fragment.str();
-            fragment.str("");
-
-            string_view prev(str);
-
-            while (prev.size()) {
-                auto next = prev;
-                while (next.size() && !isspace(next.front()))
-                    next.remove_prefix(1);
-                if (next.size() && isspace(next.front()))
-                    next.remove_prefix(1);
-                string part(string_view(prev.data(), next.data() - prev.data()));
-                auto size = CalcTextSize(part.c_str());
-                if (GetCursorPos().x + size.x >= canvas.x)
-                    NewLine();
-                auto at = GetCursorPos();
-                TextUnformatted(part.c_str());
-                SetCursorPos(ImVec2(at.x + size.x, at.y));
-                prev = next;
-            }
-        };
-
-        while (txt.size()) {
-            if (txt.starts_with("**") && !bold) {
-                flush();
-                txt.remove_prefix(2);
-                bold = true;
-                PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
-                colors++;
-                continue;
-            }
-            if (txt.starts_with("**") && bold) {
-                flush();
-                txt.remove_prefix(2);
-                bold = false;
-                PopStyleColor();
-                colors--;
-                continue;
-            }
-
-            if (txt.starts_with("`") && !code) {
-                flush();
-                txt.remove_prefix(1);
-                code = true;
-                PushStyleColor(ImGuiCol_Text, IM_COL32(200, 200, 255, 255));
-                colors++;
-                continue;
-            }
-            if (txt.starts_with("`") && code) {
-                flush();
-                txt.remove_prefix(1);
-                code = false;
-                PopStyleColor();
-                colors--;
-                continue;
-            }
-
-            fragment << txt.front();
-            txt.remove_prefix(1);
-        }
-
-        flush();
-        PopStyleColor(colors);
-    };
-
-    auto scanLine = [&]() {
-        string_view cur = src;
-        while (cur.size() && cur.front() != '\n')
-            cur.remove_prefix(1);
-        string_view line(src.data(), cur.data() - src.data());
-        if (cur.size() && cur.front() == '\n')
-            cur.remove_prefix(1);
-        src = cur;
-        return line;
-    };
-
-    auto endBlock = [&]() {
-        while (src.starts_with("\n")) {
-            src.remove_prefix(1);
-        }
-        NewLine();
-    };
-
-    auto parseCodeBlock = [&]() {
-        scanLine(); // ```
-        auto drawList = GetWindowDrawList();
-        ImDrawListSplitter splitter;
-        splitter.Split(drawList, 2);
-        splitter.SetCurrentChannel(drawList, 1);
-        auto tl = GetCursorScreenPos();
-        auto size = GetContentRegionAvail();
+static int enter_block_cb(MD_BLOCKTYPE type, void* detail, void* userdata) {
+    auto& ctx = *static_cast<RenderCtx*>(userdata);
+    switch (type) {
+    case MD_BLOCK_DOC:
+        break;
+    case MD_BLOCK_P:
+        PushTextWrapPos(0);
+        break;
+    case MD_BLOCK_H: {
+        auto* h = static_cast<MD_BLOCK_H_DETAIL*>(detail);
+        PushTextWrapPos(0);
+        PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
+        ctx.style_depth++;
+        (void)h->level;
+        break;
+    }
+    case MD_BLOCK_CODE: {
+        ctx.in_code_block = true;
+        ctx.code_buf.clear();
+        ctx.code_start = GetCursorScreenPos();
+        ctx.code_width = GetContentRegionAvail().x;
+        auto* dl = GetWindowDrawList();
+        ctx.code_splitter.Split(dl, 2);
+        ctx.code_splitter.SetCurrentChannel(dl, 1);
         Indent();
         NewLine();
-        while (src.size()) {
-            auto line = scanLine();
-            if (line.starts_with("```"))
-                break;
-            TextUnformatted(line.data(), line.data() + line.size());
+        break;
+    }
+    case MD_BLOCK_HR:
+        Separator();
+        break;
+    case MD_BLOCK_UL:
+        break;
+    case MD_BLOCK_OL:
+        break;
+    case MD_BLOCK_LI: {
+        auto* li = static_cast<MD_BLOCK_LI_DETAIL*>(detail);
+        if (li->is_task) {
+            string mark = (li->task_mark == 'x' || li->task_mark == 'X') ? "[x] " : "[ ] ";
+            TextUnformatted(mark.c_str());
+        } else {
+            Bullet();
+        }
+        break;
+    }
+    case MD_BLOCK_TABLE: {
+        auto* table = static_cast<MD_BLOCK_TABLE_DETAIL*>(detail);
+        string tid = "##tbl" + std::to_string(++ctx.tables);
+        BeginTable(tid.c_str(), table->col_count,
+            ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg);
+        for (unsigned i = 0; i < table->col_count; i++) {
+            string cid = "##c" + std::to_string(i);
+            ImGuiTableColumnFlags flags = (i == table->col_count - 1)
+                ? ImGuiTableColumnFlags_WidthStretch
+                : ImGuiTableColumnFlags_None;
+            TableSetupColumn(cid.c_str(), flags);
+        }
+        break;
+    }
+    case MD_BLOCK_THEAD:
+        break;
+    case MD_BLOCK_TBODY:
+        break;
+    case MD_BLOCK_TR:
+        TableNextRow();
+        break;
+    case MD_BLOCK_TH: {
+        TableNextColumn();
+        PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
+        ctx.style_depth++;
+        break;
+    }
+    case MD_BLOCK_TD: {
+        TableNextColumn();
+        break;
+    }
+    case MD_BLOCK_QUOTE:
+        Indent();
+        PushStyleColor(ImGuiCol_Text, IM_COL32(180, 180, 180, 255));
+        ctx.style_depth++;
+        break;
+    case MD_BLOCK_HTML:
+        break;
+    }
+    return 0;
+}
+
+static int leave_block_cb(MD_BLOCKTYPE type, void* detail, void* userdata) {
+    auto& ctx = *static_cast<RenderCtx*>(userdata);
+    switch (type) {
+    case MD_BLOCK_DOC:
+        break;
+    case MD_BLOCK_P:
+        PopTextWrapPos();
+        NewLine();
+        break;
+    case MD_BLOCK_H:
+        PopStyleColor();
+        ctx.style_depth--;
+        PopTextWrapPos();
+        NewLine();
+        break;
+    case MD_BLOCK_CODE: {
+        // render buffered code text
+        if (!ctx.code_buf.empty()) {
+            size_t pos = 0;
+            while (pos < ctx.code_buf.size()) {
+                size_t nl = ctx.code_buf.find('\n', pos);
+                string line = (nl == string::npos)
+                    ? ctx.code_buf.substr(pos)
+                    : ctx.code_buf.substr(pos, nl - pos);
+                TextUnformatted(line.c_str());
+                if (nl == string::npos)
+                    break;
+                pos = nl + 1;
+                SetCursorScreenPos(
+                    ImVec2(ctx.code_start.x + GetStyle().IndentSpacing,
+                        GetCursorScreenPos().y));
+            }
         }
         NewLine();
         Unindent();
-        ImVec2 br(GetCursorScreenPos().x + size.x, GetCursorScreenPos().y);
-        splitter.SetCurrentChannel(drawList, 0);
-        drawList->AddRectFilled(tl, br, GetColorU32(ImGuiCol_FrameBgActive));
-        splitter.Merge(drawList);
-        endBlock();
-    };
-
-    int tables = 0;
-
-    while (src.size()) {
-        if (src.front() == '\n') {
-            src.remove_prefix(1);
-            continue;
-        }
-
-        if (src.starts_with("#")) {
-            parseText(scanLine());
-            endBlock();
-            continue;
-        }
-
-        if (src.starts_with("```")) {
-            parseCodeBlock();
-            continue;
-        }
-
-        if (src.starts_with("---")) {
-            scanLine();
-            Separator();
-            endBlock();
-            continue;
-        }
-
-        if (src.starts_with("* ")) {
-            while (src.starts_with("* ")) {
-                Bullet();
-                src.remove_prefix(2);
-                parseText(scanLine());
-                while (src.starts_with("  ")) {
-                    NewLine();
-                    NewLine();
-                    src.remove_prefix(2);
-                    parseText(scanLine());
-                }
-                NewLine();
-            }
-            endBlock();
-            continue;
-        }
-
-        if (src.starts_with("- ")) {
-            while (src.starts_with("- ")) {
-                Bullet();
-                src.remove_prefix(2);
-                parseText(scanLine());
-                while (src.starts_with("  ")) {
-                    NewLine();
-                    NewLine();
-                    src.remove_prefix(2);
-                    parseText(scanLine());
-                }
-                NewLine();
-            }
-            endBlock();
-            continue;
-        }
-
-        auto numberedItem = [&]() {
-            auto cursor = src;
-            while (cursor.size() && std::isdigit(cursor.front()))
-                cursor.remove_prefix(1);
-            return cursor.data() != src.data() && cursor.size() && cursor.front() == '.';
-        };
-
-        if (numberedItem()) {
-            Indent(CalcTextSize("_").x);
-            while (numberedItem()) {
-                parseText(scanLine());
-                while (src.starts_with("  ")) {
-                    NewLine();
-                    NewLine();
-                    src.remove_prefix(2);
-                    parseText(scanLine());
-                }
-                NewLine();
-            }
-            endBlock();
-            Unindent(CalcTextSize("_").x);
-            continue;
-        }
-
-        auto tableSeparator = [&]() { return src.starts_with("|---") || src.starts_with("| ---"); };
-
-        auto scanTableCell = [&]() {
-            auto left = src;
-            while (src.size() && !src.starts_with("|"))
-                src.remove_prefix(1);
-            auto right = src;
-            string_view cell(left.data(), left.size() - right.size());
-            while (cell.starts_with(" "))
-                cell.remove_prefix(1);
-            while (cell.ends_with(" "))
-                cell.remove_suffix(1);
-            return cell;
-        };
-
-        if (src.starts_with("|")) {
-            vector<string_view> headers;
-            while (src.starts_with("|") && !src.starts_with("|\n")) {
-                src.remove_prefix(1);
-                auto header = scanTableCell();
-                if (!header.size())
-                    break;
-                headers.push_back(header);
-            }
-            scanLine();
-
-            if (!headers.size()) {
-                headers.emplace_back();
-            }
-
-            string tableId = "##table-" + std::to_string(++tables);
-            BeginTable(
-                tableId.c_str(), headers.size(), ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg);
-            for (auto [i, header] : headers | std::ranges::views::enumerate) {
-                string title = string(header) + "##col-" + std::to_string(i);
-                TableSetupColumn(title.c_str(),
-                    i == headers.size() - 1 ? ImGuiTableColumnFlags_WidthStretch : 0);
-            }
-
-            while (src.starts_with("|")) {
-                if (src.starts_with("|---") || src.starts_with("| ---")) {
-                    scanLine();
-                    TableHeadersRow();
-                    continue;
-                }
-
-                TableNextRow();
-                for (size_t i = 0; src.starts_with("|") && !src.starts_with("|\n"); i++) {
-                    src.remove_prefix(1);
-                    if (i >= headers.size()) {
-                        scanTableCell();
-                        break;
-                    }
-                    TableSetColumnIndex(i);
-                    parseText(scanTableCell());
-                }
-                scanLine();
-            }
-
-            EndTable();
-            NewLine();
-            continue;
-        }
-
-        parseText(scanLine());
-        endBlock();
-        if (src.size())
-            NewLine();
+        ImVec2 br(GetCursorScreenPos().x, GetCursorScreenPos().y);
+        auto* dl = GetWindowDrawList();
+        ctx.code_splitter.SetCurrentChannel(dl, 0);
+        dl->AddRectFilled(ctx.code_start, br, GetColorU32(ImGuiCol_FrameBgActive));
+        ctx.code_splitter.Merge(dl);
+        ctx.in_code_block = false;
+        break;
     }
+    case MD_BLOCK_HR:
+        NewLine();
+        break;
+    case MD_BLOCK_UL:
+        break;
+    case MD_BLOCK_OL:
+        break;
+    case MD_BLOCK_LI:
+        NewLine();
+        break;
+    case MD_BLOCK_TABLE:
+        EndTable();
+        NewLine();
+        break;
+    case MD_BLOCK_THEAD:
+        break;
+    case MD_BLOCK_TBODY:
+        break;
+    case MD_BLOCK_TR:
+        break;
+    case MD_BLOCK_TH:
+        PopStyleColor();
+        ctx.style_depth--;
+        break;
+    case MD_BLOCK_TD:
+        break;
+    case MD_BLOCK_QUOTE:
+        PopStyleColor();
+        ctx.style_depth--;
+        Unindent();
+        NewLine();
+        break;
+    case MD_BLOCK_HTML:
+        break;
+    }
+    return 0;
 }
 
-static void render_code_block(const string& text) {
-    if (text.empty())
+static int enter_span_cb(MD_SPANTYPE type, void* detail, void* userdata) {
+    auto& ctx = *static_cast<RenderCtx*>(userdata);
+    switch (type) {
+    case MD_SPAN_STRONG:
+        PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
+        ctx.style_depth++;
+        break;
+    case MD_SPAN_CODE:
+        PushStyleColor(ImGuiCol_Text, IM_COL32(200, 200, 255, 255));
+        ctx.style_depth++;
+        break;
+    case MD_SPAN_A:
+        PushStyleColor(ImGuiCol_Text, IM_COL32(100, 150, 255, 255));
+        ctx.style_depth++;
+        break;
+    case MD_SPAN_DEL:
+        PushStyleColor(ImGuiCol_Text, IM_COL32(140, 140, 140, 255));
+        ctx.style_depth++;
+        break;
+    case MD_SPAN_EM:
+        break;
+    case MD_SPAN_U:
+        break;
+    case MD_SPAN_IMG:
+    case MD_SPAN_LATEXMATH:
+    case MD_SPAN_LATEXMATH_DISPLAY:
+    case MD_SPAN_WIKILINK:
+        break;
+    }
+    (void)detail;
+    return 0;
+}
+
+static int leave_span_cb(MD_SPANTYPE type, void* detail, void* userdata) {
+    auto& ctx = *static_cast<RenderCtx*>(userdata);
+    switch (type) {
+    case MD_SPAN_STRONG:
+    case MD_SPAN_CODE:
+    case MD_SPAN_A:
+    case MD_SPAN_DEL:
+        PopStyleColor();
+        ctx.style_depth--;
+        break;
+    default:
+        break;
+    }
+    (void)detail;
+    return 0;
+}
+
+static int text_cb(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata) {
+    auto& ctx = *static_cast<RenderCtx*>(userdata);
+    switch (type) {
+    case MD_TEXT_NORMAL:
+        TextUnformatted(text, text + size);
+        break;
+    case MD_TEXT_CODE:
+        if (ctx.in_code_block) {
+            ctx.code_buf.append(text, size);
+        } else {
+            TextUnformatted(text, text + size);
+        }
+        break;
+    case MD_TEXT_BR:
+        NewLine();
+        break;
+    case MD_TEXT_SOFTBR:
+        TextUnformatted(" ");
+        break;
+    case MD_TEXT_ENTITY:
+        TextUnformatted(text, text + size);
+        break;
+    case MD_TEXT_NULLCHAR:
+        TextUnformatted("\xef\xbf\xbd");
+        break;
+    case MD_TEXT_HTML:
+    case MD_TEXT_LATEXMATH:
+        break;
+    }
+    return 0;
+}
+
+} // anonymous namespace
+
+void render_content(const string& text) {
+    string clean = text;
+    clean.erase(
+        std::remove_if(clean.begin(), clean.end(), [](auto c) { return c == '\r' || c == '\0'; }),
+        clean.end());
+    if (clean.empty())
         return;
 
-    int lines = 1;
-    for (char c : text)
-        if (c == '\n')
-            lines++;
+    RenderCtx ctx;
 
-    float line_height = GetTextLineHeightWithSpacing();
-    float height = lines * line_height;
+    MD_PARSER parser = {};
+    parser.flags = MD_DIALECT_GITHUB | MD_FLAG_COLLAPSEWHITESPACE;
+    parser.enter_block = enter_block_cb;
+    parser.leave_block = leave_block_cb;
+    parser.enter_span = enter_span_cb;
+    parser.leave_span = leave_span_cb;
+    parser.text = text_cb;
 
-    ImVec2 start_pos = GetCursorScreenPos();
-    float width = GetContentRegionAvail().x;
+    md_parse(clean.data(), (MD_SIZE)clean.size(), &parser, &ctx);
 
-    ImDrawList* dl = GetWindowDrawList();
-    dl->AddRectFilled(ImVec2(start_pos.x, start_pos.y),
-        ImVec2(start_pos.x + width, start_pos.y + height + 8),
-        IM_COL32(30, 30, 40, 255));
-
-    PushStyleColor(ImGuiCol_Text, IM_COL32(200, 200, 200, 255));
-    SetCursorScreenPos(ImVec2(start_pos.x + 8, start_pos.y + 4));
-
-    size_t pos = 0;
-    while (pos < text.size()) {
-        size_t nl = text.find('\n', pos);
-        string line = (nl == string::npos) ? text.substr(pos) : text.substr(pos, nl - pos);
-        TextUnformatted(line.c_str());
-        if (nl == string::npos)
-            break;
-        pos = nl + 1;
-        SetCursorScreenPos(ImVec2(start_pos.x + 8, GetCursorScreenPos().y));
+    while (ctx.style_depth > 0) {
+        PopStyleColor();
+        ctx.style_depth--;
     }
-
-    PopStyleColor();
-
-    SetCursorScreenPos(ImVec2(start_pos.x, start_pos.y + height + 8));
 }
 
 static void start_chat(AsyncChatState& chat, ChatSession& session, string input) {
