@@ -35,6 +35,7 @@ struct Config {
         " Present the plan and any options to the user for review and approval.\n"
         " Post the approved plan to the job board using the open_job tool.\n"
         " Include sufficient detail that another agent can pick up and implement the job.\n"
+        " Strictly: do not offer to implement anything. You simply can't.\n"
     ;
 
     std::string builder_prompt =

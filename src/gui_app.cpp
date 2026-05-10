@@ -190,9 +190,9 @@ int gui_main(Config cfg) {
                         new_tab.session->model().c_str(),
                         sizeof(new_tab.ui_state.model_buf) - 1);
                     new_tab.session->set_output_callback(
-                        [&new_tab](const std::string& text, OutputType type) {
-                            std::lock_guard<std::mutex> lock(new_tab.chat_state->mutex);
-                            new_tab.chat_state->pending.emplace_back(text, type);
+                        [chat_state = new_tab.chat_state.get()](const std::string& text, OutputType type) {
+                            std::lock_guard<std::mutex> lock(chat_state->mutex);
+                            chat_state->pending.emplace_back(text, type);
                         });
                     tabs.push_back(std::move(new_tab));
                 }
@@ -212,9 +212,9 @@ int gui_main(Config cfg) {
                         new_tab.session->model().c_str(),
                         sizeof(new_tab.ui_state.model_buf) - 1);
                     new_tab.session->set_output_callback(
-                        [&new_tab](const std::string& text, OutputType type) {
-                            std::lock_guard<std::mutex> lock(new_tab.chat_state->mutex);
-                            new_tab.chat_state->pending.emplace_back(text, type);
+                        [chat_state = new_tab.chat_state.get()](const std::string& text, OutputType type) {
+                            std::lock_guard<std::mutex> lock(chat_state->mutex);
+                            chat_state->pending.emplace_back(text, type);
                         });
                     tabs.push_back(std::move(new_tab));
                 }
