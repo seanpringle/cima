@@ -152,8 +152,24 @@ static Tool make_list_files_tool(const std::string& safe_dir,
             return std::unexpected(resolved.error());
         }
 
+        std::error_code ec;
+        auto status = std::filesystem::status(*resolved, ec);
+        if (ec) {
+            return std::unexpected("Cannot access path: " + *resolved);
+        }
+        if (!std::filesystem::is_directory(status)) {
+            return std::unexpected("Not a directory: " + *resolved);
+        }
+
         std::string result;
-        for (const auto& entry : std::filesystem::directory_iterator(*resolved)) {
+        auto it = std::filesystem::directory_iterator(
+            *resolved,
+            std::filesystem::directory_options::skip_permission_denied,
+            ec);
+        if (ec) {
+            return std::unexpected("Cannot list directory: " + *resolved);
+        }
+        for (const auto& entry : it) {
             char type = '-';
             if (entry.is_directory())
                 type = 'd';
