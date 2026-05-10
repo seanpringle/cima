@@ -46,7 +46,7 @@ TEST_CASE("Config defaults", "[config]") {
     REQUIRE(cfg.api_key == "");
     REQUIRE(cfg.model == "deepseek-v4-flash");
     REQUIRE(cfg.planner_prompt.find("planning agent") != std::string::npos);
-    REQUIRE(cfg.builder_prompt.find("job board") != std::string::npos);
+    REQUIRE(cfg.builder_prompt.find("read_plan") != std::string::npos);
     REQUIRE(cfg.safe_dir == fs::current_path());
 }
 

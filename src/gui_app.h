@@ -34,11 +34,6 @@ struct ChatUIState {
     TabType tab_type = TabType::Planner;
     int next_seq = 1;
 
-    // Jobs (for Builder job selector)
-    bool job_selector_active = false;
-
-    // Open job detail windows
-    std::set<std::string> open_job_windows;
 };
 
 struct TabInfo {

@@ -1,5 +1,5 @@
 #include "chat.h"
-#include "jobs.h"
+#include "plan.h"
 #include "subagent.h"
 
 #include <future>
@@ -18,15 +18,14 @@ ChatSession::ChatSession(Config config, TabType tab_type)
         config.search_engine_id, config.search_endpoint,
         /*include_write=*/tab_type_ != TabType::Planner);
 
-    // Register job tools for both types, but omit close_job for builders
+    // Planner gets all three plan tools; Builder gets read-only plan tools
     if (tab_type_ == TabType::Planner) {
-        add_job_tools(tools_);
+        tools_.add(make_write_plan_tool());
+        tools_.add(make_read_plan_tool());
+        tools_.add(make_comment_plan_tool());
     } else {
-        // Register all job tools except close_job and edit_job
-        tools_.add(make_open_job_tool());
-        tools_.add(make_list_jobs_tool());
-        tools_.add(make_read_job_tool());
-        tools_.add(make_comment_job_tool());
+        tools_.add(make_read_plan_tool());
+        tools_.add(make_comment_plan_tool());
     }
 
     // ── Subagent delegation tool (available to all tab types) ──

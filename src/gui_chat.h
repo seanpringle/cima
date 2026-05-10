@@ -9,3 +9,4 @@
 #include <vector>
 
 void render_chat_ui(TabInfo& tab, bool& done);
+void render_content(const std::string& text);

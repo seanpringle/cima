@@ -94,7 +94,7 @@ add_library(llmchat
     src/client.cpp
     src/chat.cpp
     src/subagent.cpp
-    src/jobs.cpp
+    src/plan.cpp
 )
 target_include_directories(llmchat PUBLIC src)
 target_link_libraries(llmchat PUBLIC

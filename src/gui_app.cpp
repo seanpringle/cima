@@ -1,6 +1,6 @@
 #include "gui_app.h"
 #include "gui_chat.h"
-#include "jobs.h"
+#include "plan.h"
 
 #include "imgui.h"
 #include "imgui_internal.h"
@@ -181,33 +181,29 @@ int gui_main(Config cfg) {
                     done = true;
                 EndMenu();
             }
-            if (BeginMenu("Jobs")) {
-                auto names = JobBoard::instance().list_jobs();
-                if (names && !names->empty()) {
-                    for (const auto& n : *names) {
-                        if (MenuItem(n.c_str())) {
-                            // Open job detail window in both panels
-                            planner_tab.ui_state.open_job_windows.insert(n);
-                            builder_tab.ui_state.open_job_windows.insert(n);
-                        }
-                    }
-                } else {
-                    Text("No open jobs");
-                }
-                EndMenu();
-            }
             EndMenuBar();
         }
 
-        // ── two fixed panels (50:50 horizontal split) ──
+        // ── Left panel (60%) with Planner/Builder tabs + Right panel (40%) with Plan ──
         {
             ImVec2 content = GetContentRegionAvail();
-            float split = content.x * 0.5f;
             float separator_w = GetStyle().ItemSpacing.x;
+            float left_width = content.x * 0.6f;
+            float right_width = content.x - left_width - separator_w * 3;
 
-            // Left panel (Planner)
-            BeginChild("##planner_panel", ImVec2(split - separator_w, content.y), true);
-            render_chat_ui(planner_tab, done);
+            // Left panel with tab bar
+            BeginChild("##agent_panel", ImVec2(left_width - separator_w, content.y), true);
+            if (BeginTabBar("##agent_tabs")) {
+                if (BeginTabItem("Planner")) {
+                    render_chat_ui(planner_tab, done);
+                    EndTabItem();
+                }
+                if (BeginTabItem("Builder")) {
+                    render_chat_ui(builder_tab, done);
+                    EndTabItem();
+                }
+                EndTabBar();
+            }
             EndChild();
 
             SameLine();
@@ -216,9 +212,16 @@ int gui_main(Config cfg) {
             SeparatorEx(ImGuiSeparatorFlags_Vertical);
             SameLine();
 
-            // Right panel (Builder)
-            BeginChild("##builder_panel", ImVec2(content.x - split - separator_w * 2, content.y), true);
-            render_chat_ui(builder_tab, done);
+            // Right panel: Plan document
+            BeginChild("##plan_panel", ImVec2(right_width, content.y), true);
+            Text("Plan");
+            Separator();
+            auto plan_result = PlanBoard::instance().read_plan();
+            if (plan_result) {
+                render_content(*plan_result);
+            } else {
+                TextDisabled("(empty plan)");
+            }
             EndChild();
         }
 

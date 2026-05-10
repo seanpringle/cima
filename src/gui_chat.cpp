@@ -1,5 +1,4 @@
 #include "gui_chat.h"
-#include "jobs.h"
 
 #include "imgui.h"
 
@@ -600,44 +599,6 @@ void render_chat_ui(TabInfo& tab, bool& done) {
         }
     }
 
-    // ── Builder tab: job selector ──
-    if (tab.type == TabType::Builder) {
-        Separator();
-        auto names = JobBoard::instance().list_jobs();
-        if (names && !names->empty()) {
-            Text("Select a job to implement:");
-            SameLine();
-            static int selected = -1;
-            PushID("job_selector");
-            if (BeginCombo("##job_combo",
-                    selected >= 0 && selected < (int)names->size()
-                        ? (*names)[selected].c_str()
-                        : "")) {
-                for (int i = 0; i < (int)names->size(); i++) {
-                    bool is_selected = (selected == i);
-                    if (Selectable((*names)[i].c_str(), is_selected)) {
-                        selected = i;
-                    }
-                    if (is_selected) {
-                        SetItemDefaultFocus();
-                    }
-                }
-                EndCombo();
-            }
-            SameLine();
-            if (SmallButton("Start") && selected >= 0 && selected < (int)names->size()) {
-                string job_name = (*names)[selected];
-                string input = "Implement the job named: " + job_name;
-                push_entry(ui, EntryType::UserText, input, false);
-                start_chat(chat, session, std::move(input));
-                selected = -1;
-            }
-            PopID();
-        } else {
-            TextDisabled("No open jobs available.");
-        }
-    }
-
     Separator();
 
     // ── tabs (Chat / Raw) ──
@@ -845,38 +806,4 @@ void render_chat_ui(TabInfo& tab, bool& done) {
         }
     }
 
-    // ── job detail popups ──
-    auto& open_windows = ui.open_job_windows;
-    for (auto it = open_windows.begin(); it != open_windows.end();) {
-        const auto& job_name = *it;
-        auto job = JobBoard::instance().read_job(job_name);
-        if (!job) {
-            it = open_windows.erase(it);
-            continue;
-        }
-
-        // Build the markdown document
-        std::string md = "# " + job->name + "\n\n" + job->description + "\n\n";
-        if (!job->comments.empty()) {
-            md += "---\n\n## Comments\n\n";
-            for (size_t i = 0; i < job->comments.size(); i++) {
-                md += "### Comment " + std::to_string(i + 1) + "\n\n";
-                md += job->comments[i] + "\n\n";
-            }
-        }
-
-        std::string win_id = "Job: " + job_name + "###jobwin-" + job_name;
-        SetNextWindowSize(ImVec2(560, 400), ImGuiCond_FirstUseEver);
-        bool open = true;
-        if (Begin(win_id.c_str(), &open, ImGuiWindowFlags_HorizontalScrollbar)) {
-            render_content(md);
-        }
-        End();
-
-        if (!open) {
-            it = open_windows.erase(it);
-        } else {
-            ++it;
-        }
-    }
 }
