@@ -383,7 +383,7 @@ static int enter_span_cb(MD_SPANTYPE type, void* detail, void* userdata) {
     auto& ctx = *static_cast<RenderCtx*>(userdata);
     switch (type) {
     case MD_SPAN_STRONG:
-        PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
+        PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 200, 255));
         ctx.style_depth++;
         break;
     case MD_SPAN_CODE:
