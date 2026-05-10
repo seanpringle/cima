@@ -12,8 +12,8 @@ ChatSession::ChatSession(Config config)
       compact_threshold_(static_cast<size_t>(config.compact_threshold)),
       conversation_(config.system_prompt),
       client_(std::move(config.api_base), std::move(config.api_key)) {
-    tools_.add_defaults(safe_dir_, config.search_api_key, config.search_engine_id,
-        config.search_endpoint);
+    tools_.add_defaults(safe_dir_, config.read_only_paths, config.search_api_key,
+        config.search_engine_id, config.search_endpoint);
     tools_.set_mode(mode_);
 
     // ── Subagent delegation tool (available in all modes) ──

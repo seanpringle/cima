@@ -24,7 +24,9 @@ static const bool g_git_init = (git_libgit2_init(), true);
 // Path sandbox
 // ===================================================================
 
-Result<std::string> resolve_path(const std::string& raw_path, const std::string& safe_dir) {
+Result<std::string> resolve_path(const std::string& raw_path,
+    const std::string& safe_dir,
+    const std::vector<std::string>& extra_allowed) {
     if (raw_path.empty()) {
         return std::unexpected(std::string("path is required"));
     }
@@ -59,6 +61,17 @@ Result<std::string> resolve_path(const std::string& raw_path, const std::string&
 
     if (resolved == sd || resolved.starts_with(sd + "/")) {
         return resolved;
+    }
+
+    // Check extra_allowed paths (for read-only tools)
+    for (const auto& allowed : extra_allowed) {
+        std::string allowed_norm = allowed;
+        while (!allowed_norm.empty() && allowed_norm.back() == '/') {
+            allowed_norm.pop_back();
+        }
+        if (resolved == allowed_norm || resolved.starts_with(allowed_norm + "/")) {
+            return resolved;
+        }
     }
 
     return std::unexpected("path must be under " + sd);
@@ -124,16 +137,17 @@ static char status_char_for_workdir(unsigned int flags) {
 // Tool helpers
 // ===================================================================
 
-static Tool make_list_files_tool(const std::string& safe_dir) {
+static Tool make_list_files_tool(const std::string& safe_dir,
+    const std::vector<std::string>& read_only_paths) {
     Tool t;
     t.name = "list_files";
     t.description = "List files and directories in a given path";
     t.parameters = {{"type", "object"},
         {"properties", {{"path", {{"type", "string"}, {"description", "Directory path to list"}}}}},
         {"required", {"path"}}};
-    t.execute = [safe_dir](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir, read_only_paths](const json& args) -> Result<std::string> {
         auto raw = args.value("path", std::string());
-        auto resolved = resolve_path(raw, safe_dir);
+        auto resolved = resolve_path(raw, safe_dir, read_only_paths);
         if (!resolved) {
             return std::unexpected(resolved.error());
         }
@@ -158,7 +172,8 @@ static Tool make_list_files_tool(const std::string& safe_dir) {
     return t;
 }
 
-static Tool make_read_file_lines_tool(const std::string& safe_dir) {
+static Tool make_read_file_lines_tool(const std::string& safe_dir,
+    const std::vector<std::string>& read_only_paths) {
     Tool t;
     t.name = "read_file_lines";
     t.description =
@@ -183,9 +198,9 @@ static Tool make_read_file_lines_tool(const std::string& safe_dir) {
                         {"description",
                             "Maximum lines to return (default 200, max 500)"}}}}},
         {"required", {"path"}}};
-    t.execute = [safe_dir](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir, read_only_paths](const json& args) -> Result<std::string> {
         auto raw = args.value("path", std::string());
-        auto resolved = resolve_path(raw, safe_dir);
+        auto resolved = resolve_path(raw, safe_dir, read_only_paths);
         if (!resolved) {
             return std::unexpected(resolved.error());
         }
@@ -263,7 +278,8 @@ static Tool make_read_file_lines_tool(const std::string& safe_dir) {
     return t;
 }
 
-static Tool make_read_file_tool(const std::string& safe_dir) {
+static Tool make_read_file_tool(const std::string& safe_dir,
+    const std::vector<std::string>& read_only_paths) {
     Tool t;
     t.name = "read_file";
     t.description = "Read lines from a file (max 400 lines at a time, use offset to "
@@ -281,9 +297,9 @@ static Tool make_read_file_tool(const std::string& safe_dir) {
                         {"description",
                             "Maximum lines to read starting from offset (default 200)"}}}}},
         {"required", {"path"}}};
-    t.execute = [safe_dir](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir, read_only_paths](const json& args) -> Result<std::string> {
         auto raw = args.value("path", std::string());
-        auto resolved = resolve_path(raw, safe_dir);
+        auto resolved = resolve_path(raw, safe_dir, read_only_paths);
         if (!resolved) {
             return std::unexpected(resolved.error());
         }
@@ -361,7 +377,8 @@ static bool is_gitignored(git_repository* repo,
 // grep_files
 // ===================================================================
 
-static Tool make_grep_files_tool(const std::string& safe_dir) {
+static Tool make_grep_files_tool(const std::string& safe_dir,
+    const std::vector<std::string>& read_only_paths) {
     Tool t;
     t.name = "grep_files";
     t.description = "Search file contents using a regex pattern (max 200 results)";
@@ -373,14 +390,14 @@ static Tool make_grep_files_tool(const std::string& safe_dir) {
                     {{"type", "string"},
                         {"description", "File or directory to search in (defaults to .)"}}}}},
         {"required", {"pattern"}}};
-    t.execute = [safe_dir](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir, read_only_paths](const json& args) -> Result<std::string> {
         auto pattern = args.value("pattern", std::string());
         if (pattern.empty()) {
             return std::unexpected(std::string("pattern is required"));
         }
 
         auto raw_path = args.value("path", std::string("."));
-        auto resolved = resolve_path(raw_path, safe_dir);
+        auto resolved = resolve_path(raw_path, safe_dir, read_only_paths);
         if (!resolved) {
             return std::unexpected(resolved.error());
         }
@@ -1937,7 +1954,8 @@ static Tool make_git_commit_tool(const std::string& safe_dir) {
 // project_tree tool
 // ===================================================================
 
-static Tool make_project_tree_tool(const std::string& safe_dir) {
+static Tool make_project_tree_tool(const std::string& safe_dir,
+    const std::vector<std::string>& read_only_paths) {
     Tool t;
     t.name = "project_tree";
     t.description =
@@ -1960,9 +1978,9 @@ static Tool make_project_tree_tool(const std::string& safe_dir) {
                     {{"type", "integer"},
                         {"description",
                             "Maximum output lines (default 500, max 500)"}}}}}};
-    t.execute = [safe_dir](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir, read_only_paths](const json& args) -> Result<std::string> {
         auto raw = args.value("path", std::string("."));
-        auto resolved = resolve_path(raw, safe_dir);
+        auto resolved = resolve_path(raw, safe_dir, read_only_paths);
         if (!resolved) {
             return std::unexpected(resolved.error());
         }
@@ -2749,32 +2767,33 @@ static Tool make_rename_file_tool(const std::string& safe_dir) {
 void ToolRegistry::add(Tool tool) { tools_.push_back(std::move(tool)); }
 
 void ToolRegistry::add_defaults(const std::string& safe_dir,
+    const std::vector<std::string>& read_only_paths,
     const std::string& search_api_key,
     const std::string& search_engine_id,
     const std::string& search_endpoint) {
-    // ── Read-only tools ──
+    // ── Read-only tools (receive whitelist for extra path access) ──
     {
-        auto t = make_list_files_tool(safe_dir);
+        auto t = make_list_files_tool(safe_dir, read_only_paths);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
     {
-        auto t = make_read_file_tool(safe_dir);
+        auto t = make_read_file_tool(safe_dir, read_only_paths);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
     {
-        auto t = make_read_file_lines_tool(safe_dir);
+        auto t = make_read_file_lines_tool(safe_dir, read_only_paths);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
     {
-        auto t = make_grep_files_tool(safe_dir);
+        auto t = make_grep_files_tool(safe_dir, read_only_paths);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
     {
-        auto t = make_project_tree_tool(safe_dir);
+        auto t = make_project_tree_tool(safe_dir, read_only_paths);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }

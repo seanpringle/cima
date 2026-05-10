@@ -2213,7 +2213,7 @@ TEST_CASE("web_search always registered", "[tools][web_search]") {
 TEST_CASE("web_search falls back to duckduckgo when no engine/endpoint", "[tools][web_search]") {
     // With only api_key (no engine_id, no endpoint), falls back to DuckDuckGo
     ToolRegistry reg;
-    reg.add_defaults("/tmp", "my-api-key", "", "");
+    reg.add_defaults("/tmp", {}, "my-api-key", "", "");
     auto result = reg.execute("web_search", R"({"query": "hello"})");
     // Should succeed via DuckDuckGo fallback
     REQUIRE(result);
@@ -2225,7 +2225,7 @@ TEST_CASE("web_search falls back to duckduckgo when no engine/endpoint", "[tools
 
 TEST_CASE("web_search empty query rejected", "[tools][web_search]") {
     ToolRegistry reg;
-    reg.add_defaults("/tmp", "key", "cx", "");
+    reg.add_defaults("/tmp", {}, "key", "cx", "");
     auto result = reg.execute("web_search", R"({"query": ""})");
     CHECK_FALSE(result);
     CHECK(result.error() == "query is required");
@@ -2243,7 +2243,7 @@ TEST_CASE("web_search custom endpoint basic", "[tools][web_search]") {
     std::this_thread::sleep_for(std::chrono::milliseconds(50)); // let server start
 
     ToolRegistry reg;
-    reg.add_defaults("/tmp", "test-key", "", server.url());
+    reg.add_defaults("/tmp", {}, "test-key", "", server.url());
     auto result = reg.execute("web_search", R"({"query": "test query"})");
     REQUIRE(result);
 
@@ -2262,7 +2262,7 @@ TEST_CASE("web_search custom endpoint no results", "[tools][web_search]") {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     ToolRegistry reg;
-    reg.add_defaults("/tmp", "test-key", "", server.url());
+    reg.add_defaults("/tmp", {}, "test-key", "", server.url());
     auto result = reg.execute("web_search", R"({"query": "nonexistent"})");
     REQUIRE(result);
     CHECK(*result == "(no results found)");
@@ -2274,7 +2274,7 @@ TEST_CASE("web_search custom endpoint http error", "[tools][web_search]") {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     ToolRegistry reg;
-    reg.add_defaults("/tmp", "test-key", "", server.url());
+    reg.add_defaults("/tmp", {}, "test-key", "", server.url());
     auto result = reg.execute("web_search", R"({"query": "test"})");
     CHECK_FALSE(result);
     CHECK(result.error().find("HTTP 429") != std::string::npos);
@@ -2292,7 +2292,7 @@ TEST_CASE("web_search custom endpoint connection refused", "[tools][web_search]"
     // (race condition: something else could grab the port)
     // Instead, test with an obviously unreachable port
     ToolRegistry reg;
-    reg.add_defaults("/tmp", "test-key", "", "http://127.0.0.1:1/search?q={query}");
+    reg.add_defaults("/tmp", {}, "test-key", "", "http://127.0.0.1:1/search?q={query}");
     auto result = reg.execute("web_search", R"({"query": "test"})");
     CHECK_FALSE(result);
     CHECK(result.error().find("curl error") != std::string::npos);
@@ -2304,7 +2304,7 @@ TEST_CASE("web_search timeout", "[tools][web_search]") {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     ToolRegistry reg;
-    reg.add_defaults("/tmp", "test-key", "", server.url());
+    reg.add_defaults("/tmp", {}, "test-key", "", server.url());
     auto start = std::chrono::steady_clock::now();
     auto result = reg.execute("web_search", R"({"query": "test"})");
     auto elapsed = std::chrono::steady_clock::now() - start;
@@ -2320,7 +2320,7 @@ TEST_CASE("web_search available in plan mode", "[tools][web_search]") {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     ToolRegistry reg;
-    reg.add_defaults("/tmp", "test-key", "", server.url());
+    reg.add_defaults("/tmp", {}, "test-key", "", server.url());
     reg.set_mode(Mode::Plan);
 
     auto result = reg.execute("web_search", R"({"query": "test"})");
@@ -2334,7 +2334,7 @@ TEST_CASE("web_search respects max query length", "[tools][web_search]") {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     ToolRegistry reg;
-    reg.add_defaults("/tmp", "test-key", "", server.url());
+    reg.add_defaults("/tmp", {}, "test-key", "", server.url());
     // 250 character query is below the 500-char limit, so no truncation
     std::string long_query(250, 'x');
     auto result = reg.execute("web_search",

@@ -21,6 +21,8 @@ int main(int argc, char* argv[]) {
                 << "  SEARCH_ENGINE_ID    Google Custom Search engine ID\n"
                 << "  SEARCH_ENDPOINT     Custom search endpoint with {query} placeholder\n"
                 << "                     (default: Wikipedia opensearch, no key needed)\n"
+                << "  READ_ONLY_PATHS     Colon-separated extra paths for read-only tools\n"
+                << "                     (default: /usr/include:/usr/share/doc)\n"
                 << std::flush;
             return 0;
         }

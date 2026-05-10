@@ -14,7 +14,9 @@ using json = nlohmann::json;
 // ---------------------------------------------------------------------------
 // Path sandbox
 // ---------------------------------------------------------------------------
-Result<std::string> resolve_path(const std::string& raw_path, const std::string& safe_dir);
+Result<std::string> resolve_path(const std::string& raw_path,
+    const std::string& safe_dir,
+    const std::vector<std::string>& extra_allowed = {});
 
 // ---------------------------------------------------------------------------
 // ToolPermission — which permission category a tool belongs to
@@ -47,6 +49,7 @@ class ToolRegistry {
 
     void add(Tool tool);
     void add_defaults(const std::string& safe_dir,
+        const std::vector<std::string>& read_only_paths = {},
         const std::string& search_api_key = {},
         const std::string& search_engine_id = {},
         const std::string& search_endpoint = {});

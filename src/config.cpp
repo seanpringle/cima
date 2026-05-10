@@ -72,5 +72,41 @@ Config Config::from_env() {
         cfg.safe_dir = canonical.string();
     }
 
+    // ---- read-only paths whitelist ----
+    // Default paths always included
+    cfg.read_only_paths = {"/usr/include", "/usr/share/doc"};
+
+    // READ_ONLY_PATHS env var (colon-separated) adds extra paths
+    {
+        const char* rop = std::getenv("READ_ONLY_PATHS");
+        if (rop && rop[0]) {
+            std::string s(rop);
+            size_t start = 0;
+            while (start < s.size()) {
+                auto colon = s.find(':', start);
+                std::string p = (colon == std::string::npos)
+                                    ? s.substr(start)
+                                    : s.substr(start, colon - start);
+                // Trim leading whitespace
+                while (!p.empty() && (p.front() == ' ' || p.front() == '\t'))
+                    p.erase(0, 1);
+                // Trim trailing whitespace
+                while (!p.empty() && (p.back() == ' ' || p.back() == '\t'))
+                    p.pop_back();
+                if (!p.empty()) {
+                    std::error_code ec2;
+                    auto canonical2 =
+                        std::filesystem::weakly_canonical(std::filesystem::path(p), ec2);
+                    if (!ec2) {
+                        cfg.read_only_paths.push_back(canonical2.string());
+                    } else {
+                        cfg.read_only_paths.push_back(p);
+                    }
+                }
+                start = (colon == std::string::npos) ? s.size() : colon + 1;
+            }
+        }
+    }
+
     return cfg;
 }
