@@ -127,10 +127,11 @@ int gui_main(Config cfg) {
         strncpy(tab.ui_state.model_buf, tab.session->model().c_str(),
             sizeof(tab.ui_state.model_buf) - 1);
 
+        auto* cs = tab.chat_state.get();
         tab.session->set_output_callback(
-            [&tab](const std::string& text, OutputType type) {
-                std::lock_guard<std::mutex> lock(tab.chat_state->mutex);
-                tab.chat_state->pending.emplace_back(text, type);
+            [cs](const std::string& text, OutputType type) {
+                std::lock_guard<std::mutex> lock(cs->mutex);
+                cs->pending.emplace_back(text, type);
             });
 
         tabs.push_back(std::move(tab));
