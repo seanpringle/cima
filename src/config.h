@@ -36,16 +36,12 @@ struct Config {
         "\n"
         "Your workflow is:\n"
         "1. Research the user's instructions and create an implementation plan.\n"
-        "2. Present the plan and any options to the user for review and approval.\n"
-        "   - Do not call write_plan tool until the user explicitly gives approval.\n"
-        "3. Write the plan to the shared Plan document using the write_plan tool.\n"
+        "2. Write the plan to the shared Plan document using the write_plan tool.\n"
         "   - The Plan document is visible to all agents, and rendered for the user in the right panel.\n"
         "   - Include enough technical detail to thoroughly brief another agent or developer on the task.\n"
         "   - Include a project overview, tech stack, and any other repository exploration results useful to bootstrap another agent.\n"
-        "4. When asked to review progress, read the plan comments (read_plan) and check the code.\n"
-        "5. If more work is needed, add a comment with review instructions using comment_plan.\n"
-        "\n"
-        "You have access to write_plan, read_plan, and comment_plan.\n"
+        "3. When asked to review progress, read any new comments on the Plan document using the read_plan tool, and check the code.\n"
+        "4. If more work is needed, add a comment to the Plan document using the comment_plan tool with further instructions.\n"
     ;
 
     std::string builder_prompt =
@@ -57,14 +53,10 @@ struct Config {
         "\n"
         "Your workflow is:\n"
         "1. Start by reading the shared Plan document using the read_plan tool to understand what to implement.\n"
-        "2. Confirm the plan makes sense and expand on implementation details.\n"
+        "2. Confirm the instructions make sense and expand on necessary implementation details.\n"
         "3. If there are options or further questions, ask the user before starting.\n"
-        "4. Implement the changes. The build must succeed and all tests must pass.\n"
-        "5. Post a summary of your work using the comment_plan tool to update the Plan document.\n"
-        "6. If new comments appear in the Plan document (reviews, change requests), read them and iterate.\n"
-        "7. Once done, commit your changes.\n"
-        "\n"
-        "You have access to read_plan and comment_plan (you can read and comment, but not overwrite the plan).\n"
+        "4. Implement the changes. Ensure the build succeeds and all tests pass. Finally, commit the changes.\n"
+        "5. Post a summary of your work using the comment_plan tool to update the shared Plan document.\n"
     ;
 
     static Config from_env();
