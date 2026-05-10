@@ -165,24 +165,22 @@ int gui_main(Config cfg) {
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
 
+        // ── Tab key to toggle between Planner/Builder tabs ──
+        static int s_active_agent_tab = 0;
+        if (ImGui::IsKeyPressed(ImGuiKey_Tab, false) && !ImGui::IsAnyItemActive()) {
+            s_active_agent_tab = (s_active_agent_tab + 1) % 2;
+        }
+
         // ── main window ──
         SetNextWindowPos(ImVec2(0, 0));
         SetNextWindowSize(GetIO().DisplaySize);
         Begin("llm-chat",
             nullptr,
-            ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoTitleBar |
+            ImGuiWindowFlags_NoTitleBar |
                 ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
                 ImGuiWindowFlags_NoBringToFrontOnFocus);
 
-        // ── menu bar ──
-        if (BeginMenuBar()) {
-            if (BeginMenu("File")) {
-                if (MenuItem("Exit", "Alt+F4"))
-                    done = true;
-                EndMenu();
-            }
-            EndMenuBar();
-        }
+
 
         // ── Left panel (60%) with Planner/Builder tabs + Right panel (40%) with Plan ──
         {
@@ -194,11 +192,11 @@ int gui_main(Config cfg) {
             // Left panel with tab bar
             BeginChild("##agent_panel", ImVec2(left_width - separator_w, content.y), true);
             if (BeginTabBar("##agent_tabs")) {
-                if (BeginTabItem("Planner")) {
+                if (BeginTabItem("Planner", nullptr, s_active_agent_tab == 0 ? ImGuiTabItemFlags_SetSelected : 0)) {
                     render_chat_ui(planner_tab, done);
                     EndTabItem();
                 }
-                if (BeginTabItem("Builder")) {
+                if (BeginTabItem("Builder", nullptr, s_active_agent_tab == 1 ? ImGuiTabItemFlags_SetSelected : 0)) {
                     render_chat_ui(builder_tab, done);
                     EndTabItem();
                 }
