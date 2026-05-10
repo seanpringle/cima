@@ -111,7 +111,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
 
     json tools = reg.to_openai_tools();
     REQUIRE(tools.is_array());
-    REQUIRE(tools.size() == 16);
+    REQUIRE(tools.size() == 19);
 
     // Check structure of first tool
     CHECK(tools[0]["type"] == "function");
@@ -130,7 +130,8 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
                        "list_files", "read_file", "read_file_lines", "grep_files", "write_file",
                        "edit_file", "apply_patch", "run_bash", "web_search", "web_fetch",
                        "project_tree", "git_status", "git_diff", "git_log",
-                       "git_add", "git_commit"});
+                       "git_add", "git_commit",
+                       "delete_file", "move_file", "rename_file"});
 }
 
 // ===================================================================
@@ -2477,4 +2478,371 @@ TEST_CASE("web_fetch binary content-type rejected", "[tools][web_fetch]") {
     // Content-Type headers.
     SUCCEED("Binary Content-Type rejection requires MockHttpServer extension "
             "(currently always returns application/json which is allowed).");
+}
+
+// ===================================================================
+// delete_file
+// ===================================================================
+
+TEST_CASE("delete_file basic", "[tools][delete_file]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    // Create a file to delete
+    std::ofstream(sd + "/to_delete.txt") << "delete me";
+
+    auto result = reg.execute("delete_file", R"({"path": "to_delete.txt"})");
+    REQUIRE(result);
+    CHECK(result->find("ok") != std::string::npos);
+    CHECK(result->find("deleted") != std::string::npos);
+
+    // File should be gone
+    CHECK_FALSE(fs::exists(sd + "/to_delete.txt"));
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("delete_file file not found", "[tools][delete_file]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    auto result = reg.execute("delete_file", R"({"path": "nonexistent.txt"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("File not found") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("delete_file directory rejected", "[tools][delete_file]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    fs::create_directories(sd + "/mydir");
+
+    auto result = reg.execute("delete_file", R"({"path": "mydir"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("Not a regular file") != std::string::npos);
+
+    // Directory should still exist
+    CHECK(fs::exists(sd + "/mydir"));
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("delete_file path traversal rejected", "[tools][delete_file]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    auto result = reg.execute("delete_file", R"({"path": "../../etc/passwd"})");
+    CHECK_FALSE(result);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("delete_file blocked in plan mode", "[tools][delete_file]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+    reg.set_mode(Mode::Plan);
+
+    auto result = reg.execute("delete_file", R"({"path": "test.txt"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("not available in Plan mode") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("delete_file absolute path inside safe_dir", "[tools][delete_file]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    std::ofstream(sd + "/absfile.txt") << "absolute path test";
+
+    auto result = reg.execute("delete_file",
+        json{{"path", sd + "/absfile.txt"}}.dump());
+    REQUIRE(result);
+    CHECK_FALSE(fs::exists(sd + "/absfile.txt"));
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("delete_file in subdirectory", "[tools][delete_file]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    fs::create_directories(sd + "/subdir");
+    std::ofstream(sd + "/subdir/nested.txt") << "nested";
+
+    auto result = reg.execute("delete_file", R"({"path": "subdir/nested.txt"})");
+    REQUIRE(result);
+    CHECK_FALSE(fs::exists(sd + "/subdir/nested.txt"));
+    // Parent directory should remain
+    CHECK(fs::exists(sd + "/subdir"));
+
+    fs::remove_all(sd);
+}
+
+// ===================================================================
+// move_file
+// ===================================================================
+
+TEST_CASE("move_file basic rename", "[tools][move_file]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    std::ofstream(sd + "/old.txt") << "content";
+
+    auto result = reg.execute("move_file",
+        R"({"source": "old.txt", "destination": "new.txt"})");
+    REQUIRE(result);
+    CHECK(result->find("ok") != std::string::npos);
+    CHECK(result->find("moved") != std::string::npos);
+
+    CHECK_FALSE(fs::exists(sd + "/old.txt"));
+    CHECK(fs::exists(sd + "/new.txt"));
+    std::ifstream ifs(sd + "/new.txt");
+    std::string content((std::istreambuf_iterator<char>(ifs)),
+                        std::istreambuf_iterator<char>());
+    CHECK(content == "content");
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("move_file to different directory", "[tools][move_file]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    fs::create_directories(sd + "/subdir");
+    std::ofstream(sd + "/source.txt") << "move me";
+
+    auto result = reg.execute("move_file",
+        R"({"source": "source.txt", "destination": "subdir/moved.txt"})");
+    REQUIRE(result);
+
+    CHECK_FALSE(fs::exists(sd + "/source.txt"));
+    CHECK(fs::exists(sd + "/subdir/moved.txt"));
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("move_file source not found", "[tools][move_file]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    auto result = reg.execute("move_file",
+        R"({"source": "nonexistent.txt", "destination": "new.txt"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("Source not found") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("move_file destination already exists", "[tools][move_file]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    std::ofstream(sd + "/src.txt") << "source";
+    std::ofstream(sd + "/dst.txt") << "destination";
+
+    auto result = reg.execute("move_file",
+        R"({"source": "src.txt", "destination": "dst.txt"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("Destination already exists") != std::string::npos);
+
+    // Both files should still exist
+    CHECK(fs::exists(sd + "/src.txt"));
+    CHECK(fs::exists(sd + "/dst.txt"));
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("move_file path traversal rejected", "[tools][move_file]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    std::ofstream(sd + "/safe.txt") << "safe";
+
+    auto result = reg.execute("move_file",
+        R"({"source": "safe.txt", "destination": "../../etc/evil.txt"})");
+    CHECK_FALSE(result);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("move_file blocked in plan mode", "[tools][move_file]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+    reg.set_mode(Mode::Plan);
+
+    auto result = reg.execute("move_file",
+        R"({"source": "a.txt", "destination": "b.txt"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("not available in Plan mode") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("move_file creates parent directories", "[tools][move_file]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    std::ofstream(sd + "/source.txt") << "content";
+
+    auto result = reg.execute("move_file",
+        R"({"source": "source.txt", "destination": "a/b/c/moved.txt"})");
+    REQUIRE(result);
+
+    CHECK_FALSE(fs::exists(sd + "/source.txt"));
+    CHECK(fs::exists(sd + "/a/b/c/moved.txt"));
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("move_file absolute path inside safe_dir", "[tools][move_file]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    std::ofstream(sd + "/source.txt") << "content";
+    auto dst = sd + "/dest.txt";
+
+    auto result = reg.execute("move_file",
+        json{{"source", sd + "/source.txt"}, {"destination", dst}}.dump());
+    REQUIRE(result);
+
+    CHECK_FALSE(fs::exists(sd + "/source.txt"));
+    CHECK(fs::exists(dst));
+
+    fs::remove_all(sd);
+}
+
+// ===================================================================
+// rename_file
+// ===================================================================
+
+TEST_CASE("rename_file basic", "[tools][rename_file]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    std::ofstream(sd + "/old_name.txt") << "content";
+
+    auto result = reg.execute("rename_file",
+        R"({"path": "old_name.txt", "new_name": "new_name.txt"})");
+    REQUIRE(result);
+    CHECK(result->find("ok") != std::string::npos);
+    CHECK(result->find("renamed") != std::string::npos);
+
+    CHECK_FALSE(fs::exists(sd + "/old_name.txt"));
+    CHECK(fs::exists(sd + "/new_name.txt"));
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("rename_file with path separators rejected", "[tools][rename_file]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    std::ofstream(sd + "/test.txt") << "content";
+
+    auto result = reg.execute("rename_file",
+        R"({"path": "test.txt", "new_name": "subdir/moved.txt"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("must be a filename") != std::string::npos);
+
+    // Original should remain
+    CHECK(fs::exists(sd + "/test.txt"));
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("rename_file not found", "[tools][rename_file]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    auto result = reg.execute("rename_file",
+        R"({"path": "nonexistent.txt", "new_name": "new.txt"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("File not found") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("rename_file destination already exists", "[tools][rename_file]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    std::ofstream(sd + "/source.txt") << "source";
+    std::ofstream(sd + "/existing.txt") << "existing";
+
+    auto result = reg.execute("rename_file",
+        R"({"path": "source.txt", "new_name": "existing.txt"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("Destination already exists") != std::string::npos);
+
+    // Both should still exist
+    CHECK(fs::exists(sd + "/source.txt"));
+    CHECK(fs::exists(sd + "/existing.txt"));
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("rename_file path traversal in source", "[tools][rename_file]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    auto result = reg.execute("rename_file",
+        R"({"path": "../../etc/passwd", "new_name": "safe.txt"})");
+    CHECK_FALSE(result);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("rename_file blocked in plan mode", "[tools][rename_file]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+    reg.set_mode(Mode::Plan);
+
+    auto result = reg.execute("rename_file",
+        R"({"path": "a.txt", "new_name": "b.txt"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("not available in Plan mode") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("rename_file directory rejected", "[tools][rename_file]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd);
+
+    fs::create_directories(sd + "/mydir");
+
+    auto result = reg.execute("rename_file",
+        R"({"path": "mydir", "new_name": "newdir"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("Not a regular file") != std::string::npos);
+
+    // Directory should still exist with original name
+    CHECK(fs::exists(sd + "/mydir"));
+
+    fs::remove_all(sd);
 }

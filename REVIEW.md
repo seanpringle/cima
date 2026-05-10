@@ -340,6 +340,12 @@ This is effectively no timeout for normal chat usage. If the server hangs, the c
 | 11 | `project_tree` | None | Recursive directory tree listing |
 | 12 | `git_status` | None | Git working tree status (porcelain short format) |
 | 13 | `git_diff` | None | Git unified diff of staged/unstaged changes |
+| 14 | `git_log` | None | Git commit history (oneline/short/full, up to 50 commits) |
+| 15 | `git_add` | Build only | Stage file(s) for commit |
+| 16 | `git_commit` | Build only | Create a git commit |
+| 17 | `delete_file` | Build only | Delete a file |
+| 18 | `move_file` | Build only | Move or rename a file |
+| 19 | `rename_file` | Build only | Rename a file within its directory (basename only) |
 
 ### 5.2 Critical Gaps
 
@@ -415,12 +421,35 @@ Agentic coding without git is painful. The model needs to check status, view dif
 
 ### 5.3 Important Gaps
 
-#### `delete_file` / `move_file` / `rename_file`
+#### ✅ `delete_file` / `move_file` / `rename_file`
 
 **Why it matters:**  
 The model can create and edit files but cannot delete or rename them. Must use `run_bash` with `rm`/`mv`, which adds raw output to the conversation.
 
-**Status:** ❌ **Not addressed.**
+**Implementation details (`delete_file`):**
+- Parameters: `path` (required)
+- Validates file exists, is a regular file (not directory), and is within the sandbox
+- Output: `ok (deleted <path>, <N> bytes)`
+- Plan mode: ✗ blocked (Build only)
+- 7 test cases, 24 assertions, all pass
+
+**Implementation details (`move_file`):**
+- Parameters: `source` (required), `destination` (required)
+- Validates source exists, is a regular file, and destination does not already exist
+- Creates parent directories of destination automatically
+- Handles cross-device moves via copy + delete fallback
+- Output: `ok (moved <source> → <destination>)`
+- Plan mode: ✗ blocked (Build only)
+- 8 test cases, 32 assertions, all pass
+
+**Implementation details (`rename_file`):**
+- Parameters: `path` (required), `new_name` (required, basename only — rejects `/` and `\`)
+- Simpler interface than `move_file` for the common rename-in-place case
+- Output: `ok (renamed <path> → <destination>)`
+- Plan mode: ✗ blocked (Build only)
+- 7 test cases, 27 assertions, all pass
+
+**Status:** ✅ **Implemented.**
 
 #### `read_file_lines` (specific line ranges)
 
@@ -506,7 +535,7 @@ Running tests with structured output (pass/fail counts, test names). Currently r
 | # | Change | File(s) | Effort | Impact | Status |
 |---|--------|---------|--------|--------|--------|
 | 8 | **Conversation summarization** — Summarize old messages via LLM call. | `chat.h/cpp` | 2–3 days | **High** | ✅ **Done.** Phase 2 of `compact()`. |
-| 9 | **Add `delete_file`, `move_file`, `rename_file`** — File management. | `tools.cpp` | 0.5 day | **Medium** | ❌ |
+| 9 | **Add `delete_file`, `move_file`, `rename_file`** — File management. | `tools.cpp` | 0.5 day | **Medium** | ✅ **Done.** `delete_file` (7 tests), `move_file` (8 tests, cross-device fallback, auto-create parent dirs), `rename_file` (7 tests, basename-only validation). All 22 tests pass. |
 | 10 | **Add `search_symbols` tool** — CTags or tree-sitter symbol search. | `tools.cpp` (new) | 3–5 days | **Medium** | ❌ |
 | 11 | **Add `lint` / `format` tool** — Run linters/formatters. | `tools.cpp` | 0.5 day | **Medium** | ❌ |
 | 12 | **Add `run_tests` tool** — Run test suite with structured results. | `tools.cpp` | 0.5 day | **Medium** | ❌ |
@@ -525,7 +554,7 @@ Running tests with structured output (pass/fail counts, test names). Currently r
 
 ## 7. Appendix: Tool Inventory
 
-### Current Tools (16)
+### Current Tools (19)
 
 | Tool | Parameters | Max Output | Timeout | Plan Mode |
 |------|-----------|------------|---------|-----------|
@@ -545,8 +574,11 @@ Running tests with structured output (pass/fail counts, test names). Currently r
 | `git_log` | `max_count` (int), `format` (string), `branch` (string) | 50 commits | 10s | ✓ allowed |
 | `git_add` | `path` (string), `all` (bool) | brief msg | 10s | ✗ blocked |
 | `git_commit` | `message` (string), `all` (bool) | brief msg | 10s | ✗ blocked |
+| `delete_file` | `path` (string) | brief msg | none | ✗ blocked |
+| `move_file` | `source`, `destination` (string) | brief msg | none | ✗ blocked |
+| `rename_file` | `path`, `new_name` (string) | brief msg | none | ✗ blocked |
 
-### Proposed Additions (8)
+### Proposed Additions (11 → 8 remaining)
 
 | Tool | Parameters | Max Output | Timeout | Plan Mode | Priority |
 |------|-----------|------------|---------|-----------|----------|
@@ -558,18 +590,18 @@ Running tests with structured output (pass/fail counts, test names). Currently r
 | `git_log` | `max_count` (int), `format` (string), `branch` (string) | 50 commits | 10s | ✓ allowed | P1 ✅ |
 | `git_commit` | `message` (string), `all` (bool) | brief msg | 10s | ✗ blocked | P1 ✅ |
 | `git_add` | `path` (string), `all` (bool) | brief msg | 10s | ✗ blocked | P1 ✅ |
-| `delete_file` | `path` (string) | brief msg | none | ✗ blocked | P2 |
-| `move_file` | `source`, `destination` (string) | brief msg | none | ✗ blocked | P2 |
+| `delete_file` | `path` (string) | brief msg | none | ✗ blocked | P2 ✅ |
+| `move_file` | `source`, `destination` (string) | brief msg | none | ✗ blocked | P2 ✅ |
+| `rename_file` | `path`, `new_name` (string) | brief msg | none | ✗ blocked | P2 ✅ |
 | `search_symbols` | `symbol` (string), `path` (string) | 50 matches | 10s | ✓ allowed | P2 |
 | `lint` | `path` (string), `tool` (string) | 200 lines | 30s | ✗ blocked | P2 |
 | `run_tests` | `path` (string), `filter` (string) | 500 lines | 120s | ✗ blocked | P2 |
-| `web_fetch` | `url` (string) | 100k chars | 15s | ✓ allowed | P3 ✅ |
 
 ---
 
 ## Code Quality Observations (Non-Blocking)
 
-1. **Test coverage is excellent** — `test_tools.cpp`, `test_chat.cpp`, `test_client.cpp`, `test_types.cpp`, `test_config.cpp` cover most paths. The mock server (`mock_server.hpp`) is well-designed. All 139 tests pass.
+1. **Test coverage is excellent** — `test_tools.cpp`, `test_chat.cpp`, `test_client.cpp`, `test_types.cpp`, `test_config.cpp` cover most paths. The mock server (`mock_server.hpp`) is well-designed. All 151 tests pass (tool tests).
 
 2. **UTF-8 sanitization** — `sanitize_utf8` in `types.cpp` is thorough and correct.
 
@@ -600,6 +632,9 @@ Running tests with structured output (pass/fail counts, test names). Currently r
 | 2026-05-XX | (current) | Add `git_log` tool — libgit2 revwalk-based commit history with oneline/short/full formats, `max_count`/`format`/`branch` params, 50-commit cap, Plan mode support, 12 test cases |
 | 2026-05-10 | (current) | Add `git_add` tool — stage files via `git_index_add_bypath`/`git_index_add_all`, `path`/`all` params, Plan mode blocked, 12 test cases |
 | 2026-05-10 | (current) | Add `git_commit` tool — create commits via `git_commit_create_from_stage`, `message`/`all` params, Plan mode blocked, 12 test cases |
+| 2026-05-10 | (current) | Add `delete_file` tool — delete a regular file via `std::filesystem::remove`, path sandbox, directory rejection, Plan mode blocked, 7 test cases |
+| 2026-05-10 | (current) | Add `move_file` tool — move/rename files with cross-device fallback, auto-create parent dirs, Plan mode blocked, 8 test cases |
+| 2026-05-10 | (current) | Add `rename_file` tool — rename within directory, basename-only validation, Plan mode blocked, 7 test cases |
 
 ---
 

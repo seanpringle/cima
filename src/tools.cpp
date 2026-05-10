@@ -2419,6 +2419,187 @@ static Tool make_apply_patch_tool(const std::string& safe_dir) {
 }
 
 // ===================================================================
+// delete_file
+// ===================================================================
+
+static Tool make_delete_file_tool(const std::string& safe_dir) {
+    Tool t;
+    t.name = "delete_file";
+    t.description = "Delete a file";
+    t.parameters = {{"type", "object"},
+        {"properties",
+            {{"path", {{"type", "string"}, {"description", "File path to delete"}}}}},
+        {"required", {"path"}}};
+    t.execute = [safe_dir](const json& args) -> Result<std::string> {
+        auto raw = args.value("path", std::string());
+
+        auto resolved = resolve_path(raw, safe_dir);
+        if (!resolved) {
+            return std::unexpected(resolved.error());
+        }
+
+        std::error_code ec;
+        if (!std::filesystem::exists(*resolved, ec)) {
+            return std::unexpected("File not found: " + *resolved);
+        }
+        if (!std::filesystem::is_regular_file(*resolved, ec)) {
+            return std::unexpected("Not a regular file: " + *resolved);
+        }
+        uintmax_t size = std::filesystem::file_size(*resolved, ec);
+        bool removed = std::filesystem::remove(*resolved, ec);
+        if (ec || !removed) {
+            return std::unexpected("Failed to delete file: " + ec.message());
+        }
+        return "ok (deleted " + *resolved + ", " + std::to_string(size) + " bytes)";
+    };
+    return t;
+}
+
+// ===================================================================
+// move_file
+// ===================================================================
+
+static Tool make_move_file_tool(const std::string& safe_dir) {
+    Tool t;
+    t.name = "move_file";
+    t.description = "Move or rename a file from source to destination. "
+                    "Works for both same-directory renames and cross-directory moves. "
+                    "Will not overwrite an existing destination.";
+    t.parameters = {{"type", "object"},
+        {"properties",
+            {{"source", {{"type", "string"}, {"description", "Source file path"}}},
+             {"destination", {{"type", "string"}, {"description", "Destination file path"}}}}},
+        {"required", {"source", "destination"}}};
+    t.execute = [safe_dir](const json& args) -> Result<std::string> {
+        auto src_raw = args.value("source", std::string());
+        auto dst_raw = args.value("destination", std::string());
+
+        if (src_raw.empty()) {
+            return std::unexpected(std::string("source is required"));
+        }
+        if (dst_raw.empty()) {
+            return std::unexpected(std::string("destination is required"));
+        }
+
+        auto src = resolve_path(src_raw, safe_dir);
+        if (!src) return std::unexpected(src.error());
+        auto dst = resolve_path(dst_raw, safe_dir);
+        if (!dst) return std::unexpected(dst.error());
+
+        std::error_code ec;
+        if (!std::filesystem::exists(*src, ec)) {
+            return std::unexpected("Source not found: " + *src);
+        }
+        if (!std::filesystem::is_regular_file(*src, ec)) {
+            return std::unexpected("Source is not a regular file: " + *src);
+        }
+        if (std::filesystem::exists(*dst, ec)) {
+            return std::unexpected("Destination already exists: " + *dst);
+        }
+
+        // Create parent directories of destination
+        std::filesystem::create_directories(std::filesystem::path(*dst).parent_path(), ec);
+        if (ec) {
+            return std::unexpected(
+                "Failed to create parent directories: " + ec.message());
+        }
+
+        std::filesystem::rename(*src, *dst, ec);
+        if (ec) {
+            // Cross-device link: fall back to copy + delete
+            if (ec.value() == EXDEV) {
+                std::filesystem::copy_file(*src, *dst, std::filesystem::copy_options::none, ec);
+                if (ec) {
+                    return std::unexpected(
+                        "Failed to copy across devices: " + ec.message());
+                }
+                std::filesystem::remove(*src, ec);
+                if (ec) {
+                    // Clean up destination
+                    std::filesystem::remove(*dst, ec);
+                    return std::unexpected(
+                        "Failed to remove source after copy: " + ec.message());
+                }
+            } else {
+                return std::unexpected("Failed to move file: " + ec.message());
+            }
+        }
+
+        return "ok (moved " + *src + " \u2192 " + *dst + ")";
+    };
+    return t;
+}
+
+// ===================================================================
+// rename_file
+// ===================================================================
+
+static Tool make_rename_file_tool(const std::string& safe_dir) {
+    Tool t;
+    t.name = "rename_file";
+    t.description =
+        "Rename a file within its directory. "
+        "Provide the current path and the new filename (basename only, no path separators). "
+        "For cross-directory moves, use move_file instead.";
+    t.parameters = {{"type", "object"},
+        {"properties",
+            {{"path", {{"type", "string"}, {"description", "Current file path"}}},
+             {"new_name",
+                 {{"type", "string"},
+                     {"description",
+                         "New filename (basename only, no '/' or '\\' allowed)"}}}}},
+        {"required", {"path", "new_name"}}};
+    t.execute = [safe_dir](const json& args) -> Result<std::string> {
+        auto raw_path = args.value("path", std::string());
+        auto new_name = args.value("new_name", std::string());
+
+        if (raw_path.empty()) {
+            return std::unexpected(std::string("path is required"));
+        }
+        if (new_name.empty()) {
+            return std::unexpected(std::string("new_name is required"));
+        }
+        if (new_name.find('/') != std::string::npos ||
+            new_name.find('\\') != std::string::npos) {
+            return std::unexpected(
+                "new_name must be a filename, not a path "
+                "(no '/' or '\\' allowed)");
+        }
+
+        auto resolved = resolve_path(raw_path, safe_dir);
+        if (!resolved) return std::unexpected(resolved.error());
+
+        std::error_code ec;
+        if (!std::filesystem::exists(*resolved, ec)) {
+            return std::unexpected("File not found: " + *resolved);
+        }
+        if (!std::filesystem::is_regular_file(*resolved, ec)) {
+            return std::unexpected("Not a regular file: " + *resolved);
+        }
+
+        auto parent = std::filesystem::path(*resolved).parent_path();
+        auto destination = (parent / new_name).string();
+
+        // Resolve destination to ensure it's within safe_dir
+        auto dst_resolved = resolve_path(destination, safe_dir);
+        if (!dst_resolved) return std::unexpected(dst_resolved.error());
+
+        if (std::filesystem::exists(*dst_resolved, ec)) {
+            return std::unexpected(
+                "Destination already exists: " + *dst_resolved);
+        }
+
+        std::filesystem::rename(*resolved, *dst_resolved, ec);
+        if (ec) {
+            return std::unexpected("Failed to rename file: " + ec.message());
+        }
+
+        return "ok (renamed " + *resolved + " \u2192 " + *dst_resolved + ")";
+    };
+    return t;
+}
+
+// ===================================================================
 // ToolRegistry
 // ===================================================================
 
@@ -2447,6 +2628,9 @@ void ToolRegistry::add_defaults(const std::string& safe_dir,
     add(make_git_log_tool(safe_dir));
     add(make_git_add_tool(safe_dir));
     add(make_git_commit_tool(safe_dir));
+    add(make_delete_file_tool(safe_dir));
+    add(make_move_file_tool(safe_dir));
+    add(make_rename_file_tool(safe_dir));
 }
 
 json ToolRegistry::to_openai_tools() const {
@@ -2468,7 +2652,8 @@ Result<std::string> ToolRegistry::execute(const std::string& name, const std::st
     // Plan mode restricts write/edit/bash at runtime
     if (mode_ == Mode::Plan &&
         (name == "write_file" || name == "edit_file" || name == "run_bash" ||
-            name == "apply_patch" || name == "git_add" || name == "git_commit")) {
+            name == "apply_patch" || name == "git_add" || name == "git_commit" ||
+            name == "delete_file" || name == "move_file" || name == "rename_file")) {
         return std::unexpected("Tool '" + name +
             "' is not available in Plan mode (read-only). "
             "Available tools: list_files, read_file, read_file_lines, grep_files, "
