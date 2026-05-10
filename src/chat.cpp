@@ -1,4 +1,5 @@
 #include "chat.h"
+#include "jobs.h"
 #include "subagent.h"
 
 #include <future>
@@ -14,6 +15,7 @@ ChatSession::ChatSession(Config config)
       client_(std::move(config.api_base), std::move(config.api_key)) {
     tools_.add_defaults(safe_dir_, config.read_only_paths, config.search_api_key,
         config.search_engine_id, config.search_endpoint);
+    add_job_tools(tools_);
     tools_.set_mode(mode_);
 
     // ── Subagent delegation tool (available in all modes) ──
