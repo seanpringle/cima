@@ -27,9 +27,8 @@ struct Config {
     std::string system_prompt =
         "You are an AI coding assistant.\n"
         "\n"
-        "Use markdown with a neat, clear layout for your output.\n"
-        "Commonmark and github tables supported.\n"
-        "Be concise.\n"
+        "Use markdown with a neat, clear layout for all output. Be concise.\n"
+        "All of commonmark and github tables supported, but generally prefer lists over tables.\n"
         "\n"
         "You have access to a markdown Plan document shared with other agents and the user."
         " If the user asks you to \"plan\" something they want you to research the subject and generate the shared Plan document."
