@@ -2529,4 +2529,21 @@ TEST_CASE("project_tree interrupted by cancelled token", "[tools][cancellation]"
     fs::remove_all(sd);
 }
 
+TEST_CASE("run_bash chdir failure is caught", "[tools][run_bash][sandbox]") {
+    // Use a non-existent directory as safe_dir — chdir in the child will fail.
+    ToolRegistry reg;
+    reg.add_defaults("/nonexistent_safe_dir_12345");
 
+    // If chdir fails, the child should _exit(1) before executing the command.
+    // The error message "error: chdir() to safe directory failed\n" will be
+    // written to the pipe (which is connected to stdout/stderr) before _exit(1).
+    // The parent reads the pipe and returns the captured output (it does not
+    // check the child's exit status), so the result will contain the error msg.
+    auto result = reg.execute("run_bash", R"({"command": "echo should_not_run"})");
+    // The result should still be "successful" (the tool itself didn't throw),
+    // but the output should contain the chdir error message.
+    CHECK(result);
+    if (result) {
+        CHECK(result->find("chdir()") != std::string::npos);
+    }
+}

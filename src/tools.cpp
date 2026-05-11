@@ -678,7 +678,11 @@ static Tool make_run_bash_tool(const std::string& safe_dir,
             setpgid(0, 0); // new process group
 
             if (!safe_dir.empty()) {
-                chdir(safe_dir.c_str());
+                if (chdir(safe_dir.c_str()) != 0) {
+                    static const char msg[] = "error: chdir() to safe directory failed\n";
+                    write(STDOUT_FILENO, msg, sizeof(msg) - 1);
+                    _exit(1);
+                }
             }
 
             execl("/bin/sh", "sh", "-c", command.c_str(), nullptr);
