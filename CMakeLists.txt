@@ -90,7 +90,12 @@ endif()
 add_library(cima_core
     src/config.cpp
     src/types.cpp
-    src/tools.cpp
+    src/tools/path.cpp
+    src/tools/git_helpers.cpp
+    src/tools/web_helpers.cpp
+    src/tools/worktree.cpp
+    src/tools/tool_factories.cpp
+    src/tools/registry.cpp
     src/client.cpp
     src/chat.cpp
     src/plan.cpp

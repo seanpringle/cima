@@ -2,9 +2,14 @@
 
 #include "config.h"
 
+#include <chrono>
+#include <curl/curl.h>
+#include <filesystem>
 #include <functional>
+#include <mutex>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include <nlohmann/json.hpp>
@@ -87,6 +92,27 @@ class ToolRegistry {
 // Git helpers
 // ---------------------------------------------------------------------------
 
+struct git_repository;
+struct git_worktree;
+
+/// Open the git repository at or walking up from safe_dir.
+/// Returns the repo handle or an error string.
+/// Caller must git_repository_free() the handle on success.
+Result<git_repository*> open_git_repo(const std::string& safe_dir);
+
+/// Convert libgit2 status flags to porcelain v1 characters (index status).
+char status_char_for_index(unsigned int flags);
+/// Convert libgit2 status flags to porcelain v1 characters (workdir status).
+char status_char_for_workdir(unsigned int flags);
+
+/// Check whether a path within a git repository is ignored by .gitignore rules.
+/// @param repo      An open git_repository*, or nullptr (returns false).
+/// @param abs_path  Absolute filesystem path to check.
+/// @param workdir   The repository worktree root (from git_repository_workdir()).
+bool is_gitignored(git_repository* repo,
+                   const std::filesystem::path& abs_path,
+                   const std::filesystem::path& workdir);
+
 /// Get the current git branch name at the given repository path.
 /// Returns the branch name, or a description like "(detached HEAD at <hash>)"
 /// if the repo is in detached HEAD state.
@@ -94,12 +120,89 @@ class ToolRegistry {
 Result<std::string> get_current_git_branch(const std::string& repo_path);
 
 // ---------------------------------------------------------------------------
-// Worktree tool declarations
+// Web helper declarations (used by tool factories)
 // ---------------------------------------------------------------------------
-struct WorktreeState;
+
+/// Callback for curl to write response body into a std::string.
+size_t web_search_write_cb(char* ptr, size_t size, size_t nmemb, void* userdata);
+/// Progress callback for curl to support cancellation.
+int web_search_progress_cb(void* clientp,
+    curl_off_t dltotal, curl_off_t dlnow,
+    curl_off_t ultotal, curl_off_t ulnow);
+
+/// Shared HTTP GET helper.
+Result<std::pair<std::string, long>> http_get(const std::string& url,
+    int timeout_sec = 15,
+    std::atomic<bool>* cancelled = nullptr);
+
+/// Returns true if the scheme is http or https (case-insensitive).
+bool is_valid_fetch_scheme(const std::string& url);
+
+// ── DuckDuckGo rate limiter globals ──
+extern std::chrono::steady_clock::time_point g_last_ddg_request;
+extern std::mutex g_ddg_mutex;
+inline constexpr std::chrono::milliseconds DDG_MIN_INTERVAL = std::chrono::milliseconds(1000);
+
+// ── web_fetch cache globals ──
+extern std::mutex g_fetch_cache_mutex;
+extern std::unordered_map<std::string, std::string> g_fetch_cache;
+
+// ---------------------------------------------------------------------------
+// Worktree helpers
+// ---------------------------------------------------------------------------
+
+/// Recursively delete \p dir without following any symlinks.
+void remove_all_safe(const std::filesystem::path& dir);
+
+/// Sanitize a branch name for use as a filesystem directory component.
+std::string sanitize_branch_name(const std::string& branch);
+
+// ---------------------------------------------------------------------------
+// Worktree state — shared between start_worktree and stop_worktree
+// ---------------------------------------------------------------------------
+struct WorktreeState {
+    std::string original_safe_dir;
+    std::string worktree_name;
+    std::string worktree_path;
+    std::string branch_name;
+    bool active = false;
+};
 
 Tool make_start_worktree_tool(std::shared_ptr<std::string> safe_dir_ptr,
     std::shared_ptr<std::string> worktree_base_ptr,
     std::shared_ptr<WorktreeState> state);
 Tool make_stop_worktree_tool(std::shared_ptr<std::string> safe_dir_ptr,
     std::shared_ptr<WorktreeState> state);
+
+// ---------------------------------------------------------------------------
+// Tool factory declarations (used by ToolRegistry::add_defaults)
+// ---------------------------------------------------------------------------
+Tool make_list_files_tool(std::shared_ptr<std::string> safe_dir_ptr,
+    const std::vector<std::string>& read_only_paths);
+Tool make_read_file_lines_tool(std::shared_ptr<std::string> safe_dir_ptr,
+    const std::vector<std::string>& read_only_paths);
+Tool make_read_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
+    const std::vector<std::string>& read_only_paths);
+Tool make_grep_files_tool(std::shared_ptr<std::string> safe_dir_ptr,
+    const std::vector<std::string>& read_only_paths,
+    CancellationToken cancelled = nullptr);
+Tool make_write_file_tool(std::shared_ptr<std::string> safe_dir_ptr);
+Tool make_edit_file_tool(std::shared_ptr<std::string> safe_dir_ptr);
+Tool make_run_bash_tool(std::shared_ptr<std::string> safe_dir_ptr,
+    CancellationToken cancelled = nullptr);
+Tool make_web_search_tool(const std::string& api_key,
+    const std::string& engine_id,
+    const std::string& endpoint_override,
+    CancellationToken cancelled = nullptr);
+Tool make_web_fetch_tool(CancellationToken cancelled = nullptr);
+Tool make_git_status_tool(std::shared_ptr<std::string> safe_dir_ptr);
+Tool make_git_diff_tool(std::shared_ptr<std::string> safe_dir_ptr);
+Tool make_git_log_tool(std::shared_ptr<std::string> safe_dir_ptr);
+Tool make_git_add_tool(std::shared_ptr<std::string> safe_dir_ptr);
+Tool make_git_commit_tool(std::shared_ptr<std::string> safe_dir_ptr);
+Tool make_project_tree_tool(std::shared_ptr<std::string> safe_dir_ptr,
+    const std::vector<std::string>& read_only_paths,
+    CancellationToken cancelled = nullptr);
+Tool make_delete_file_tool(std::shared_ptr<std::string> safe_dir_ptr);
+Tool make_move_file_tool(std::shared_ptr<std::string> safe_dir_ptr);
+Tool make_rename_file_tool(std::shared_ptr<std::string> safe_dir_ptr);
