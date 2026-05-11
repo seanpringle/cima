@@ -10,6 +10,12 @@
 // Initialize libgit2 at module load time.
 // git_libgit2_init() is ref-counted and safe to call multiple times.
 static const bool g_git_init = (git_libgit2_init(), true);
+
+// Global mutex to serialize git index write operations (git_add, git_commit --all).
+// libgit2 acquires a file lock on .git/index.lock when opening the index;
+// concurrent index writes from parallel tool calls cause GIT_ELOCKED errors.
+static std::mutex g_git_index_mutex;
+
 #include <fcntl.h>
 #include <fstream>
 #include <future>
@@ -1770,11 +1776,19 @@ static Tool make_git_add_tool(const std::string& safe_dir) {
     t.parameters = {{"type", "object"},
         {"properties",
             {{"path",
-                {{"type", "string"},
-                    {"description",
-                        "File path or pathspec to stage. "
-                        "Defaults to '.' (current directory). "
-                        "Must be under the safe directory."}}},
+                {{"oneOf",
+                    {{{"type", "string"},
+                      {"description",
+                          "File path or pathspec to stage. "
+                          "Must be under the safe directory."}},
+                     {{"type", "array"},
+                      {"items", {{"type", "string"}}},
+                      {"description",
+                          "Array of file paths to stage. "
+                          "Each must be under the safe directory."}}}},
+                 {"description",
+                     "File path, pathspec, or array of paths to stage. "
+                     "Defaults to '.' (current directory)."}}},
              {"all",
                 {{"type", "boolean"},
                     {"description",
@@ -1783,6 +1797,9 @@ static Tool make_git_add_tool(const std::string& safe_dir) {
         {"required", json::array()}};
 
     t.execute = [safe_dir](const json& args) -> Result<std::string> {
+        // Serialize with other git index write operations
+        std::lock_guard<std::mutex> lock(g_git_index_mutex);
+
         // Open git repository
         auto repo_res = open_git_repo(safe_dir);
         if (!repo_res) {
@@ -1793,7 +1810,6 @@ static Tool make_git_add_tool(const std::string& safe_dir) {
             repo, git_repository_free);
 
         bool all = args.value("all", false);
-        std::string path = args.value("path", std::string("."));
 
         // Get the repository's index
         git_index* index = nullptr;
@@ -1816,44 +1832,98 @@ static Tool make_git_add_tool(const std::string& safe_dir) {
                     (e ? std::string(e->message) : std::string("unknown error")));
             }
         } else {
-            // Stage specific file
-            // Validate the path is under safe_dir
-            auto resolved = resolve_path(path, safe_dir);
-            if (!resolved) {
-                return std::unexpected(resolved.error());
-            }
-
-            // Convert the absolute resolved path to a path relative to the
-            // repository's working directory, as required by git_index_add_bypath.
-            const char* workdir_raw = git_repository_workdir(repo);
-            if (!workdir_raw) {
-                return std::unexpected("git_add: repository has no working directory");
-            }
-            std::string workdir(workdir_raw);
-            // Normalize: ensure trailing slash for prefix matching
-            if (!workdir.empty() && workdir.back() != '/') workdir += '/';
-
-            std::string abs_path = *resolved;
-            if (abs_path.size() > workdir.size() &&
-                abs_path.compare(0, workdir.size(), workdir) == 0) {
-                // Path is under workdir — make relative
-                std::string rel_path = abs_path.substr(workdir.size());
-                if (rel_path.empty()) {
-                    return std::unexpected("git_add: cannot stage the repository root");
+            // Helper lambda to resolve a path and stage it via git_index_add_bypath
+            auto stage_single = [&](const std::string& path_str) -> Result<void> {
+                auto resolved = resolve_path(path_str, safe_dir);
+                if (!resolved) {
+                    return std::unexpected(resolved.error());
                 }
 
-                err = git_index_add_bypath(index, rel_path.c_str());
+                // Convert the absolute resolved path to a path relative to the
+                // repository's working directory, as required by git_index_add_bypath.
+                const char* workdir_raw = git_repository_workdir(repo);
+                if (!workdir_raw) {
+                    return std::unexpected("git_add: repository has no working directory");
+                }
+                std::string workdir(workdir_raw);
+                // Normalize: ensure trailing slash for prefix matching
+                if (!workdir.empty() && workdir.back() != '/') workdir += '/';
+
+                std::string abs_path = *resolved;
+                if (abs_path.size() > workdir.size() &&
+                    abs_path.compare(0, workdir.size(), workdir) == 0) {
+                    // Path is under workdir — make relative
+                    std::string rel_path = abs_path.substr(workdir.size());
+                    if (rel_path.empty()) {
+                        return std::unexpected("git_add: cannot stage the repository root");
+                    }
+
+                    err = git_index_add_bypath(index, rel_path.c_str());
+                    if (err) {
+                        const git_error* e = git_error_last();
+                        return std::unexpected("git_add error staging '" + rel_path + "': " +
+                            (e ? std::string(e->message) : std::string("unknown error")));
+                    }
+                    return {};
+                } else {
+                    return std::unexpected("git_add: path is outside the repository working directory");
+                }
+            };
+
+            // Accept path as either a single string or an array of strings
+            auto path_it = args.find("path");
+            if (path_it != args.end() && path_it->is_array()) {
+                // Array of paths
+                std::vector<std::string> staged;
+                for (const auto& p : *path_it) {
+                    if (!p.is_string()) {
+                        return std::unexpected("git_add: each path in the array must be a string");
+                    }
+                    auto result = stage_single(p.get<std::string>());
+                    if (!result) {
+                        return std::unexpected(result.error());
+                    }
+                    staged.push_back(p.get<std::string>());
+                }
+                if (staged.empty()) {
+                    return std::unexpected("git_add: path array is empty");
+                }
+                // Write the index after the last addition
+                err = git_index_write(index);
                 if (err) {
                     const git_error* e = git_error_last();
-                    return std::unexpected("git_add error staging '" + rel_path + "': " +
+                    return std::unexpected("git_add error writing index: " +
                         (e ? std::string(e->message) : std::string("unknown error")));
                 }
+
+                std::string msg = "ok (staged " + std::to_string(staged.size()) + " files: ";
+                for (size_t i = 0; i < staged.size(); i++) {
+                    if (i > 0) msg += ", ";
+                    msg += staged[i];
+                }
+                msg += ")";
+                return msg;
             } else {
-                return std::unexpected("git_add: path is outside the repository working directory");
+                // Single path (default to ".")
+                std::string path = args.value("path", std::string("."));
+                auto result = stage_single(path);
+                if (!result) {
+                    return std::unexpected(result.error());
+                }
+
+                // Write the index to persist changes
+                err = git_index_write(index);
+                if (err) {
+                    const git_error* e = git_error_last();
+                    return std::unexpected("git_add error writing index: " +
+                        (e ? std::string(e->message) : std::string("unknown error")));
+                }
+
+                return std::string("ok (staged " + path + ")");
             }
         }
 
-        // Write the index to persist changes
+        // Write the index to persist changes (all: true path)
         err = git_index_write(index);
         if (err) {
             const git_error* e = git_error_last();
@@ -1861,11 +1931,7 @@ static Tool make_git_add_tool(const std::string& safe_dir) {
                 (e ? std::string(e->message) : std::string("unknown error")));
         }
 
-        if (all) {
-            return std::string("ok (staged all changes)");
-        } else {
-            return std::string("ok (staged " + path + ")");
-        }
+        return std::string("ok (staged all changes)");
     };
     return t;
 }
@@ -1896,6 +1962,9 @@ static Tool make_git_commit_tool(const std::string& safe_dir) {
         {"required", {"message"}}};
 
     t.execute = [safe_dir](const json& args) -> Result<std::string> {
+        // Serialize with other git index write operations
+        std::lock_guard<std::mutex> lock(g_git_index_mutex);
+
         auto message = args.value("message", std::string());
         if (message.empty()) {
             return std::unexpected("commit message is required");
