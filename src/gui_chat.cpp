@@ -754,11 +754,6 @@ void render_chat_ui(TabInfo& tab, bool& done) {
     if (ui.mono_font)
         PushFont(ui.mono_font);
 
-    if (!running_snapshot && IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !IsAnyItemActive()
-        && !IsMouseClicked(ImGuiMouseButton_Left) && !IsMouseClicked(ImGuiMouseButton_Middle) && !IsMouseClicked(ImGuiMouseButton_Right)) {
-        SetKeyboardFocusHere();
-    }
-
     if (InputTextMultiline("##input",
             ui.input_buf,
             sizeof(ui.input_buf),
