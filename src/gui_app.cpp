@@ -222,12 +222,9 @@ int gui_main(Config cfg) {
                     // Use model name as tab title, or fallback to "Chat"
                     std::string tab_label = tab.title.empty() ? "Chat" : tab.title;
 
-                    // Append a close button for all tabs (including the last one)
+                    // Allow closing via default ImGui tab close button,
                     // but ensure at least one tab remains
                     bool can_close = tabs.size() > 1;
-                    if (can_close) {
-                        tab_label += "  \xE2\x9C\x97##close_" + std::to_string(tab.id);
-                    }
 
                     PushID(tab.id);
                     ImGuiTabItemFlags tab_flags = ImGuiTabItemFlags_None;

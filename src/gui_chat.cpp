@@ -575,8 +575,7 @@ void render_chat_ui(TabInfo& tab, bool& done) {
     }
 
     // ── main content (previously inside "Chat" tab) ──
-    float input_height = GetFrameHeightWithSpacing() * 3 + GetStyle().ItemSpacing.y * 2 +
-        GetFrameHeightWithSpacing() + 8;
+    float input_height = GetFrameHeightWithSpacing() * 6 + 8;
 
     if (ui.mono_font)
         PushFont(ui.mono_font);
@@ -607,6 +606,15 @@ void render_chat_ui(TabInfo& tab, bool& done) {
     if (Button("Raw")) {
         ui.show_raw_popup = true;
         std::cout << "Raw" << std::endl;
+    }
+
+    // ── token usage indicator ──
+    {
+        const auto& usage = session.last_usage();
+        if (usage.total_tokens > 0) {
+            SameLine(0, 8);
+            TextColored(ImColor(IM_COL32(180, 180, 180, 255)), "[%d tokens]", usage.total_tokens);
+        }
     }
 
     Separator();
@@ -710,7 +718,7 @@ void render_chat_ui(TabInfo& tab, bool& done) {
     if (InputTextMultiline("##input",
             ui.input_buf,
             sizeof(ui.input_buf),
-            ImVec2(0, GetFrameHeightWithSpacing() * 3),
+            ImVec2(0, std::max(GetFrameHeightWithSpacing() * 3, GetContentRegionAvail().y - 4)),
             ImGuiInputTextFlags_CtrlEnterForNewLine | ImGuiInputTextFlags_EnterReturnsTrue |
                 ImGuiInputTextFlags_WordWrap)) {
         string input(ui.input_buf);
@@ -725,39 +733,6 @@ void render_chat_ui(TabInfo& tab, bool& done) {
         PopFont();
     if (running_snapshot)
         EndDisabled();
-
-    if (chat.running) {
-        if (Button("Cancel")) {
-            cancel_chat(chat);
-        }
-    } else {
-        bool disable_send = (ui.input_buf[0] == '\0');
-        if (disable_send)
-            BeginDisabled();
-        if (Button("Send")) {
-            string input(ui.input_buf);
-            ui.input_buf[0] = '\0';
-            if (!input.empty()) {
-                ui.entries.push_back({EntryType::UserText, input, false, ui.next_seq++});
-                start_chat(chat, session, std::move(input));
-            }
-        }
-        if (disable_send)
-            EndDisabled();
-    }
-
-    // ── type indicator (same line as Cancel/Send) ──
-    SameLine(0, 16);
-    TextColored(ImColor(IM_COL32(180, 180, 180, 255)), "[chat]");
-
-    // ── token usage indicator (after type) ──
-    {
-        const auto& usage = session.last_usage();
-        if (usage.total_tokens > 0) {
-            SameLine(0, 8);
-            TextColored(ImColor(IM_COL32(180, 180, 180, 255)), "[%d tokens]", usage.total_tokens);
-        }
-    }
 }
 
 void render_chat_overlay(TabInfo& tab, bool& done) {
