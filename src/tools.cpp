@@ -829,6 +829,9 @@ static Result<std::pair<std::string, long>> http_get(const std::string& url, int
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "llm-chat/0.1");
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
+    // Use system default CA bundle — do NOT set a custom CA path so that
+    // curl finds the system trust store automatically.
+    curl_easy_setopt(curl, CURLOPT_CAINFO, nullptr);
     curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, web_search_progress_cb);
     curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
     curl_easy_setopt(curl, CURLOPT_XFERINFODATA, cancelled);

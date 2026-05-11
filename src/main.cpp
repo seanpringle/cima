@@ -1,11 +1,14 @@
 #include "config.h"
 #include "gui_app.h"
 
+#include <curl/curl.h>
 #include <cstdlib>
 #include <iostream>
 #include <string>
 
 int main(int argc, char* argv[]) {
+    // Must be called once before any other libcurl function.
+    curl_global_init(CURL_GLOBAL_ALL);
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
         if (arg == "--help" || arg == "-h") {
@@ -33,11 +36,14 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    int exit_code = 0;
     try {
         auto cfg = Config::from_env();
-        return gui_main(std::move(cfg));
+        exit_code = gui_main(std::move(cfg));
     } catch (const std::exception& e) {
         std::cerr << "fatal: " << e.what() << std::endl;
-        return 1;
+        exit_code = 1;
     }
+    curl_global_cleanup();
+    return exit_code;
 }
