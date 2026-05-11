@@ -165,14 +165,12 @@ int gui_main(Config cfg) {
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
 
-        // ── Tab key to toggle between Planner/Builder tabs ──
+        // ── Tab key to toggle between Planner/Builder agents ──
         static int s_active_agent_tab = 0;
-        static bool s_tab_switch_requested = false;
 
-        // Use Ctrl+Tab to avoid conflicting with ImGui's widget-navigation Tab key.
-        // Only trigger when no widget is actively being edited.
-        if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Tab) && !ImGui::IsAnyItemActive()) {
-            s_tab_switch_requested = true;
+        // Only trigger when no widget is actively being edited (e.g. not while typing).
+        if (ImGui::IsKeyPressed(ImGuiKey_Tab, false) && !ImGui::IsAnyItemActive()) {
+            s_active_agent_tab = s_active_agent_tab ? 0 : 1;
         }
 
         // ── main window ──
@@ -215,31 +213,35 @@ int gui_main(Config cfg) {
             SeparatorEx(ImGuiSeparatorFlags_Vertical);
             SameLine();
 
-            // Right panel with tab bar
+            // Right panel: active chat session (no tab bar — both agents are always alive)
             BeginChild("##agent_panel", ImVec2(right_width, content.y), true);
-            if (BeginTabBar("##agent_tabs")) {
-                // Compute flags: only pass SetSelected when we explicitly requested a switch
-                // AND this is the target tab.
-                ImGuiTabItemFlags planner_flags = (s_tab_switch_requested && s_active_agent_tab == 1)
-                    ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
-                ImGuiTabItemFlags builder_flags = (s_tab_switch_requested && s_active_agent_tab == 0)
-                    ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
 
-                if (BeginTabItem("Planner", nullptr, planner_flags)) {
-                    s_active_agent_tab = 0;
-                    render_chat_ui(planner_tab, done);
-                    EndTabItem();
-                }
-                if (BeginTabItem("Builder", nullptr, builder_flags)) {
-                    s_active_agent_tab = 1;
-                    render_chat_ui(builder_tab, done);
-                    EndTabItem();
-                }
-                EndTabBar();
+            // Header showing which agent is active, with a hint to toggle
+            {
+                bool is_planner = (s_active_agent_tab == 0);
+                const char* agent_name = is_planner ? "Planner" : "Builder";
+                ImVec4 header_color = is_planner
+                    ? ImVec4(0.39f, 0.70f, 1.0f, 1.0f)   // blue
+                    : ImVec4(0.39f, 1.0f, 0.39f, 1.0f);  // green
 
-                // Clear the switch-request flag after consuming it.
-                s_tab_switch_requested = false;
+                TextColored(header_color, "%s  [Tab to switch]", agent_name);
+                Separator();
             }
+
+            // Drain pending output for the INACTIVE tab (so async work is not lost)
+            {
+                bool is_planner = (s_active_agent_tab == 0);
+                TabInfo& inactive = is_planner ? builder_tab : planner_tab;
+                drain_pending(inactive.ui_state, *inactive.chat_state);
+            }
+
+            // Render the active chat UI
+            {
+                bool is_planner = (s_active_agent_tab == 0);
+                TabInfo& active = is_planner ? planner_tab : builder_tab;
+                render_chat_ui(active, done);
+            }
+
             EndChild();
         }
 

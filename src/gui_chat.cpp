@@ -517,7 +517,7 @@ static void push_entry(ChatUIState& ui, EntryType type, const string& text, bool
     ui.entries.push_back({type, text, streaming, ui.next_seq++});
 }
 
-static void drain_pending(ChatUIState& ui, AsyncChatState& chat) {
+void drain_pending(ChatUIState& ui, AsyncChatState& chat) {
     std::lock_guard<std::mutex> lock(chat.mutex);
     for (auto& [pending_text, type] : chat.pending) {
         if (type == OutputType::ToolInvocation) {
