@@ -153,23 +153,53 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
             }
 
             if (calls.size() > 1) {
-                std::vector<std::future<Result<std::string>>> futures;
-                futures.reserve(calls.size());
-                for (size_t i = 0; i < calls.size(); i++) {
-                    futures.push_back(std::async(std::launch::async,
-                        [&, i] { return tools_.execute(calls[i].name, calls[i].arguments); }));
+                // If any tool in the batch has Write permission, serialize
+                // the batch to avoid race conditions on shared resources
+                // (e.g. .git/index.lock) that the per-tool mutex can't
+                // fully protect (e.g. git_add + git_commit with all:true).
+                auto write_tools = tools_.tool_names_by_permission(ToolPermission::Write);
+                bool has_write = false;
+                for (const auto& call : calls) {
+                    if (write_tools.count(call.name)) {
+                        has_write = true;
+                        break;
+                    }
                 }
-                for (size_t i = 0; i < calls.size(); i++) {
-                    if (g_interrupted) {
-                        conversation_.truncate(snapshot);
-                        return std::unexpected("Interrupted during tool execution");
+
+                if (has_write) {
+                    // Serial execution for write tools
+                    for (const auto& call : calls) {
+                        if (g_interrupted) {
+                            conversation_.truncate(snapshot);
+                            return std::unexpected("Interrupted during tool execution");
+                        }
+                        if (output_cb_) {
+                            output_cb_("\xE2\x86\x92 " + call.name + "(" + call.arguments + ")",
+                                OutputType::ToolInvocation);
+                        }
+                        auto tr = tools_.execute(call.name, call.arguments);
+                        conversation_.add_tool(call.id, tr ? *tr : tr.error());
                     }
-                    if (output_cb_) {
-                        output_cb_("\xE2\x86\x92 " + calls[i].name + "(" + calls[i].arguments + ")",
-                            OutputType::ToolInvocation);
+                } else {
+                    // Parallel execution for read-only tools
+                    std::vector<std::future<Result<std::string>>> futures;
+                    futures.reserve(calls.size());
+                    for (size_t i = 0; i < calls.size(); i++) {
+                        futures.push_back(std::async(std::launch::async,
+                            [&, i] { return tools_.execute(calls[i].name, calls[i].arguments); }));
                     }
-                    auto tr = futures[i].get();
-                    conversation_.add_tool(calls[i].id, tr ? *tr : tr.error());
+                    for (size_t i = 0; i < calls.size(); i++) {
+                        if (g_interrupted) {
+                            conversation_.truncate(snapshot);
+                            return std::unexpected("Interrupted during tool execution");
+                        }
+                        if (output_cb_) {
+                            output_cb_("\xE2\x86\x92 " + calls[i].name + "(" + calls[i].arguments + ")",
+                                OutputType::ToolInvocation);
+                        }
+                        auto tr = futures[i].get();
+                        conversation_.add_tool(calls[i].id, tr ? *tr : tr.error());
+                    }
                 }
             } else {
                 for (const auto& call : calls) {
