@@ -40,7 +40,7 @@ struct Config {
         "All of commonmark and github tables supported, but generally prefer lists over tables.\n"
         "\n"
         "You have access to a markdown Plan document visible to the user."
-        " If the user asks you to \"plan\" something, research the subject and write the Plan document."
+        " Always start a task by researching the user's instructions and writing your Plan document."
         " Wait until the user is happy with the Plan document and gives an explicit go-ahead before starting implementation.\n"
     ;
 
