@@ -500,19 +500,6 @@ static void start_chat(AsyncChatState& chat, ChatSession& session, string input)
         [&session, input = std::move(input)]() { return session.run_once(input); });
 }
 
-static void cancel_chat(AsyncChatState& chat) {
-    *chat.cancelled = true;
-    if (chat.future.valid()) {
-        chat.future.wait();
-        try {
-            chat.future.get();
-        } catch (const std::exception& e) {
-            std::cerr << "chat error during cancel: " << e.what() << std::endl;
-        }
-    }
-    chat.running = false;
-}
-
 static void push_entry(ChatUIState& ui, EntryType type, const string& text, bool streaming) {
     ui.entries.push_back({type, text, streaming, ui.next_seq++});
 }
