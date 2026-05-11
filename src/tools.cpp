@@ -143,7 +143,7 @@ static char status_char_for_workdir(unsigned int flags) {
 // Tool helpers
 // ===================================================================
 
-static Tool make_list_files_tool(const std::string& safe_dir,
+static Tool make_list_files_tool(std::shared_ptr<std::string> safe_dir_ptr,
     const std::vector<std::string>& read_only_paths) {
     Tool t;
     t.name = "list_files";
@@ -151,9 +151,9 @@ static Tool make_list_files_tool(const std::string& safe_dir,
     t.parameters = {{"type", "object"},
         {"properties", {{"path", {{"type", "string"}, {"description", "Directory path to list"}}}}},
         {"required", {"path"}}};
-    t.execute = [safe_dir, read_only_paths](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr, read_only_paths](const json& args) -> Result<std::string> {
         auto raw = args.value("path", std::string());
-        auto resolved = resolve_path(raw, safe_dir, read_only_paths);
+        auto resolved = resolve_path(raw, *safe_dir_ptr, read_only_paths);
         if (!resolved) {
             return std::unexpected(resolved.error());
         }
@@ -194,7 +194,7 @@ static Tool make_list_files_tool(const std::string& safe_dir,
     return t;
 }
 
-static Tool make_read_file_lines_tool(const std::string& safe_dir,
+static Tool make_read_file_lines_tool(std::shared_ptr<std::string> safe_dir_ptr,
     const std::vector<std::string>& read_only_paths) {
     Tool t;
     t.name = "read_file_lines";
@@ -220,9 +220,9 @@ static Tool make_read_file_lines_tool(const std::string& safe_dir,
                         {"description",
                             "Maximum lines to return (default 200, max 500)"}}}}},
         {"required", {"path"}}};
-    t.execute = [safe_dir, read_only_paths](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr, read_only_paths](const json& args) -> Result<std::string> {
         auto raw = args.value("path", std::string());
-        auto resolved = resolve_path(raw, safe_dir, read_only_paths);
+        auto resolved = resolve_path(raw, *safe_dir_ptr, read_only_paths);
         if (!resolved) {
             return std::unexpected(resolved.error());
         }
@@ -300,7 +300,7 @@ static Tool make_read_file_lines_tool(const std::string& safe_dir,
     return t;
 }
 
-static Tool make_read_file_tool(const std::string& safe_dir,
+static Tool make_read_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
     const std::vector<std::string>& read_only_paths) {
     Tool t;
     t.name = "read_file";
@@ -319,9 +319,9 @@ static Tool make_read_file_tool(const std::string& safe_dir,
                         {"description",
                             "Maximum lines to read starting from offset (default 200)"}}}}},
         {"required", {"path"}}};
-    t.execute = [safe_dir, read_only_paths](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr, read_only_paths](const json& args) -> Result<std::string> {
         auto raw = args.value("path", std::string());
-        auto resolved = resolve_path(raw, safe_dir, read_only_paths);
+        auto resolved = resolve_path(raw, *safe_dir_ptr, read_only_paths);
         if (!resolved) {
             return std::unexpected(resolved.error());
         }
@@ -399,7 +399,7 @@ static bool is_gitignored(git_repository* repo,
 // grep_files
 // ===================================================================
 
-static Tool make_grep_files_tool(const std::string& safe_dir,
+static Tool make_grep_files_tool(std::shared_ptr<std::string> safe_dir_ptr,
     const std::vector<std::string>& read_only_paths,
     CancellationToken cancelled = nullptr) {
     Tool t;
@@ -413,14 +413,14 @@ static Tool make_grep_files_tool(const std::string& safe_dir,
                     {{"type", "string"},
                         {"description", "File or directory to search in (defaults to .)"}}}}},
         {"required", {"pattern"}}};
-    t.execute = [safe_dir, read_only_paths, cancelled](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr, read_only_paths, cancelled](const json& args) -> Result<std::string> {
         auto pattern = args.value("pattern", std::string());
         if (pattern.empty()) {
             return std::unexpected(std::string("pattern is required"));
         }
 
         auto raw_path = args.value("path", std::string("."));
-        auto resolved = resolve_path(raw_path, safe_dir, read_only_paths);
+        auto resolved = resolve_path(raw_path, *safe_dir_ptr, read_only_paths);
         if (!resolved) {
             return std::unexpected(resolved.error());
         }
@@ -510,7 +510,7 @@ static Tool make_grep_files_tool(const std::string& safe_dir,
     return t;
 }
 
-static Tool make_write_file_tool(const std::string& safe_dir) {
+static Tool make_write_file_tool(std::shared_ptr<std::string> safe_dir_ptr) {
     Tool t;
     t.name = "write_file";
     t.description = "Write content to a file, creating parent directories if needed";
@@ -519,11 +519,11 @@ static Tool make_write_file_tool(const std::string& safe_dir) {
             {{"path", {{"type", "string"}, {"description", "File path"}}},
                 {"content", {{"type", "string"}, {"description", "Content to write"}}}}},
         {"required", {"path", "content"}}};
-    t.execute = [safe_dir](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr](const json& args) -> Result<std::string> {
         auto raw = args.value("path", std::string());
         auto content = args.value("content", std::string());
 
-        auto resolved = resolve_path(raw, safe_dir);
+        auto resolved = resolve_path(raw, *safe_dir_ptr);
         if (!resolved) {
             return std::unexpected(resolved.error());
         }
@@ -546,7 +546,7 @@ static Tool make_write_file_tool(const std::string& safe_dir) {
     return t;
 }
 
-static Tool make_edit_file_tool(const std::string& safe_dir) {
+static Tool make_edit_file_tool(std::shared_ptr<std::string> safe_dir_ptr) {
     Tool t;
     t.name = "edit_file";
     t.description = "Edit a file by searching for an exact string and replacing it. "
@@ -567,7 +567,7 @@ static Tool make_edit_file_tool(const std::string& safe_dir) {
                     {{"type", "string"},
                         {"description", "String to replace the matched occurrence with"}}}}},
         {"required", {"path", "search", "replace"}}};
-    t.execute = [safe_dir](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr](const json& args) -> Result<std::string> {
         auto raw = args.value("path", std::string());
         auto search = args.value("search", std::string());
         auto replace = args.value("replace", std::string());
@@ -576,7 +576,7 @@ static Tool make_edit_file_tool(const std::string& safe_dir) {
             return std::unexpected(std::string("search string is required"));
         }
 
-        auto resolved = resolve_path(raw, safe_dir);
+        auto resolved = resolve_path(raw, *safe_dir_ptr);
         if (!resolved) {
             return std::unexpected(resolved.error());
         }
@@ -637,7 +637,7 @@ static Tool make_edit_file_tool(const std::string& safe_dir) {
     return t;
 }
 
-static Tool make_run_bash_tool(const std::string& safe_dir,
+static Tool make_run_bash_tool(std::shared_ptr<std::string> safe_dir_ptr,
     CancellationToken cancelled = nullptr) {
     Tool t;
     t.name = "run_bash";
@@ -648,7 +648,7 @@ static Tool make_run_bash_tool(const std::string& safe_dir,
         {"properties",
             {{"command", {{"type", "string"}, {"description", "Shell command to execute"}}}}},
         {"required", {"command"}}};
-    t.execute = [safe_dir, cancelled](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr, cancelled](const json& args) -> Result<std::string> {
         auto command = args.value("command", std::string());
         if (command.empty()) {
             return std::unexpected(std::string("command is required"));
@@ -677,8 +677,8 @@ static Tool make_run_bash_tool(const std::string& safe_dir,
 
             setpgid(0, 0); // new process group
 
-            if (!safe_dir.empty()) {
-                if (chdir(safe_dir.c_str()) != 0) {
+            if (!safe_dir_ptr->empty()) {
+                if (chdir(safe_dir_ptr->c_str()) != 0) {
                     static const char msg[] = "error: chdir() to safe directory failed\n";
                     write(STDOUT_FILENO, msg, sizeof(msg) - 1);
                     _exit(1);
@@ -1292,7 +1292,7 @@ static Tool make_web_fetch_tool(CancellationToken cancelled = nullptr) {
 // git_status tool
 // ===================================================================
 
-static Tool make_git_status_tool(const std::string& safe_dir) {
+static Tool make_git_status_tool(std::shared_ptr<std::string> safe_dir_ptr) {
     Tool t;
     t.name = "git_status";
     t.description =
@@ -1308,9 +1308,9 @@ static Tool make_git_status_tool(const std::string& safe_dir) {
         {"properties", json::object()},
         {"required", json::array()}};
 
-    t.execute = [safe_dir](const json& /*args*/) -> Result<std::string> {
+    t.execute = [safe_dir_ptr](const json& /*args*/) -> Result<std::string> {
         // Open repo
-        auto repo_res = open_git_repo(safe_dir);
+        auto repo_res = open_git_repo(*safe_dir_ptr);
         if (!repo_res) {
             return std::unexpected(repo_res.error());
         }
@@ -1390,7 +1390,7 @@ static Tool make_git_status_tool(const std::string& safe_dir) {
 // git_diff tool
 // ===================================================================
 
-static Tool make_git_diff_tool(const std::string& safe_dir) {
+static Tool make_git_diff_tool(std::shared_ptr<std::string> safe_dir_ptr) {
     Tool t;
     t.name = "git_diff";
     t.description =
@@ -1418,9 +1418,9 @@ static Tool make_git_diff_tool(const std::string& safe_dir) {
                             "Must be under the safe directory."}}}}},
         {"required", json::array()}};
 
-    t.execute = [safe_dir](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr](const json& args) -> Result<std::string> {
         // Open git repository
-        auto repo_res = open_git_repo(safe_dir);
+        auto repo_res = open_git_repo(*safe_dir_ptr);
         if (!repo_res) {
             return std::unexpected(repo_res.error());
         }
@@ -1433,7 +1433,7 @@ static Tool make_git_diff_tool(const std::string& safe_dir) {
 
         // Validate path if provided
         if (!filter_path.empty()) {
-            auto resolved = resolve_path(filter_path, safe_dir);
+            auto resolved = resolve_path(filter_path, *safe_dir_ptr);
             if (!resolved) {
                 return std::unexpected(resolved.error());
             }
@@ -1541,7 +1541,7 @@ static Tool make_git_diff_tool(const std::string& safe_dir) {
 // git_log tool
 // ===================================================================
 
-static Tool make_git_log_tool(const std::string& safe_dir) {
+static Tool make_git_log_tool(std::shared_ptr<std::string> safe_dir_ptr) {
     Tool t;
     t.name = "git_log";
     t.description =
@@ -1568,9 +1568,9 @@ static Tool make_git_log_tool(const std::string& safe_dir) {
                                    "Defaults to HEAD."}}}}},
         {"required", json::array()}};
 
-    t.execute = [safe_dir](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr](const json& args) -> Result<std::string> {
         // Open repo
-        auto repo_res = open_git_repo(safe_dir);
+        auto repo_res = open_git_repo(*safe_dir_ptr);
         if (!repo_res) {
             return std::unexpected(repo_res.error());
         }
@@ -1777,7 +1777,7 @@ static Tool make_git_log_tool(const std::string& safe_dir) {
 // git_add tool
 // ===================================================================
 
-static Tool make_git_add_tool(const std::string& safe_dir) {
+static Tool make_git_add_tool(std::shared_ptr<std::string> safe_dir_ptr) {
     Tool t;
     t.name = "git_add";
     t.description =
@@ -1811,12 +1811,12 @@ static Tool make_git_add_tool(const std::string& safe_dir) {
                         "Like 'git add -A'. Default false."}}}}},
         {"required", json::array()}};
 
-    t.execute = [safe_dir](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr](const json& args) -> Result<std::string> {
         // Serialize with other git index write operations
         std::lock_guard<std::mutex> lock(g_git_index_mutex);
 
         // Open git repository
-        auto repo_res = open_git_repo(safe_dir);
+        auto repo_res = open_git_repo(*safe_dir_ptr);
         if (!repo_res) {
             return std::unexpected(repo_res.error());
         }
@@ -1849,7 +1849,7 @@ static Tool make_git_add_tool(const std::string& safe_dir) {
         } else {
             // Helper lambda to resolve a path and stage it via git_index_add_bypath
             auto stage_single = [&](const std::string& path_str) -> Result<void> {
-                auto resolved = resolve_path(path_str, safe_dir);
+                auto resolved = resolve_path(path_str, *safe_dir_ptr);
                 if (!resolved) {
                     return std::unexpected(resolved.error());
                 }
@@ -1955,7 +1955,7 @@ static Tool make_git_add_tool(const std::string& safe_dir) {
 // git_commit tool
 // ===================================================================
 
-static Tool make_git_commit_tool(const std::string& safe_dir) {
+static Tool make_git_commit_tool(std::shared_ptr<std::string> safe_dir_ptr) {
     Tool t;
     t.name = "git_commit";
     t.description =
@@ -1976,7 +1976,7 @@ static Tool make_git_commit_tool(const std::string& safe_dir) {
                         "Like 'git commit -a'. Default false."}}}}},
         {"required", {"message"}}};
 
-    t.execute = [safe_dir](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr](const json& args) -> Result<std::string> {
         // Serialize with other git index write operations
         std::lock_guard<std::mutex> lock(g_git_index_mutex);
 
@@ -1988,7 +1988,7 @@ static Tool make_git_commit_tool(const std::string& safe_dir) {
         bool all = args.value("all", false);
 
         // Open git repository
-        auto repo_res = open_git_repo(safe_dir);
+        auto repo_res = open_git_repo(*safe_dir_ptr);
         if (!repo_res) {
             return std::unexpected(repo_res.error());
         }
@@ -2054,7 +2054,7 @@ static Tool make_git_commit_tool(const std::string& safe_dir) {
 // project_tree tool
 // ===================================================================
 
-static Tool make_project_tree_tool(const std::string& safe_dir,
+static Tool make_project_tree_tool(std::shared_ptr<std::string> safe_dir_ptr,
     const std::vector<std::string>& read_only_paths,
     CancellationToken cancelled = nullptr) {
     Tool t;
@@ -2079,9 +2079,9 @@ static Tool make_project_tree_tool(const std::string& safe_dir,
                     {{"type", "integer"},
                         {"description",
                             "Maximum output lines (default 500, max 500)"}}}}}};
-    t.execute = [safe_dir, read_only_paths, cancelled](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr, read_only_paths, cancelled](const json& args) -> Result<std::string> {
         auto raw = args.value("path", std::string("."));
-        auto resolved = resolve_path(raw, safe_dir, read_only_paths);
+        auto resolved = resolve_path(raw, *safe_dir_ptr, read_only_paths);
         if (!resolved) {
             return std::unexpected(resolved.error());
         }
@@ -2236,7 +2236,7 @@ static Tool make_project_tree_tool(const std::string& safe_dir,
 // delete_file
 // ===================================================================
 
-static Tool make_delete_file_tool(const std::string& safe_dir) {
+static Tool make_delete_file_tool(std::shared_ptr<std::string> safe_dir_ptr) {
     Tool t;
     t.name = "delete_file";
     t.description = "Delete a file";
@@ -2244,10 +2244,10 @@ static Tool make_delete_file_tool(const std::string& safe_dir) {
         {"properties",
             {{"path", {{"type", "string"}, {"description", "File path to delete"}}}}},
         {"required", {"path"}}};
-    t.execute = [safe_dir](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr](const json& args) -> Result<std::string> {
         auto raw = args.value("path", std::string());
 
-        auto resolved = resolve_path(raw, safe_dir);
+        auto resolved = resolve_path(raw, *safe_dir_ptr);
         if (!resolved) {
             return std::unexpected(resolved.error());
         }
@@ -2273,7 +2273,7 @@ static Tool make_delete_file_tool(const std::string& safe_dir) {
 // move_file
 // ===================================================================
 
-static Tool make_move_file_tool(const std::string& safe_dir) {
+static Tool make_move_file_tool(std::shared_ptr<std::string> safe_dir_ptr) {
     Tool t;
     t.name = "move_file";
     t.description = "Move or rename a file from source to destination. "
@@ -2284,7 +2284,7 @@ static Tool make_move_file_tool(const std::string& safe_dir) {
             {{"source", {{"type", "string"}, {"description", "Source file path"}}},
              {"destination", {{"type", "string"}, {"description", "Destination file path"}}}}},
         {"required", {"source", "destination"}}};
-    t.execute = [safe_dir](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr](const json& args) -> Result<std::string> {
         auto src_raw = args.value("source", std::string());
         auto dst_raw = args.value("destination", std::string());
 
@@ -2295,9 +2295,9 @@ static Tool make_move_file_tool(const std::string& safe_dir) {
             return std::unexpected(std::string("destination is required"));
         }
 
-        auto src = resolve_path(src_raw, safe_dir);
+        auto src = resolve_path(src_raw, *safe_dir_ptr);
         if (!src) return std::unexpected(src.error());
-        auto dst = resolve_path(dst_raw, safe_dir);
+        auto dst = resolve_path(dst_raw, *safe_dir_ptr);
         if (!dst) return std::unexpected(dst.error());
 
         std::error_code ec;
@@ -2348,7 +2348,7 @@ static Tool make_move_file_tool(const std::string& safe_dir) {
 // rename_file
 // ===================================================================
 
-static Tool make_rename_file_tool(const std::string& safe_dir) {
+static Tool make_rename_file_tool(std::shared_ptr<std::string> safe_dir_ptr) {
     Tool t;
     t.name = "rename_file";
     t.description =
@@ -2363,7 +2363,7 @@ static Tool make_rename_file_tool(const std::string& safe_dir) {
                      {"description",
                          "New filename (basename only, no '/' or '\\' allowed)"}}}}},
         {"required", {"path", "new_name"}}};
-    t.execute = [safe_dir](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr](const json& args) -> Result<std::string> {
         auto raw_path = args.value("path", std::string());
         auto new_name = args.value("new_name", std::string());
 
@@ -2380,7 +2380,7 @@ static Tool make_rename_file_tool(const std::string& safe_dir) {
                 "(no '/' or '\\' allowed)");
         }
 
-        auto resolved = resolve_path(raw_path, safe_dir);
+        auto resolved = resolve_path(raw_path, *safe_dir_ptr);
         if (!resolved) return std::unexpected(resolved.error());
 
         std::error_code ec;
@@ -2395,7 +2395,7 @@ static Tool make_rename_file_tool(const std::string& safe_dir) {
         auto destination = (parent / new_name).string();
 
         // Resolve destination to ensure it's within safe_dir
-        auto dst_resolved = resolve_path(destination, safe_dir);
+        auto dst_resolved = resolve_path(destination, *safe_dir_ptr);
         if (!dst_resolved) return std::unexpected(dst_resolved.error());
 
         if (std::filesystem::exists(*dst_resolved, ec)) {
@@ -2414,6 +2414,267 @@ static Tool make_rename_file_tool(const std::string& safe_dir) {
 }
 
 // ===================================================================
+// Safe recursive directory deletion (never follows symlinks)
+// ===================================================================
+
+/// Recursively delete \p dir without following any symlinks.
+/// Symlinks are removed with std::filesystem::remove() which unlinks only
+/// the symlink itself, never the target. Real directories are recursed into.
+static void remove_all_safe(const std::filesystem::path& dir) {
+    std::error_code ec;
+    std::filesystem::directory_iterator it(dir, ec);
+    if (ec) return;
+    for (const auto& entry : it) {
+        if (entry.is_symlink()) {
+            // remove() on a symlink unlinks only the symlink itself — safe.
+            std::filesystem::remove(entry.path(), ec);
+            ec.clear();
+        } else if (entry.is_directory(ec)) {
+            ec.clear();
+            remove_all_safe(entry.path());
+        } else {
+            std::filesystem::remove(entry.path(), ec);
+            ec.clear();
+        }
+    }
+    std::filesystem::remove(dir, ec);
+}
+
+// ===================================================================
+// Worktree state — shared mutable data between start_worktree and
+// stop_worktree for a single agent session.
+// ===================================================================
+
+struct WorktreeState {
+    std::string original_safe_dir;   // main repo path (to restore on stop)
+    std::string worktree_name;       // git worktree name
+    std::string worktree_path;       // filesystem path to the worktree
+    bool active = false;
+};
+
+/// Sanitize a branch name for use as a filesystem directory component.
+/// Replaces '/' and other problematic characters with '-'.
+static std::string sanitize_branch_name(const std::string& branch) {
+    std::string out;
+    out.reserve(branch.size());
+    for (char c : branch) {
+        if (c == '/' || c == '\\' || c == '\0' || c == '.' || c == ' ') {
+            out += '-';
+        } else {
+            out += c;
+        }
+    }
+    return out;
+}
+
+// ===================================================================
+// start_worktree tool
+// ===================================================================
+
+Tool make_start_worktree_tool(std::shared_ptr<std::string> safe_dir_ptr,
+    std::shared_ptr<std::string> worktree_base_ptr,
+    std::string original_repo_dir) {
+    auto state = std::make_shared<WorktreeState>();
+    state->original_safe_dir = std::move(original_repo_dir);
+
+    Tool t;
+    t.name = "start_worktree";
+    t.description =
+        "Create a git worktree at a temporary location and set the agent's "
+        "working directory to it. All subsequent file/git/bash tools operate "
+        "within this worktree until stop_worktree is called. "
+        "Multiple agents can each have their own active worktree in parallel. "
+        "Uses libgit2 directly (no git CLI).";
+    t.timeout_sec = 30;
+    t.parameters = {{"type", "object"},
+        {"properties",
+            {{"branch",
+                {{"type", "string"},
+                    {"description",
+                        "Branch name to create and check out in the worktree. "
+                        "If the branch doesn't exist, it is created from HEAD."}}},
+             {"base_path",
+                {{"type", "string"},
+                    {"description",
+                        "Optional override for the worktree base directory. "
+                        "Defaults to the WORKTREE_BASE env var or /tmp/cima."}}}}},
+        {"required", {"branch"}}};
+
+    t.execute = [safe_dir_ptr, worktree_base_ptr, state](const json& args) -> Result<std::string> {
+        if (state->active) {
+            return std::unexpected("A worktree is already active: " + state->worktree_path +
+                ". Call stop_worktree first.");
+        }
+
+        auto branch = args.value("branch", std::string());
+        if (branch.empty()) {
+            return std::unexpected("branch is required");
+        }
+
+        // Determine worktree path
+        std::string base = args.value("base_path", *worktree_base_ptr);
+        pid_t pid = getpid();
+        std::string sanitized = sanitize_branch_name(branch);
+        std::string wt_name = std::to_string(pid) + "-" + sanitized;
+        std::string wt_path = base + "/" + wt_name;
+
+        // Open the main repo
+        auto repo_res = open_git_repo(*safe_dir_ptr);
+        if (!repo_res) {
+            return std::unexpected(repo_res.error());
+        }
+        git_repository* repo = *repo_res;
+        auto repo_cleanup = std::unique_ptr<git_repository, decltype(&git_repository_free)>(
+            repo, git_repository_free);
+
+        // Look up or create the branch reference
+        git_reference* branch_ref = nullptr;
+        int err = git_branch_lookup(&branch_ref, repo, branch.c_str(), GIT_BRANCH_LOCAL);
+        if (err == GIT_ENOTFOUND) {
+            // Branch doesn't exist — create it from HEAD
+            git_commit* head_commit = nullptr;
+            err = git_revparse_single(reinterpret_cast<git_object**>(&head_commit),
+                repo, "HEAD^{commit}");
+            if (err) {
+                const git_error* e = git_error_last();
+                return std::unexpected("start_worktree: cannot resolve HEAD: " +
+                    (e ? std::string(e->message) : "unknown error"));
+            }
+            auto commit_cleanup = std::unique_ptr<git_commit, decltype(&git_commit_free)>(
+                head_commit, git_commit_free);
+
+            err = git_branch_create(&branch_ref, repo, branch.c_str(), head_commit, 0);
+            if (err) {
+                const git_error* e = git_error_last();
+                return std::unexpected("start_worktree: cannot create branch '" + branch + "': " +
+                    (e ? std::string(e->message) : "unknown error"));
+            }
+        } else if (err) {
+            const git_error* e = git_error_last();
+            return std::unexpected("start_worktree: error looking up branch '" + branch + "': " +
+                (e ? std::string(e->message) : "unknown error"));
+        }
+        auto branch_cleanup = std::unique_ptr<git_reference, decltype(&git_reference_free)>(
+            branch_ref, git_reference_free);
+
+        // Create the worktree
+        git_worktree* wt = nullptr;
+        git_worktree_add_options wt_opts = GIT_WORKTREE_ADD_OPTIONS_INIT;
+        wt_opts.ref = branch_ref;
+        wt_opts.lock = 1;            // lock immediately to prevent external pruning
+
+        err = git_worktree_add(&wt, repo, wt_name.c_str(), wt_path.c_str(), &wt_opts);
+        if (err) {
+            const git_error* e = git_error_last();
+            return std::unexpected("start_worktree: git_worktree_add failed: " +
+                (e ? std::string(e->message) : "unknown error"));
+        }
+        auto wt_cleanup = std::unique_ptr<git_worktree, decltype(&git_worktree_free)>(
+            wt, git_worktree_free);
+
+        // Store state
+        state->worktree_name = wt_name;
+        state->worktree_path = wt_path;
+        state->active = true;
+
+        // Switch the session's safe_dir to the worktree path
+        *safe_dir_ptr = wt_path;
+
+        return "Worktree created at " + wt_path + " on branch '" + branch +
+            "'. All tools now operate within this worktree. "
+            "Call stop_worktree to return to the main repository.";
+    };
+    return t;
+}
+
+// ===================================================================
+// stop_worktree tool
+// ===================================================================
+
+Tool make_stop_worktree_tool(std::shared_ptr<std::string> safe_dir_ptr,
+    std::string original_repo_dir) {
+    auto state = std::make_shared<WorktreeState>();
+    state->original_safe_dir = std::move(original_repo_dir);
+
+    Tool t;
+    t.name = "stop_worktree";
+    t.description =
+        "Stop the current worktree session and return to the main repository. "
+        "Cleans up the worktree directory and git worktree metadata. "
+        "After calling this, all tools operate on the original repository again.";
+    t.timeout_sec = 30;
+    t.parameters = {{"type", "object"},
+        {"properties", json::object()},
+        {"required", json::array()}};
+
+    t.execute = [safe_dir_ptr, state](const json& /*args*/) -> Result<std::string> {
+        if (!state->active) {
+            return std::unexpected("No worktree is currently active. "
+                "Call start_worktree first.");
+        }
+
+        // Open the main repo (safe_dir_ptr still points to worktree path,
+        // but git_repository_open_ext follows .git files so it finds the main repo)
+        auto repo_res = open_git_repo(*safe_dir_ptr);
+        if (!repo_res) {
+            return std::unexpected(repo_res.error());
+        }
+        git_repository* repo = *repo_res;
+        auto repo_cleanup = std::unique_ptr<git_repository, decltype(&git_repository_free)>(
+            repo, git_repository_free);
+
+        // Look up the worktree
+        git_worktree* wt = nullptr;
+        int err = git_worktree_lookup(&wt, repo, state->worktree_name.c_str());
+        if (err) {
+            const git_error* e = git_error_last();
+            return std::unexpected("stop_worktree: worktree lookup failed: " +
+                (e ? std::string(e->message) : "unknown error"));
+        }
+        auto wt_cleanup = std::unique_ptr<git_worktree, decltype(&git_worktree_free)>(
+            wt, git_worktree_free);
+
+        // Unlock the worktree (required before prune)
+        err = git_worktree_unlock(wt);
+        if (err && err != GIT_ELOCKED) {
+            const git_error* e = git_error_last();
+            return std::unexpected("stop_worktree: unlock failed: " +
+                (e ? std::string(e->message) : "unknown error"));
+        }
+
+        // Prune the git worktree metadata (.git/worktrees/<name>)
+        git_worktree_prune_options prune_opts = GIT_WORKTREE_PRUNE_OPTIONS_INIT;
+        prune_opts.flags = GIT_WORKTREE_PRUNE_VALID;
+        err = git_worktree_prune(wt, &prune_opts);
+        if (err) {
+            const git_error* e = git_error_last();
+            return std::unexpected("stop_worktree: prune failed: " +
+                (e ? std::string(e->message) : "unknown error"));
+        }
+
+        // Safely delete the worktree filesystem directory (never follows symlinks)
+        std::error_code ec;
+        if (std::filesystem::exists(state->worktree_path, ec)) {
+            remove_all_safe(state->worktree_path);
+        }
+
+        // Restore safe_dir to original repo
+        *safe_dir_ptr = state->original_safe_dir;
+
+        // Clear state
+        std::string wt_name = state->worktree_name;
+        std::string wt_path = state->worktree_path;
+        state->worktree_name.clear();
+        state->worktree_path.clear();
+        state->active = false;
+
+        return "Worktree '" + wt_name + "' at " + wt_path +
+            " has been cleaned up. Tools now operate on the main repository.";
+    };
+    return t;
+}
+
+// ===================================================================
 // ToolRegistry
 // ===================================================================
 
@@ -2424,30 +2685,43 @@ void ToolRegistry::add_defaults(const std::string& safe_dir,
     const std::string& search_api_key,
     const std::string& search_engine_id,
     const std::string& search_endpoint,
+    const std::string& worktree_base,
+    bool include_write) {
+    add_defaults(std::make_shared<std::string>(safe_dir),
+        read_only_paths, search_api_key, search_engine_id,
+        search_endpoint, worktree_base, include_write);
+}
+
+void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
+    const std::vector<std::string>& read_only_paths,
+    const std::string& search_api_key,
+    const std::string& search_engine_id,
+    const std::string& search_endpoint,
+    const std::string& worktree_base,
     bool include_write) {
     // ── Read-only tools (receive whitelist for extra path access) ──
     {
-        auto t = make_list_files_tool(safe_dir, read_only_paths);
+        auto t = make_list_files_tool(safe_dir_ptr, read_only_paths);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
     {
-        auto t = make_read_file_tool(safe_dir, read_only_paths);
+        auto t = make_read_file_tool(safe_dir_ptr, read_only_paths);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
     {
-        auto t = make_read_file_lines_tool(safe_dir, read_only_paths);
+        auto t = make_read_file_lines_tool(safe_dir_ptr, read_only_paths);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
     {
-        auto t = make_grep_files_tool(safe_dir, read_only_paths, cancelled_);
+        auto t = make_grep_files_tool(safe_dir_ptr, read_only_paths, cancelled_);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
     {
-        auto t = make_project_tree_tool(safe_dir, read_only_paths, cancelled_);
+        auto t = make_project_tree_tool(safe_dir_ptr, read_only_paths, cancelled_);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
@@ -2462,17 +2736,17 @@ void ToolRegistry::add_defaults(const std::string& safe_dir,
         add(std::move(t));
     }
     {
-        auto t = make_git_status_tool(safe_dir);
+        auto t = make_git_status_tool(safe_dir_ptr);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
     {
-        auto t = make_git_diff_tool(safe_dir);
+        auto t = make_git_diff_tool(safe_dir_ptr);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
     {
-        auto t = make_git_log_tool(safe_dir);
+        auto t = make_git_log_tool(safe_dir_ptr);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
@@ -2480,45 +2754,59 @@ void ToolRegistry::add_defaults(const std::string& safe_dir,
     // ── Write tools ──
     if (include_write) {
         {
-            auto t = make_write_file_tool(safe_dir);
+            auto t = make_write_file_tool(safe_dir_ptr);
             t.permission = ToolPermission::Write;
             add(std::move(t));
         }
         {
-            auto t = make_edit_file_tool(safe_dir);
+            auto t = make_edit_file_tool(safe_dir_ptr);
             t.permission = ToolPermission::Write;
             add(std::move(t));
         }
         {
-            auto t = make_run_bash_tool(safe_dir, cancelled_);
+            auto t = make_run_bash_tool(safe_dir_ptr, cancelled_);
             t.permission = ToolPermission::Write;
             add(std::move(t));
         }
         {
-            auto t = make_git_add_tool(safe_dir);
+            auto t = make_git_add_tool(safe_dir_ptr);
             t.permission = ToolPermission::Write;
             add(std::move(t));
         }
         {
-            auto t = make_git_commit_tool(safe_dir);
+            auto t = make_git_commit_tool(safe_dir_ptr);
             t.permission = ToolPermission::Write;
             add(std::move(t));
         }
         {
-            auto t = make_delete_file_tool(safe_dir);
+            auto t = make_delete_file_tool(safe_dir_ptr);
             t.permission = ToolPermission::Write;
             add(std::move(t));
         }
         {
-            auto t = make_move_file_tool(safe_dir);
+            auto t = make_move_file_tool(safe_dir_ptr);
             t.permission = ToolPermission::Write;
             add(std::move(t));
         }
         {
-            auto t = make_rename_file_tool(safe_dir);
+            auto t = make_rename_file_tool(safe_dir_ptr);
             t.permission = ToolPermission::Write;
             add(std::move(t));
         }
+    }
+
+    // ── Worktree tools (always included, Internal permission) ──
+    {
+        auto t = make_start_worktree_tool(safe_dir_ptr,
+            std::make_shared<std::string>(worktree_base),
+            *safe_dir_ptr);
+        t.permission = ToolPermission::Internal;
+        add(std::move(t));
+    }
+    {
+        auto t = make_stop_worktree_tool(safe_dir_ptr, *safe_dir_ptr);
+        t.permission = ToolPermission::Internal;
+        add(std::move(t));
     }
 }
 

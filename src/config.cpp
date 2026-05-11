@@ -54,6 +54,8 @@ Config Config::from_env() {
     cfg.search_engine_id = get_env("SEARCH_ENGINE_ID", "");
     cfg.search_endpoint = get_env("SEARCH_ENDPOINT", "");
 
+    cfg.worktree_base = get_env("WORKTREE_BASE", cfg.worktree_base);
+
     {
         const char* safe = std::getenv("SAFE_DIR");
         if (safe && safe[0]) {

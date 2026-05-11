@@ -27,6 +27,7 @@ struct Config {
     std::string search_api_key;
     std::string search_engine_id;
     std::string search_endpoint;
+    std::string worktree_base = "/tmp/cima";
     std::vector<std::string> read_only_paths;
     int max_tool_iterations = 100;
     int context_limit = 300000;       // model context window (tokens)

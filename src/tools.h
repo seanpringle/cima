@@ -47,11 +47,23 @@ class ToolRegistry {
     void set_cancelled(CancellationToken t) { cancelled_ = std::move(t); }
 
     void add(Tool tool);
+    void add_defaults(std::shared_ptr<std::string> safe_dir,
+        const std::vector<std::string>& read_only_paths = {},
+        const std::string& search_api_key = {},
+        const std::string& search_engine_id = {},
+        const std::string& search_endpoint = {},
+        const std::string& worktree_base = "/tmp/cima",
+        bool include_write = true);
+
+    // Convenience overload: accepts a plain string safe_dir (wraps in shared_ptr internally).
+    // Note: this creates a non-shared safe_dir — worktree tools won't be able to
+    // redirect the safe_dir. For tests and tools that don't need worktree support.
     void add_defaults(const std::string& safe_dir,
         const std::vector<std::string>& read_only_paths = {},
         const std::string& search_api_key = {},
         const std::string& search_engine_id = {},
         const std::string& search_endpoint = {},
+        const std::string& worktree_base = "/tmp/cima",
         bool include_write = true);
 
     json to_openai_tools() const;
@@ -70,3 +82,12 @@ class ToolRegistry {
     CancellationToken cancelled_;
     std::vector<Tool> tools_;
 };
+
+// ---------------------------------------------------------------------------
+// Worktree tool declarations
+// ---------------------------------------------------------------------------
+Tool make_start_worktree_tool(std::shared_ptr<std::string> safe_dir_ptr,
+    std::shared_ptr<std::string> worktree_base_ptr,
+    std::string original_repo_dir);
+Tool make_stop_worktree_tool(std::shared_ptr<std::string> safe_dir_ptr,
+    std::string original_repo_dir);
