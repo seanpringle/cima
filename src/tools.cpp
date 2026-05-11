@@ -140,6 +140,62 @@ static char status_char_for_workdir(unsigned int flags) {
 }
 
 // ===================================================================
+// get_current_git_branch
+// ===================================================================
+
+Result<std::string> get_current_git_branch(const std::string& repo_path) {
+    auto repo_res = open_git_repo(repo_path);
+    if (!repo_res) {
+        return std::unexpected(repo_res.error());
+    }
+    git_repository* repo = *repo_res;
+    auto cleanup = std::unique_ptr<git_repository, decltype(&git_repository_free)>(
+        repo, git_repository_free);
+
+    // Get HEAD reference
+    git_reference* head = nullptr;
+    int err = git_repository_head(&head, repo);
+    if (err != 0) {
+        if (err == GIT_EUNBORNBRANCH) {
+            return std::string("(unborn branch)");
+        }
+        if (err == GIT_ENOTFOUND) {
+            // No HEAD — empty repository
+            return std::unexpected(std::string("no commits yet"));
+        }
+        const git_error* e = git_error_last();
+        return std::unexpected(
+            "failed to get HEAD: " +
+            (e ? std::string(e->message) : std::string("unknown error")));
+    }
+    auto head_cleanup = std::unique_ptr<git_reference, decltype(&git_reference_free)>(
+        head, git_reference_free);
+
+    // Check if HEAD is a branch or detached
+    if (git_reference_is_branch(head)) {
+        const char* name = nullptr;
+        err = git_branch_name(&name, head);
+        if (err != 0 || !name) {
+            const git_error* e = git_error_last();
+            return std::unexpected(
+                "failed to get branch name: " +
+                (e ? std::string(e->message) : std::string("unknown error")));
+        }
+        return std::string(name);
+    }
+
+    // Detached HEAD — show short commit hash
+    const git_oid* oid = git_reference_target(head);
+    if (!oid) {
+        return std::string("(detached HEAD)");
+    }
+    char hex[GIT_OID_HEXSZ + 1];
+    git_oid_tostr(hex, sizeof(hex), oid);
+    hex[7] = '\0'; // short hash (7 chars)
+    return std::string("(detached HEAD at ") + hex + ")";
+}
+
+// ===================================================================
 // Tool helpers
 // ===================================================================
 
@@ -2787,9 +2843,21 @@ Tool make_stop_worktree_tool(std::shared_ptr<std::string> safe_dir_ptr,
             }
         }
 
-        // Check if the branch is merged into HEAD (unless forced)
+        // Check if the branch is merged into the main repo's HEAD (unless forced).
+        // NOTE: we open a SEPARATE repo from the original safe dir here, because
+        // the worktree repo has HEAD pointing to the worktree branch itself
+        // (e.g. "testing"), so the merge check would always succeed.
+        // Opening from original_safe_dir gives the main repository HEAD (e.g. "master").
         if (!force && !state->branch_name.empty()) {
-            auto merged = is_branch_merged(repo, state->branch_name);
+            auto main_repo_res = open_git_repo(state->original_safe_dir);
+            if (!main_repo_res) {
+                return std::unexpected("stop_worktree: " + main_repo_res.error());
+            }
+            git_repository* main_repo = *main_repo_res;
+            auto main_repo_cleanup = std::unique_ptr<git_repository, decltype(&git_repository_free)>(
+                main_repo, git_repository_free);
+
+            auto merged = is_branch_merged(main_repo, state->branch_name);
             if (!merged) {
                 return std::unexpected("stop_worktree: " + merged.error());
             }
