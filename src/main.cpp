@@ -13,7 +13,7 @@ int main(int argc, char* argv[]) {
         std::string arg = argv[i];
         if (arg == "--help" || arg == "-h") {
             std::cout
-                << "Usage: llm-chat [--model <name>] [--api-base <url>]\n\n"
+                << "Usage: cima [--model <name>] [--api-base <url>]\n\n"
                 << "Environment variables:\n"
                 << "  LLM_API / API_BASE   API endpoint (default: http://127.0.0.1:11000/v1)\n"
                 << "  LLM_KEY / API_KEY   API key (optional)\n"

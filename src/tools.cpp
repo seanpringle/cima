@@ -826,7 +826,7 @@ static Result<std::pair<std::string, long>> http_get(const std::string& url, int
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, static_cast<long>(timeout_sec));
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "llm-chat/0.1");
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "cima/0.1");
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
     // Use system default CA bundle — do NOT set a custom CA path so that
@@ -1063,7 +1063,7 @@ static Tool make_web_search_tool(const std::string& api_key,
         curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
         curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
         curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
-        curl_easy_setopt(curl, CURLOPT_USERAGENT, "llm-chat/0.1");
+        curl_easy_setopt(curl, CURLOPT_USERAGENT, "cima/0.1");
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
         curl_easy_setopt(curl, CURLOPT_CAINFO, nullptr);
@@ -1196,7 +1196,7 @@ static Tool make_web_fetch_tool(CancellationToken cancelled = nullptr) {
         curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
         curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
         curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
-        curl_easy_setopt(curl, CURLOPT_USERAGENT, "llm-chat/0.1");
+        curl_easy_setopt(curl, CURLOPT_USERAGENT, "cima/0.1");
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
         curl_easy_setopt(curl, CURLOPT_CAINFO, nullptr);

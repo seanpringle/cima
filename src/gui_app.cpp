@@ -21,7 +21,7 @@ int gui_main(Config cfg) {
     }
 
     SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_RESIZABLE);
-    SDL_Window* window = SDL_CreateWindow("llm-chat", 1280, 720, window_flags);
+    SDL_Window* window = SDL_CreateWindow("cima", 1280, 720, window_flags);
     if (!window) {
         SDL_Log("SDL_CreateWindow error: %s", SDL_GetError());
         SDL_Quit();
@@ -154,7 +154,7 @@ int gui_main(Config cfg) {
         // ── main window ──
         SetNextWindowPos(ImVec2(0, 0));
         SetNextWindowSize(GetIO().DisplaySize);
-        Begin("llm-chat",
+        Begin("cima",
             nullptr,
             ImGuiWindowFlags_NoTitleBar |
                 ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |

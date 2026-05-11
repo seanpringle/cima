@@ -66,7 +66,7 @@ static CURL* setup_curl(
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPIDLE, 60L);
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPINTVL, 30L);
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "llm-chat/0.1");
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "cima/0.1");
     curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2TLS);
 
     // Enable SSL/TLS verification when using HTTPS.
@@ -141,7 +141,7 @@ Result<std::string> ChatClient::http_get(const std::string& url) {
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "llm-chat/0.1");
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "cima/0.1");
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
     curl_easy_setopt(curl, CURLOPT_CAINFO, nullptr);

@@ -13,7 +13,7 @@ namespace fs = std::filesystem;
 // ===================================================================
 
 static std::string make_temp_dir() {
-    char tmpl[] = "/tmp/llmchat_test_XXXXXX";
+    char tmpl[] = "/tmp/cima_test_XXXXXX";
     char* result = mkdtemp(tmpl);
     REQUIRE(result != nullptr);
     return result;

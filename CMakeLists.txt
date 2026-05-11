@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(llm-chat VERSION 0.1.0 LANGUAGES CXX)
+project(cima VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -30,14 +30,14 @@ if(PkgConfig_FOUND)
 endif()
 if(MD4C_FOUND)
     message(STATUS "Found md4c: ${MD4C_LIBRARIES}")
-    add_library(llmchat_md4c INTERFACE IMPORTED)
-    target_include_directories(llmchat_md4c INTERFACE ${MD4C_INCLUDE_DIRS})
-    target_link_libraries(llmchat_md4c INTERFACE ${MD4C_LIBRARIES})
+    add_library(cima_md4c INTERFACE IMPORTED)
+    target_include_directories(cima_md4c INTERFACE ${MD4C_INCLUDE_DIRS})
+    target_link_libraries(cima_md4c INTERFACE ${MD4C_LIBRARIES})
 else()
     find_library(MD4C_LIB md4c REQUIRED)
     message(STATUS "Found md4c (find_library): ${MD4C_LIB}")
-    add_library(llmchat_md4c INTERFACE IMPORTED)
-    target_link_libraries(llmchat_md4c INTERFACE ${MD4C_LIB})
+    add_library(cima_md4c INTERFACE IMPORTED)
+    target_link_libraries(cima_md4c INTERFACE ${MD4C_LIB})
 endif()
 # ────────────────────────────────────────────────────────────────────────
 
@@ -53,11 +53,11 @@ endif()
 
 if(LIBGIT2_FOUND)
     message(STATUS "Found libgit2 (pkg-config): ${LIBGIT2_LIBRARIES}")
-    add_library(llmchat_git2 INTERFACE IMPORTED)
-    target_include_directories(llmchat_git2 INTERFACE ${LIBGIT2_INCLUDE_DIRS})
-    target_link_libraries(llmchat_git2 INTERFACE ${LIBGIT2_LIBRARIES})
+    add_library(cima_git2 INTERFACE IMPORTED)
+    target_include_directories(cima_git2 INTERFACE ${LIBGIT2_INCLUDE_DIRS})
+    target_link_libraries(cima_git2 INTERFACE ${LIBGIT2_LIBRARIES})
     if(LIBGIT2_LINK_LIBRARIES)
-        target_link_libraries(llmchat_git2 INTERFACE ${LIBGIT2_LINK_LIBRARIES})
+        target_link_libraries(cima_git2 INTERFACE ${LIBGIT2_LINK_LIBRARIES})
     endif()
 else()
     include(FetchContent)
@@ -74,12 +74,12 @@ else()
     FetchContent_MakeAvailable(libgit2)
 
     message(STATUS "libgit2 fetched from upstream")
-    if(NOT TARGET llmchat_git2)
-        add_library(llmchat_git2 INTERFACE IMPORTED)
+    if(NOT TARGET cima_git2)
+        add_library(cima_git2 INTERFACE IMPORTED)
         if(TARGET Git2::git2)
-            target_link_libraries(llmchat_git2 INTERFACE Git2::git2)
+            target_link_libraries(cima_git2 INTERFACE Git2::git2)
         elseif(TARGET libgit2::libgit2)
-            target_link_libraries(llmchat_git2 INTERFACE libgit2::libgit2)
+            target_link_libraries(cima_git2 INTERFACE libgit2::libgit2)
         else()
             message(FATAL_ERROR "libgit2 fetched but no expected target found (Git2::git2 or libgit2::libgit2)")
         endif()
@@ -87,7 +87,7 @@ else()
 endif()
 # ────────────────────────────────────────────────────────────────────
 
-add_library(llmchat
+add_library(cima_core
     src/config.cpp
     src/types.cpp
     src/tools.cpp
@@ -95,14 +95,14 @@ add_library(llmchat
     src/chat.cpp
     src/plan.cpp
 )
-target_include_directories(llmchat PUBLIC src)
-target_link_libraries(llmchat PUBLIC
+target_include_directories(cima_core PUBLIC src)
+target_link_libraries(cima_core PUBLIC
     nlohmann_json::nlohmann_json
     CURL::libcurl
-    llmchat_git2
+    cima_git2
 )
 
-add_executable(llm-chat
+add_executable(cima
     src/main.cpp
     src/gui_app.cpp
     src/gui_chat.cpp
@@ -113,25 +113,25 @@ add_executable(llm-chat
     ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp
     ${imgui_SOURCE_DIR}/backends/imgui_impl_sdlrenderer3.cpp
 )
-target_include_directories(llm-chat PRIVATE ${imgui_SOURCE_DIR})
-target_include_directories(llm-chat PRIVATE ${imgui_SOURCE_DIR}/backends)
-target_compile_definitions(llm-chat PRIVATE IMGUI_USE_WCHAR32=1)
-target_link_libraries(llm-chat PRIVATE llmchat SDL3::SDL3 llmchat_md4c)
+target_include_directories(cima PRIVATE ${imgui_SOURCE_DIR})
+target_include_directories(cima PRIVATE ${imgui_SOURCE_DIR}/backends)
+target_compile_definitions(cima PRIVATE IMGUI_USE_WCHAR32=1)
+target_link_libraries(cima PRIVATE cima_core SDL3::SDL3 cima_md4c)
 
 add_executable(test_config tests/test_config.cpp)
-target_link_libraries(test_config PRIVATE llmchat Catch2::Catch2WithMain)
+target_link_libraries(test_config PRIVATE cima_core Catch2::Catch2WithMain)
 
 add_executable(test_types tests/test_types.cpp)
-target_link_libraries(test_types PRIVATE llmchat Catch2::Catch2WithMain)
+target_link_libraries(test_types PRIVATE cima_core Catch2::Catch2WithMain)
 
 add_executable(test_tools tests/test_tools.cpp)
-target_link_libraries(test_tools PRIVATE llmchat Catch2::Catch2WithMain)
+target_link_libraries(test_tools PRIVATE cima_core Catch2::Catch2WithMain)
 
 add_executable(test_client tests/test_client.cpp)
-target_link_libraries(test_client PRIVATE llmchat Catch2::Catch2WithMain)
+target_link_libraries(test_client PRIVATE cima_core Catch2::Catch2WithMain)
 
 add_executable(test_chat tests/test_chat.cpp)
-target_link_libraries(test_chat PRIVATE llmchat Catch2::Catch2WithMain)
+target_link_libraries(test_chat PRIVATE cima_core Catch2::Catch2WithMain)
 
 include(CTest)
 include(Catch)
