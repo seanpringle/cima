@@ -40,8 +40,8 @@ struct Config {
         "All of commonmark and github tables supported, but generally prefer lists over tables.\n"
         "\n"
         "You have access to a markdown Plan document visible to the user."
-        " Always start a task by researching the user's instructions and writing your Plan document."
-        " Wait until the user is happy with the Plan document and gives an explicit go-ahead before starting implementation.\n"
+        " ALWAYS start a task by researching the user's instructions and writing your Plan document."
+        " DO NOT start iplementation until the user is happy with the Plan document and gives an explicit go-ahead.\n"
     ;
 
     static Config from_env();
