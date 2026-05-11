@@ -41,6 +41,8 @@ struct ChatUIState {
     bool models_fetched = false;     // true once the fetch actually completed
     std::string models_error;
 
+    // Tracks the async model-fetch so we can wait for completion before tab close
+    std::future<void> models_future;
 };
 
 struct TabInfo {

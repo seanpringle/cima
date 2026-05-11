@@ -178,6 +178,11 @@ int gui_main(Config cfg) {
                     }
                     tab.chat_state->running = false;
                 }
+                // Wait for any outstanding model-fetch to complete before
+                // destroying the tab's ChatUIState / ChatSession
+                if (tab.ui_state.models_future.valid()) {
+                    tab.ui_state.models_future.wait();
+                }
                 tabs.erase(tabs.begin() + active_tab);
                 if (active_tab >= (int)tabs.size())
                     active_tab = (int)tabs.size() - 1;
@@ -246,6 +251,11 @@ int gui_main(Config cfg) {
                             }
                             tab.chat_state->running = false;
                         }
+                        // Wait for any outstanding model-fetch to complete before
+                        // destroying the tab's ChatUIState / ChatSession
+                        if (tab.ui_state.models_future.valid()) {
+                            tab.ui_state.models_future.wait();
+                        }
                         tabs.erase(tabs.begin() + ti);
                         if (active_tab >= (int)tabs.size())
                             active_tab = (int)tabs.size() - 1;
@@ -286,6 +296,11 @@ int gui_main(Config cfg) {
                 try { tab.chat_state->future.get(); } catch (...) {}
             }
             tab.chat_state->running = false;
+        }
+        // Wait for any outstanding model-fetch to complete before destroying
+        // the tab's ChatUIState / ChatSession (use-after-free prevention)
+        if (tab.ui_state.models_future.valid()) {
+            tab.ui_state.models_future.wait();
         }
     }
 

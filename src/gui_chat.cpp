@@ -584,8 +584,10 @@ void render_chat_ui(TabInfo& tab, bool& done) {
     // ── Fetch models on first render ──
     if (!ui.models_loaded) {
         ui.models_loaded = true;
-        // Fire off an async fetch so the UI stays responsive
-        std::thread([&ui, &session]() {
+        // Fire off an async fetch so the UI stays responsive.
+        // Use a packaged_task so we can track completion via the future
+        // and wait for it before destroying the tab (prevents use-after-free).
+        std::packaged_task<void()> task([&ui, &session]() {
             auto result = session.client_for_models().fetch_models();
             if (result) {
                 ui.available_models = std::move(*result);
@@ -593,7 +595,9 @@ void render_chat_ui(TabInfo& tab, bool& done) {
                 ui.models_error = std::move(result.error());
             }
             ui.models_fetched = true;
-        }).detach();
+        });
+        ui.models_future = task.get_future();
+        std::thread(std::move(task)).detach();
     }
 
     // ── Model combo selector ──
