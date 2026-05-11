@@ -106,6 +106,7 @@ int gui_main(Config cfg) {
     std::vector<TabInfo> tabs;
     int next_tab_id = 0;
     int active_tab = 0;
+    int focus_tab_id = -1;
 
     auto add_tab = [&](const std::string& model_name) {
         TabInfo tab;
@@ -162,6 +163,33 @@ int gui_main(Config cfg) {
                 ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
                 ImGuiWindowFlags_NoBringToFrontOnFocus);
 
+        // ── Global keyboard shortcuts ──
+        // Ctrl+T: open a new tab and switch to it
+        if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_T, ImGuiInputFlags_RouteGlobal)) {
+            focus_tab_id = next_tab_id;
+            add_tab(cfg.model);
+        }
+        // Ctrl+W: close the active tab
+        if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_W, ImGuiInputFlags_RouteGlobal)) {
+            if (tabs.size() > 1 && active_tab >= 0 && active_tab < (int)tabs.size()) {
+                auto& tab = tabs[active_tab];
+                if (tab.chat_state->running) {
+                    g_interrupted = true;
+                    if (tab.chat_state->future.valid()) {
+                        tab.chat_state->future.wait();
+                        try { tab.chat_state->future.get(); } catch (...) {}
+                    }
+                    tab.chat_state->running = false;
+                    g_interrupted = false;
+                }
+                tabs.erase(tabs.begin() + active_tab);
+                if (active_tab >= (int)tabs.size())
+                    active_tab = (int)tabs.size() - 1;
+                if (active_tab < 0)
+                    active_tab = 0;
+            }
+        }
+
         // ── Left panel (40%) with Plan + Right panel (60%) with tabs ──
         {
             // Left panel: Plan document
@@ -202,7 +230,12 @@ int gui_main(Config cfg) {
                     }
 
                     PushID(tab.id);
-                    if (BeginTabItem(tab_label.c_str(), can_close ? &is_open : nullptr, ImGuiTabItemFlags_None)) {
+                    ImGuiTabItemFlags tab_flags = ImGuiTabItemFlags_None;
+                    if (tab.id == focus_tab_id) {
+                        tab_flags |= ImGuiTabItemFlags_SetSelected;
+                        focus_tab_id = -1;
+                    }
+                    if (BeginTabItem(tab_label.c_str(), can_close ? &is_open : nullptr, tab_flags)) {
                         active_tab = ti;
                         // Render the active chat UI for this tab
                         render_chat_ui(tab, done);
@@ -229,13 +262,6 @@ int gui_main(Config cfg) {
                         continue; // Don't increment ti — we just erased
                     }
                     ti++;
-                }
-
-                // ── Add tab button (+) ──
-                // Use a dummy tab item for the "+" button
-                if (BeginTabItem("+##add_tab", nullptr, ImGuiTabItemFlags_Trailing | ImGuiTabItemFlags_NoTooltip)) {
-                    add_tab(cfg.model);
-                    EndTabItem();
                 }
 
                 EndTabBar();
