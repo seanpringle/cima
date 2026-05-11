@@ -2492,12 +2492,7 @@ Tool make_start_worktree_tool(std::shared_ptr<std::string> safe_dir_ptr,
                 {{"type", "string"},
                     {"description",
                         "Branch name to create and check out in the worktree. "
-                        "If the branch doesn't exist, it is created from HEAD."}}},
-             {"base_path",
-                {{"type", "string"},
-                    {"description",
-                        "Optional override for the worktree base directory. "
-                        "Defaults to the WORKTREE_BASE env var or /tmp/cima."}}}}},
+                        "If the branch doesn't exist, it is created from HEAD."}}}}},
         {"required", {"branch"}}};
 
     t.execute = [safe_dir_ptr, worktree_base_ptr, state](const json& args) -> Result<std::string> {
@@ -2511,12 +2506,19 @@ Tool make_start_worktree_tool(std::shared_ptr<std::string> safe_dir_ptr,
             return std::unexpected("branch is required");
         }
 
-        // Determine worktree path
-        std::string base = args.value("base_path", *worktree_base_ptr);
+        // Determine worktree path (always under worktree_base)
         pid_t pid = getpid();
         std::string sanitized = sanitize_branch_name(branch);
         std::string wt_name = std::to_string(pid) + "-" + sanitized;
-        std::string wt_path = base + "/" + wt_name;
+        std::string wt_path = *worktree_base_ptr + "/" + wt_name;
+
+        // Ensure the base directory exists
+        std::error_code ec;
+        std::filesystem::create_directories(*worktree_base_ptr, ec);
+        if (ec) {
+            return std::unexpected("start_worktree: cannot create base directory '" +
+                *worktree_base_ptr + "': " + ec.message());
+        }
 
         // Open the main repo
         auto repo_res = open_git_repo(*safe_dir_ptr);
