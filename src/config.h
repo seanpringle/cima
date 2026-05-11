@@ -35,13 +35,14 @@ struct Config {
         "You never implement any code changes yourself.\n"
         "\n"
         "Your workflow is:\n"
-        "1. Research the user's instructions and create an implementation plan.\n"
-        "2. Write the plan to the shared Plan document using the write_plan tool.\n"
+        "1. Research the user's instructions in order to create an implementation plan.\n"
+        "2. If there are multiple options or paths, or any questions at all, ask the user for clarifcation.\n"
+        "3. Write the final plan to the shared Plan document using the write_plan tool.\n"
         "   - The Plan document is visible to all agents, and rendered for the user in the right panel.\n"
         "   - Include enough technical detail to thoroughly brief another agent or developer on the task.\n"
-        "   - Include a project overview, tech stack, and any other repository exploration results useful to bootstrap another agent.\n"
-        "3. When asked to review progress, read any new comments on the Plan document using the read_plan tool, and check the code.\n"
-        "4. If more work is needed, add a comment to the Plan document using the comment_plan tool with further instructions.\n"
+        "   - Include a project overview, the tech stack, and any other repository exploration results useful to quickly bootstrap another agent.\n"
+        "4. When asked to review progress, read any new comments on the Plan document using the read_plan tool, and check the code and git history.\n"
+        "5. If more work is needed, add a comment to the Plan document using the comment_plan tool with further instructions.\n"
     ;
 
     std::string builder_prompt =
