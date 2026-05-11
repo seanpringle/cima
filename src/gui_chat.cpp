@@ -583,15 +583,6 @@ void render_chat_ui(TabInfo& tab, bool& done) {
         PushFont(ui.mono_font);
 
     // ── toolbar ──
-    if (Button("Clear")) {
-        session.clear();
-        ui.entries.clear();
-    }
-    SameLine();
-    if (Button("Compact")) {
-        session.compact();
-        ui.entries.push_back({EntryType::Content, "[\u2302 compaction]", false, ui.next_seq++});
-    }
     // ── Fetch models on first render ──
     if (!ui.models_loaded) {
         ui.models_loaded = true;
@@ -609,14 +600,12 @@ void render_chat_ui(TabInfo& tab, bool& done) {
 
     // ── Model combo selector ──
     {
-        SameLine();
-        SetNextItemWidth(200);
-
         // Build a preview string (current model or fallback)
         std::string preview = session.model();
         if (preview.empty()) preview = "(select model)";
 
         PushID("model_combo");
+        SetNextItemWidth(GetContentRegionAvail().x*0.3f);
         if (BeginCombo("##model", preview.c_str(), ImGuiComboFlags_HeightLarge)) {
             // Show a loading indicator if models haven't arrived yet
             if (!ui.models_fetched) {
@@ -645,12 +634,9 @@ void render_chat_ui(TabInfo& tab, bool& done) {
         PopID();
     }
 
-    // ── Raw popup toggle ──
+    // ── Raw / Markdown toggle ──
     SameLine();
-    if (Button("Raw")) {
-        ui.show_raw_popup = true;
-        std::cout << "Raw" << std::endl;
-    }
+    Checkbox("Raw", &ui.show_raw);
 
     // ── token usage indicator ──
     {
@@ -686,39 +672,55 @@ void render_chat_ui(TabInfo& tab, bool& done) {
 
         stringstream ss;
 
-        switch (entry.type) {
-        case EntryType::UserText:
-            PushStyleColor(ImGuiCol_Text, IM_COL32(100, 180, 255, 255));
-            PushTextWrapPos(0);
-            ss << "You: " << entry.text;
-            TextUnformatted(ss.str().c_str());
-            NewLine();
-            PopTextWrapPos();
-            PopStyleColor();
-            break;
-        case EntryType::Reasoning:
-            PushStyleColor(ImGuiCol_Text, IM_COL32(160, 160, 160, 255));
-            render_content("Thinking: " + entry.text);
-            PopStyleColor();
-            break;
-        case EntryType::Content:
-            PushStyleColor(ImGuiCol_Text, GetColorU32(ImGuiCol_Text));
-            render_content(entry.text);
-            PopStyleColor();
-            break;
-        case EntryType::ToolCall:
-            PushStyleColor(ImGuiCol_Text, IM_COL32(255, 165, 0, 255));
-            PushTextWrapPos(0);
-            text_unformatted_ellipsis(entry.text);
-            for (;
-                i + 1 < ui.entries.size() && ui.entries[i + 1].type == EntryType::ToolCall;
-                i++) {
-                text_unformatted_ellipsis(ui.entries[i + 1].text);
+        if (ui.show_raw) {
+            // ── Raw text mode ──
+            const char* prefix = "";
+            switch (entry.type) {
+            case EntryType::UserText:    prefix = "[You] "; break;
+            case EntryType::Reasoning:   prefix = "[Reasoning] "; break;
+            case EntryType::Content:     prefix = "[Assistant] "; break;
+            case EntryType::ToolCall:    prefix = "[Tool] "; break;
             }
-            NewLine();
+            PushTextWrapPos(0);
+            ss << prefix << entry.text;
+            TextUnformatted(ss.str().c_str());
             PopTextWrapPos();
-            PopStyleColor();
-            break;
+        } else {
+            // ── Pretty markdown mode ──
+            switch (entry.type) {
+            case EntryType::UserText:
+                PushStyleColor(ImGuiCol_Text, IM_COL32(100, 180, 255, 255));
+                PushTextWrapPos(0);
+                ss << "You: " << entry.text;
+                TextUnformatted(ss.str().c_str());
+                NewLine();
+                PopTextWrapPos();
+                PopStyleColor();
+                break;
+            case EntryType::Reasoning:
+                PushStyleColor(ImGuiCol_Text, IM_COL32(160, 160, 160, 255));
+                render_content("Thinking: " + entry.text);
+                PopStyleColor();
+                break;
+            case EntryType::Content:
+                PushStyleColor(ImGuiCol_Text, GetColorU32(ImGuiCol_Text));
+                render_content(entry.text);
+                PopStyleColor();
+                break;
+            case EntryType::ToolCall:
+                PushStyleColor(ImGuiCol_Text, IM_COL32(255, 165, 0, 255));
+                PushTextWrapPos(0);
+                text_unformatted_ellipsis(entry.text);
+                for (;
+                    i + 1 < ui.entries.size() && ui.entries[i + 1].type == EntryType::ToolCall;
+                    i++) {
+                    text_unformatted_ellipsis(ui.entries[i + 1].text);
+                }
+                NewLine();
+                PopTextWrapPos();
+                PopStyleColor();
+                break;
+            }
         }
 
         PopID();
@@ -754,6 +756,10 @@ void render_chat_ui(TabInfo& tab, bool& done) {
     if (ui.mono_font)
         PushFont(ui.mono_font);
 
+    if (!running_snapshot && IsWindowAppearing()) {
+        SetKeyboardFocusHere();
+    }
+
     if (InputTextMultiline("##input",
             ui.input_buf,
             sizeof(ui.input_buf),
@@ -763,8 +769,16 @@ void render_chat_ui(TabInfo& tab, bool& done) {
         string input(ui.input_buf);
         ui.input_buf[0] = '\0';
         if (!input.empty()) {
-            ui.entries.push_back({EntryType::UserText, input, false, ui.next_seq++});
-            start_chat(chat, session, std::move(input));
+            if (input == "/clear") {
+                session.clear();
+                ui.entries.clear();
+            } else if (input == "/compact") {
+                session.compact();
+                ui.entries.push_back({EntryType::Content, "[\u2302 compaction]", false, ui.next_seq++});
+            } else {
+                ui.entries.push_back({EntryType::UserText, input, false, ui.next_seq++});
+                start_chat(chat, session, std::move(input));
+            }
         }
     }
 
@@ -775,52 +789,7 @@ void render_chat_ui(TabInfo& tab, bool& done) {
 }
 
 void render_chat_overlay(TabInfo& tab, bool& done) {
-    auto& ui = tab.ui_state;
-
-    // ── Raw popup ──
-    if (ui.show_raw_popup) {
-        string raw_title = "Raw##" + std::to_string(tab.id);
-        SetNextWindowPos(ImVec2(200, 200), ImGuiCond_Once);
-        SetNextWindowSize(ImVec2(600, 400), ImGuiCond_Once);
-        //SetNextWindowFocus();
-        if (Begin(raw_title.c_str(), &ui.show_raw_popup)) {
-            PushFont(ui.mono_font);
-            PushStyleColor(ImGuiCol_Text, IM_COL32(180, 180, 180, 255));
-
-            size_t ri = 0;
-
-            if (ui.entries.size() > 30) {
-                ri = ui.entries.size() - 30;
-                TextWrapped("%d old entries", int(ri));
-                Separator();
-            }
-
-            for (; ri < ui.entries.size(); ri++) {
-                const auto& entry = ui.entries[ri];
-                const char* prefix = "";
-                switch (entry.type) {
-                case EntryType::UserText:
-                    prefix = "[You] ";
-                    break;
-                case EntryType::Reasoning:
-                    prefix = "[Reasoning] ";
-                    break;
-                case EntryType::Content:
-                    prefix = "[Assistant] ";
-                    break;
-                case EntryType::ToolCall:
-                    prefix = "[Tool] ";
-                    break;
-                }
-                PushTextWrapPos(0);
-                stringstream ss;
-                ss << prefix << entry.text;
-                TextUnformatted(ss.str().c_str());
-                PopTextWrapPos();
-            }
-            PopStyleColor();
-            PopFont();
-        }
-        End();
-    }
+    (void)tab;
+    (void)done;
+    // No longer used — raw viewing is now a checkbox toggle in the main chat UI.
 }

@@ -32,7 +32,7 @@ struct ChatUIState {
     char title_buf[256] = {};
     ImFont* mono_font = nullptr;
     int next_seq = 1;
-    bool show_raw_popup = false;
+    bool show_raw = false;
 
     // Available models from the endpoint (populated by fetch_models)
     std::vector<std::string> available_models;
