@@ -111,20 +111,16 @@ TEST_CASE("ToolAccumulator multiple parallel tool calls", "[types][toolacc]") {
     auto calls = acc.finalize();
     REQUIRE(calls.size() == 2);
 
-    // Order by index
-    auto* c0 = &calls[0];
-    auto* c1 = &calls[1];
-    if (calls[0].index != 0) {
-        std::swap(c0, c1);
-    }
+    // finalize() returns calls sorted by index
+    CHECK(calls[0].index == 0);
+    CHECK(calls[0].id == "call_1");
+    CHECK(calls[0].name == "list_files");
+    CHECK(calls[0].arguments == R"({"path": "/tmp"})");
 
-    CHECK(c0->id == "call_1");
-    CHECK(c0->name == "list_files");
-    CHECK(c0->arguments == R"({"path": "/tmp"})");
-
-    CHECK(c1->id == "call_2");
-    CHECK(c1->name == "read_file");
-    CHECK(c1->arguments == R"({"path": "/etc/hosts"})");
+    CHECK(calls[1].index == 1);
+    CHECK(calls[1].id == "call_2");
+    CHECK(calls[1].name == "read_file");
+    CHECK(calls[1].arguments == R"({"path": "/etc/hosts"})");
 }
 
 // ========================================================================

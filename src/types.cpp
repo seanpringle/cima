@@ -1,5 +1,6 @@
 #include "types.h"
 
+#include <algorithm>
 #include <unordered_set>
 
 // ---------------------------------------------------------------------------
@@ -151,6 +152,10 @@ std::vector<ToolCall> ToolAccumulator::finalize() const {
     for (const auto& [idx, tc] : calls_) {
         result.push_back(tc);
     }
+    std::sort(result.begin(), result.end(),
+              [](const ToolCall& a, const ToolCall& b) {
+                  return a.index < b.index;
+              });
     return result;
 }
 
