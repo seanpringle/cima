@@ -2484,6 +2484,8 @@ Tool make_start_worktree_tool(std::shared_ptr<std::string> safe_dir_ptr,
         "working directory to it. All subsequent file/git/bash tools operate "
         "within this worktree until stop_worktree is called. "
         "Multiple agents can each have their own active worktree in parallel. "
+        "Each agent must use a unique branch name — if the branch is already "
+        "checked out in another worktree, the tool will fail with a clear error. "
         "Uses libgit2 directly (no git CLI).";
     t.timeout_sec = 30;
     t.parameters = {{"type", "object"},
@@ -2568,8 +2570,16 @@ Tool make_start_worktree_tool(std::shared_ptr<std::string> safe_dir_ptr,
         err = git_worktree_add(&wt, repo, wt_name.c_str(), wt_path.c_str(), &wt_opts);
         if (err) {
             const git_error* e = git_error_last();
-            return std::unexpected("start_worktree: git_worktree_add failed: " +
-                (e ? std::string(e->message) : "unknown error"));
+            std::string msg = e ? e->message : "unknown error";
+            // Detect "branch already checked out elsewhere" — common cross-agent issue
+            if (msg.find("already checked out") != std::string::npos ||
+                msg.find("already exists") != std::string::npos) {
+                msg += "\n\nThe branch '" + branch +
+                    "' is already checked out in another worktree. "
+                    "Each agent needs its own branch name. "
+                    "Use a different branch name and try again.";
+            }
+            return std::unexpected("start_worktree: git_worktree_add failed: " + msg);
         }
         auto wt_cleanup = std::unique_ptr<git_worktree, decltype(&git_worktree_free)>(
             wt, git_worktree_free);
@@ -2714,36 +2724,34 @@ Tool make_stop_worktree_tool(std::shared_ptr<std::string> safe_dir_ptr,
             }
         }
 
-        // Look up the worktree
+        // Look up the worktree (may have been removed by another agent or manually)
         git_worktree* wt = nullptr;
         int err = git_worktree_lookup(&wt, repo, state->worktree_name.c_str());
-        if (err) {
-            const git_error* e = git_error_last();
-            return std::unexpected("stop_worktree: worktree lookup failed: " +
-                (e ? std::string(e->message) : "unknown error"));
-        }
-        auto wt_cleanup = std::unique_ptr<git_worktree, decltype(&git_worktree_free)>(
-            wt, git_worktree_free);
+        if (err == 0 && wt) {
+            auto wt_cleanup = std::unique_ptr<git_worktree, decltype(&git_worktree_free)>(
+                wt, git_worktree_free);
 
-        // Unlock the worktree (required before prune)
-        err = git_worktree_unlock(wt);
-        if (err && err != GIT_ELOCKED) {
-            const git_error* e = git_error_last();
-            return std::unexpected("stop_worktree: unlock failed: " +
-                (e ? std::string(e->message) : "unknown error"));
-        }
+            // Unlock the worktree (required before prune)
+            err = git_worktree_unlock(wt);
+            if (err && err != GIT_ELOCKED) {
+                const git_error* e = git_error_last();
+                return std::unexpected("stop_worktree: unlock failed: " +
+                    (e ? std::string(e->message) : "unknown error"));
+            }
 
-        // Prune the git worktree metadata (.git/worktrees/<name>)
-        git_worktree_prune_options prune_opts = GIT_WORKTREE_PRUNE_OPTIONS_INIT;
-        prune_opts.flags = GIT_WORKTREE_PRUNE_VALID;
-        err = git_worktree_prune(wt, &prune_opts);
-        if (err) {
-            const git_error* e = git_error_last();
-            return std::unexpected("stop_worktree: prune failed: " +
-                (e ? std::string(e->message) : "unknown error"));
+            // Prune the git worktree metadata (.git/worktrees/<name>)
+            git_worktree_prune_options prune_opts = GIT_WORKTREE_PRUNE_OPTIONS_INIT;
+            prune_opts.flags = GIT_WORKTREE_PRUNE_VALID;
+            err = git_worktree_prune(wt, &prune_opts);
+            if (err) {
+                const git_error* e = git_error_last();
+                return std::unexpected("stop_worktree: prune failed: " +
+                    (e ? std::string(e->message) : "unknown error"));
+            }
         }
 
         // Safely delete the worktree filesystem directory (never follows symlinks)
+        // Even if git metadata was already removed, clean up the filesystem.
         std::error_code ec;
         if (std::filesystem::exists(state->worktree_path, ec)) {
             remove_all_safe(state->worktree_path);
