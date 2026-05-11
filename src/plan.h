@@ -1,15 +1,14 @@
 #pragma once
 
 #include "tools.h"
-#include <mutex>
 #include <string>
 #include <vector>
 
-// PlanBoard — global singleton, thread-safe, in-memory plan document storage.
+// PlanBoard — per-session plan document storage.
 // Holds a single plan markdown body plus an append-only list of comments.
 class PlanBoard {
   public:
-    static PlanBoard& instance();
+    PlanBoard() = default;
 
     PlanBoard(const PlanBoard&) = delete;
     PlanBoard& operator=(const PlanBoard&) = delete;
@@ -26,13 +25,11 @@ class PlanBoard {
     Result<void> comment_plan(const std::string& markdown);
 
   private:
-    PlanBoard() = default;
-    mutable std::mutex mutex_;
     std::string plan_;
     std::vector<std::string> comments_;
 };
 
-// Tool factory declarations
-Tool make_write_plan_tool();
-Tool make_read_plan_tool();
-Tool make_comment_plan_tool();
+// Tool factory declarations — each takes a PlanBoard reference to operate on.
+Tool make_write_plan_tool(PlanBoard& board);
+Tool make_read_plan_tool(PlanBoard& board);
+Tool make_comment_plan_tool(PlanBoard& board);

@@ -3,20 +3,10 @@
 #include <sstream>
 
 // ===================================================================
-// PlanBoard singleton
-// ===================================================================
-
-PlanBoard& PlanBoard::instance() {
-    static PlanBoard board;
-    return board;
-}
-
-// ===================================================================
 // PlanBoard operations
 // ===================================================================
 
 Result<void> PlanBoard::write_plan(const std::string& markdown) {
-    std::lock_guard<std::mutex> lock(mutex_);
     plan_ = markdown;
     // Clear comments when a new plan is written
     comments_.clear();
@@ -24,7 +14,6 @@ Result<void> PlanBoard::write_plan(const std::string& markdown) {
 }
 
 Result<std::string> PlanBoard::read_plan() const {
-    std::lock_guard<std::mutex> lock(mutex_);
     if (plan_.empty()) {
         return std::string("(empty plan)");
     }
@@ -49,7 +38,6 @@ Result<void> PlanBoard::comment_plan(const std::string& markdown) {
         return std::unexpected(std::string("comment must not be empty"));
     }
 
-    std::lock_guard<std::mutex> lock(mutex_);
     comments_.push_back(markdown);
     return {};
 }
@@ -58,11 +46,11 @@ Result<void> PlanBoard::comment_plan(const std::string& markdown) {
 // Tool: write_plan
 // ===================================================================
 
-Tool make_write_plan_tool() {
+Tool make_write_plan_tool(PlanBoard& board) {
     Tool t;
     t.name = "write_plan";
     t.description =
-        "Write the shared Plan document. This completely replaces the plan "
+        "Write the Plan document. This completely replaces the plan "
         "body (comments are preserved separately). Use this from the Planner "
         "to document the implementation plan for the Builder.";
     t.permission = ToolPermission::Write;
@@ -73,9 +61,9 @@ Tool make_write_plan_tool() {
                     {"description",
                         "Markdown content of the plan"}}}}},
         {"required", {"markdown"}}};
-    t.execute = [](const json& args) -> Result<std::string> {
+    t.execute = [&board](const json& args) -> Result<std::string> {
         auto markdown = args.value("markdown", std::string());
-        auto result = PlanBoard::instance().write_plan(markdown);
+        auto result = board.write_plan(markdown);
         if (!result) {
             return std::unexpected(result.error());
         }
@@ -88,16 +76,16 @@ Tool make_write_plan_tool() {
 // Tool: read_plan
 // ===================================================================
 
-Tool make_read_plan_tool() {
+Tool make_read_plan_tool(PlanBoard& board) {
     Tool t;
     t.name = "read_plan";
     t.description =
-        "Read the shared Plan document (plan body + comments). "
+        "Read the Plan document (plan body + comments). "
         "Returns a markdown document with the plan and any comments.";
     t.permission = ToolPermission::ReadOnly;
     t.parameters = {{"type", "object"}, {"properties", json::object()}, {"required", json::array()}};
-    t.execute = [](const json& /*args*/) -> Result<std::string> {
-        return PlanBoard::instance().read_plan();
+    t.execute = [&board](const json& /*args*/) -> Result<std::string> {
+        return board.read_plan();
     };
     return t;
 }
@@ -106,7 +94,7 @@ Tool make_read_plan_tool() {
 // Tool: comment_plan
 // ===================================================================
 
-Tool make_comment_plan_tool() {
+Tool make_comment_plan_tool(PlanBoard& board) {
     Tool t;
     t.name = "comment_plan";
     t.description =
@@ -121,9 +109,9 @@ Tool make_comment_plan_tool() {
                     {"description",
                         "Markdown comment to append to the plan"}}}}},
         {"required", {"comment"}}};
-    t.execute = [](const json& args) -> Result<std::string> {
+    t.execute = [&board](const json& args) -> Result<std::string> {
         auto comment = args.value("comment", std::string());
-        auto result = PlanBoard::instance().comment_plan(comment);
+        auto result = board.comment_plan(comment);
         if (!result) {
             return std::unexpected(result.error());
         }

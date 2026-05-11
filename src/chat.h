@@ -2,6 +2,7 @@
 
 #include "client.h"
 #include "config.h"
+#include "plan.h"
 #include "tools.h"
 #include "types.h"
 
@@ -37,6 +38,10 @@ class ChatSession {
     void set_output_callback(OutputCallback cb) { output_cb_ = std::move(cb); }
     const Usage& last_usage() const { return last_usage_; }
 
+    // Each session has its own PlanBoard (not shared across agents).
+    PlanBoard& plan() { return plan_; }
+    const PlanBoard& plan() const { return plan_; }
+
     // Expose the underlying client so the GUI can call fetch_models() etc.
     ChatClient& client_for_models() { return client_; }
 
@@ -52,6 +57,7 @@ class ChatSession {
     int max_iterations_ = 100;  // overridden by config.max_tool_iterations
     size_t context_limit_;
     size_t compact_threshold_;
+    PlanBoard plan_;
     Conversation conversation_;
     ChatClient client_;
     CancellationToken cancelled_;

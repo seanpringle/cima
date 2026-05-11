@@ -197,13 +197,17 @@ int gui_main(Config cfg) {
             BeginChild("##plan_panel", ImVec2(GetContentRegionAvail().x * 0.4f, GetContentRegionAvail().y), true, ImGuiChildFlags_None);
             Text("Plan");
             Separator();
-            auto plan_result = PlanBoard::instance().read_plan();
-            if (plan_result) {
-                if (mono_font)
-                    PushFont(mono_font);
-                render_content(*plan_result);
-                if (mono_font)
-                    PopFont();
+            if (active_tab >= 0 && active_tab < (int)tabs.size()) {
+                auto plan_result = tabs[active_tab].session->plan().read_plan();
+                if (plan_result) {
+                    if (mono_font)
+                        PushFont(mono_font);
+                    render_content(*plan_result);
+                    if (mono_font)
+                        PopFont();
+                } else {
+                    TextDisabled("(empty plan)");
+                }
             } else {
                 TextDisabled("(empty plan)");
             }

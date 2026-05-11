@@ -39,8 +39,8 @@ struct Config {
         "Use markdown with a neat, clear layout for all output. Be concise.\n"
         "All of commonmark and github tables supported, but generally prefer lists over tables.\n"
         "\n"
-        "You have access to a markdown Plan document shared with other agents and the user."
-        " If the user asks you to \"plan\" something they want you to research the subject and generate the shared Plan document."
+        "You have access to a markdown Plan document visible to the user."
+        " If the user asks you to \"plan\" something, research the subject and write the Plan document."
         " Wait until the user is happy with the Plan document and gives an explicit go-ahead before starting implementation.\n"
     ;
 

@@ -23,10 +23,10 @@ ChatSession::ChatSession(Config config, CancellationToken cancelled)
         config.search_engine_id, config.search_endpoint,
         config.worktree_base, /*include_write=*/true);
 
-    // All sessions get all plan tools
-    tools_.add(make_write_plan_tool());
-    tools_.add(make_read_plan_tool());
-    tools_.add(make_comment_plan_tool());
+    // Each session gets its own plan tools tied to its PlanBoard
+    tools_.add(make_write_plan_tool(plan_));
+    tools_.add(make_read_plan_tool(plan_));
+    tools_.add(make_comment_plan_tool(plan_));
 
     // Wire up the summary callback for compaction
     conversation_.set_summary_callback(
