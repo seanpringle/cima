@@ -2590,6 +2590,73 @@ Tool make_start_worktree_tool(std::shared_ptr<std::string> safe_dir_ptr,
 }
 
 // ===================================================================
+// Check for uncommitted changes in the worktree
+// Returns a non-empty string describing changes if any exist, or empty
+// if the worktree is clean.
+// ===================================================================
+
+/// Check whether there are uncommitted changes in the worktree at \p repo_dir.
+/// Returns a human-readable summary of changes, or an empty string if clean.
+static Result<std::string> check_worktree_dirty(git_repository* repo) {
+    git_status_options opts = GIT_STATUS_OPTIONS_INIT;
+    opts.flags = GIT_STATUS_OPT_INCLUDE_UNTRACKED
+               | GIT_STATUS_OPT_RECURSE_UNTRACKED_DIRS
+               | GIT_STATUS_OPT_SORT_CASE_SENSITIVELY
+               | GIT_STATUS_OPT_EXCLUDE_SUBMODULES;
+
+    std::vector<std::string> entries;
+    const int max_entries = 50;
+
+    struct CbPayload {
+        std::vector<std::string>* out;
+        int max;
+    };
+    CbPayload payload{&entries, max_entries};
+
+    auto cb = [](const char* path, unsigned int status_flags, void* data) -> int {
+        auto* p = static_cast<CbPayload*>(data);
+        if (static_cast<int>(p->out->size()) >= p->max)
+            return 1; // abort iteration
+
+        // Skip ignored files
+        if (status_flags & GIT_STATUS_IGNORED)
+            return 0;
+
+        // Only report actual non-clean entries
+        if (status_flags & (GIT_STATUS_INDEX_NEW | GIT_STATUS_INDEX_MODIFIED |
+                            GIT_STATUS_INDEX_DELETED | GIT_STATUS_INDEX_RENAMED |
+                            GIT_STATUS_INDEX_TYPECHANGE |
+                            GIT_STATUS_WT_NEW | GIT_STATUS_WT_MODIFIED |
+                            GIT_STATUS_WT_DELETED | GIT_STATUS_WT_RENAMED |
+                            GIT_STATUS_WT_TYPECHANGE |
+                            GIT_STATUS_CONFLICTED)) {
+            p->out->push_back(path ? path : "(unknown)");
+        }
+        return 0;
+    };
+
+    int err = git_status_foreach_ext(repo, &opts, cb, &payload);
+    if (err < 0 && err != GIT_EUSER) {
+        const git_error* e = git_error_last();
+        return std::unexpected("failed to check worktree status: " +
+            (e ? std::string(e->message) : "unknown error"));
+    }
+
+    if (entries.empty())
+        return std::string(); // clean
+
+    // Build summary
+    std::string summary = std::to_string(entries.size()) + " uncommitted change(s):\n";
+    for (const auto& e : entries) {
+        summary += "  - " + e + "\n";
+    }
+    if (entries.size() >= static_cast<size_t>(max_entries)) {
+        summary += "  ...(truncated)\n";
+    }
+    return summary;
+}
+
+// ===================================================================
 // stop_worktree tool
 // ===================================================================
 
@@ -2601,17 +2668,27 @@ Tool make_stop_worktree_tool(std::shared_ptr<std::string> safe_dir_ptr,
     t.description =
         "Stop the current worktree session and return to the main repository. "
         "Cleans up the worktree directory and git worktree metadata. "
-        "After calling this, all tools operate on the original repository again.";
+        "After calling this, all tools operate on the original repository again.\n"
+        "If the worktree has uncommitted changes, the tool will refuse unless "
+        "`force` is set to true.\n"
+        "Use `force: true` to discard uncommitted changes and proceed.";
     t.timeout_sec = 30;
     t.parameters = {{"type", "object"},
-        {"properties", json::object()},
+        {"properties",
+            {{"force",
+                {{"type", "boolean"},
+                    {"description",
+                        "If true, discard uncommitted changes and stop the worktree "
+                        "even if it is dirty. Default false."}}}}},
         {"required", json::array()}};
 
-    t.execute = [safe_dir_ptr, state](const json& /*args*/) -> Result<std::string> {
+    t.execute = [safe_dir_ptr, state](const json& args) -> Result<std::string> {
         if (!state->active) {
             return std::unexpected("No worktree is currently active. "
                 "Call start_worktree first.");
         }
+
+        bool force = args.value("force", false);
 
         // Open the main repo (safe_dir_ptr still points to worktree path,
         // but git_repository_open_ext follows .git files so it finds the main repo)
@@ -2622,6 +2699,20 @@ Tool make_stop_worktree_tool(std::shared_ptr<std::string> safe_dir_ptr,
         git_repository* repo = *repo_res;
         auto repo_cleanup = std::unique_ptr<git_repository, decltype(&git_repository_free)>(
             repo, git_repository_free);
+
+        // Check for uncommitted changes (unless forced)
+        if (!force) {
+            auto dirty = check_worktree_dirty(repo);
+            if (!dirty) {
+                return std::unexpected("stop_worktree: " + dirty.error());
+            }
+            if (!dirty->empty()) {
+                return std::unexpected(
+                    "stop_worktree: worktree has uncommitted changes.\n" +
+                    *dirty +
+                    "Use stop_worktree with {\"force\": true} to discard them and proceed.");
+            }
+        }
 
         // Look up the worktree
         git_worktree* wt = nullptr;
