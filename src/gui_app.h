@@ -34,6 +34,12 @@ struct ChatUIState {
     int next_seq = 1;
     bool show_raw_popup = false;
 
+    // Available models from the endpoint (populated by fetch_models)
+    std::vector<std::string> available_models;
+    bool models_loaded = false;      // true once the initial fetch has been attempted
+    bool models_fetched = false;     // true once the fetch actually completed
+    std::string models_error;
+
 };
 
 struct TabInfo {

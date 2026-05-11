@@ -28,6 +28,9 @@ class ChatClient {
     // Returns 0 if the endpoint doesn't expose it (caller should use a default).
     int fetch_model_context_limit(const std::string& model);
 
+    // Query /v1/models and return the list of model IDs (empty on error).
+    Result<std::vector<std::string>> fetch_models();
+
     const std::string& last_raw_response() const { return raw_response_; }
     std::string url() const { return api_base_ + "/chat/completions"; }
     std::string models_url() const { return api_base_ + "/models"; }

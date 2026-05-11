@@ -37,6 +37,9 @@ class ChatSession {
     void set_output_callback(OutputCallback cb) { output_cb_ = std::move(cb); }
     const Usage& last_usage() const { return last_usage_; }
 
+    // Expose the underlying client so the GUI can call fetch_models() etc.
+    ChatClient& client_for_models() { return client_; }
+
   private:
     std::string model_;
     std::string reasoning_effort_;

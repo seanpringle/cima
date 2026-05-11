@@ -25,8 +25,12 @@ struct Config {
     int compact_threshold = 90;        // % that triggers compaction
 
     std::string system_prompt =
-        "You are an AI coding assistant with access to tools for file editing, git operations,\n"
-        "web search, and a shared Plan document. Use markdown for your output. Be concise.\n"
+        "You are an AI coding assistant.\n"
+        "Use neat concise markdown for your output. Commonmark and github tables supported.\n"
+        "\n"
+        "You have access to a markdown Plan document shared with other agents and the user."
+        " If the user asks you to \"plan\" something they want you to research the subject and generate the shared Plan document."
+        " Wait until the user is happy with the Plan document and gives an explicit go-ahead before starting implementation.\n"
     ;
 
     static Config from_env();

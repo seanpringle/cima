@@ -235,6 +235,32 @@ int ChatClient::fetch_model_context_limit(const std::string& model) {
     return 0;
 }
 
+// ── Fetch available models from /v1/models ──
+Result<std::vector<std::string>> ChatClient::fetch_models() {
+    auto body = http_get(models_url());
+    if (!body) {
+        return std::unexpected(body.error());
+    }
+
+    json j;
+    try {
+        j = json::parse(*body);
+    } catch (const json::parse_error& e) {
+        return std::unexpected(std::string("JSON parse error: ") + e.what());
+    }
+
+    std::vector<std::string> models;
+    if (j.is_object() && j.contains("data") && j["data"].is_array()) {
+        for (const auto& entry : j["data"]) {
+            if (entry.is_object() && entry.contains("id") && entry["id"].is_string()) {
+                models.push_back(entry["id"].get<std::string>());
+            }
+        }
+    }
+
+    return models;
+}
+
 Result<json> ChatClient::chat(const json& payload) {
     std::string payload_str = payload.dump();
     std::string body;

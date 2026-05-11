@@ -10,6 +10,8 @@
 #include <iostream>
 #include <md4c.h>
 #include <string>
+#include <future>
+#include <thread>
 
 using namespace ImGui;
 using std::string;
@@ -590,15 +592,57 @@ void render_chat_ui(TabInfo& tab, bool& done) {
         session.compact();
         ui.entries.push_back({EntryType::Content, "[\u2302 compaction]", false, ui.next_seq++});
     }
-    SameLine();
-    SetNextItemWidth(150);
-    PushID("model_input");
-    bool model_changed = InputText("##model", ui.model_buf, sizeof(ui.model_buf),
-        ImGuiInputTextFlags_EnterReturnsTrue);
-    PopID();
-    SameLine();
-    if (Button("Model") || model_changed) {
-        session.set_model(ui.model_buf);
+    // ── Fetch models on first render ──
+    if (!ui.models_loaded) {
+        ui.models_loaded = true;
+        // Fire off an async fetch so the UI stays responsive
+        std::thread([&ui, &session]() {
+            auto result = session.client_for_models().fetch_models();
+            if (result) {
+                ui.available_models = std::move(*result);
+            } else {
+                ui.models_error = std::move(result.error());
+            }
+            ui.models_fetched = true;
+        }).detach();
+    }
+
+    // ── Model combo selector ──
+    {
+        SameLine();
+        SetNextItemWidth(200);
+
+        // Build a preview string (current model or fallback)
+        std::string preview = session.model();
+        if (preview.empty()) preview = "(select model)";
+
+        PushID("model_combo");
+        if (BeginCombo("##model", preview.c_str(), ImGuiComboFlags_HeightLarge)) {
+            // Show a loading indicator if models haven't arrived yet
+            if (!ui.models_fetched) {
+                TextDisabled("Loading models...");
+            } else if (!ui.models_error.empty()) {
+                TextColored(ImColor(IM_COL32(255,100,100,255)), "Error: %s", ui.models_error.c_str());
+            } else if (ui.available_models.empty()) {
+                TextDisabled("(no models returned)");
+            } else {
+                for (const auto& m : ui.available_models) {
+                    bool is_selected = (m == session.model());
+                    if (Selectable(m.c_str(), is_selected)) {
+                        session.set_model(m);
+                        // Sync the model_buf so it stays in sync
+                        strncpy(ui.model_buf, m.c_str(), sizeof(ui.model_buf) - 1);
+                        // Update the tab title to reflect the new model
+                        tab.title = m;
+                    }
+                    if (is_selected) {
+                        SetItemDefaultFocus();
+                    }
+                }
+            }
+            EndCombo();
+        }
+        PopID();
     }
 
     // ── Raw popup toggle ──
