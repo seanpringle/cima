@@ -110,10 +110,8 @@ int gui_main(Config cfg) {
         TabInfo tab;
         tab.id = next_tab_id++;
         tab.title = model_name;
-        tab.session = std::make_unique<ChatSession>(cfg);
         tab.chat_state = std::make_unique<AsyncChatState>();
-        // Wire up the per-tab cancellation token
-        tab.session->set_cancelled(tab.chat_state->cancelled);
+        tab.session = std::make_unique<ChatSession>(cfg, tab.chat_state->cancelled);
         tab.ui_state.mono_font = mono_font;
         strncpy(tab.ui_state.title_buf, tab.title.c_str(), sizeof(tab.ui_state.title_buf) - 1);
         strncpy(tab.ui_state.model_buf, tab.session->model().c_str(),

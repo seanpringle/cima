@@ -5,7 +5,7 @@
 #include <mutex>
 #include <unordered_map>
 
-ChatSession::ChatSession(Config config)
+ChatSession::ChatSession(Config config, CancellationToken cancelled)
     : model_(std::move(config.model)), reasoning_effort_(std::move(config.reasoning_effort)),
       safe_dir_(std::move(config.safe_dir)),
       api_key_(config.api_key),
@@ -14,7 +14,7 @@ ChatSession::ChatSession(Config config)
       compact_threshold_(static_cast<size_t>(config.compact_threshold)),
       conversation_(config.system_prompt),
       client_(std::move(config.api_base), std::move(config.api_key)),
-      cancelled_(make_cancellation_token()) {
+      cancelled_(cancelled ? std::move(cancelled) : make_cancellation_token()) {
     // Share the cancellation token with tools and client
     tools_.set_cancelled(cancelled_);
     client_.set_cancelled(cancelled_);

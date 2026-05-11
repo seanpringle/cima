@@ -22,7 +22,7 @@ using OutputCallback = std::function<void(const std::string& text, OutputType ty
 
 class ChatSession {
   public:
-    explicit ChatSession(Config config);
+    explicit ChatSession(Config config, CancellationToken cancelled = nullptr);
 
     ChatSession(const ChatSession&) = delete;
     ChatSession& operator=(const ChatSession&) = delete;
@@ -39,13 +39,6 @@ class ChatSession {
 
     // Expose the underlying client so the GUI can call fetch_models() etc.
     ChatClient& client_for_models() { return client_; }
-
-    // Set the cancellation token for this session.
-    void set_cancelled(CancellationToken t) {
-        cancelled_ = std::move(t);
-        tools_.set_cancelled(cancelled_);
-        client_.set_cancelled(cancelled_);
-    }
 
   private:
     std::string model_;

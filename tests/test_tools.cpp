@@ -2501,4 +2501,32 @@ TEST_CASE("rename_file directory rejected", "[tools][rename_file]") {
     fs::remove_all(sd);
 }
 
+// ===================================================================
+// Cancellation token interrupts project_tree
+// ===================================================================
+
+TEST_CASE("project_tree interrupted by cancelled token", "[tools][cancellation]") {
+    auto sd = make_temp_dir();
+    // Create a deep directory tree so the traversal takes enough time to
+    // be interrupted.
+    for (int i = 0; i < 50; i++) {
+        fs::create_directories(sd + "/sub" + std::to_string(i) + "/a/b/c");
+    }
+
+    auto token = make_cancellation_token();
+    *token = true;  // pre-cancel
+
+    ToolRegistry reg;
+    reg.set_cancelled(token);
+    reg.add_defaults(sd);
+
+    auto result = reg.execute("project_tree", R"({"path": ".", "max_depth": 10})");
+    REQUIRE(result);
+    // The tool should have been interrupted early and appended the
+    // "(interrupted)" marker.
+    CHECK(result->find("(interrupted)") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
 

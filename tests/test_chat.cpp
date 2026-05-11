@@ -323,3 +323,31 @@ TEST_CASE("ChatSession clear preserves model and system", "[chat]") {
     REQUIRE(result);
     CHECK(result->content == "ok");
 }
+
+// ===================================================================
+// Cancellation token passed to constructor cancels requests
+// ===================================================================
+
+TEST_CASE("ChatSession cancelled token aborts request", "[chat]") {
+    auto token = make_cancellation_token();
+    *token = true;  // pre-cancel
+
+    MockServer server(
+        [](const std::string&) -> std::string {
+            return make_content_sse("Hello!");
+        },
+        true);
+
+    Config cfg;
+    cfg.api_base = server.base_url();
+    cfg.model = "test";
+    cfg.system_prompt = "test";
+    cfg.safe_dir = "/tmp";
+
+    ChatSession session(std::move(cfg), token);
+    auto result = session.run_once("Say hi");
+    CHECK_FALSE(result);
+    // curl should abort the request because the progress callback sees the
+    // cancelled token
+    CHECK(result.error().find("curl error") != std::string::npos);
+}

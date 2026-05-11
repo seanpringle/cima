@@ -413,8 +413,7 @@ static Tool make_grep_files_tool(const std::string& safe_dir,
                     {{"type", "string"},
                         {"description", "File or directory to search in (defaults to .)"}}}}},
         {"required", {"pattern"}}};
-    auto cancelled_ptr = cancelled ? &*cancelled : nullptr;
-    t.execute = [safe_dir, read_only_paths, cancelled_ptr](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir, read_only_paths, cancelled](const json& args) -> Result<std::string> {
         auto pattern = args.value("pattern", std::string());
         if (pattern.empty()) {
             return std::unexpected(std::string("pattern is required"));
@@ -481,7 +480,7 @@ static Tool make_grep_files_tool(const std::string& safe_dir,
                 *resolved, std::filesystem::directory_options::skip_permission_denied, ec);
             auto end = std::filesystem::recursive_directory_iterator{};
             for (; it != end && count < max_results; it.increment(ec)) {
-                if (cancelled_ptr && *cancelled_ptr) {
+                if (cancelled && *cancelled) {
                     break;
                 }
                 if (it->path().filename() == ".git" && it->is_directory()) {
@@ -649,8 +648,7 @@ static Tool make_run_bash_tool(const std::string& safe_dir,
         {"properties",
             {{"command", {{"type", "string"}, {"description", "Shell command to execute"}}}}},
         {"required", {"command"}}};
-    auto cancelled_ptr = cancelled ? &*cancelled : nullptr;
-    t.execute = [safe_dir, cancelled_ptr](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir, cancelled](const json& args) -> Result<std::string> {
         auto command = args.value("command", std::string());
         if (command.empty()) {
             return std::unexpected(std::string("command is required"));
@@ -718,7 +716,7 @@ static Tool make_run_bash_tool(const std::string& safe_dir,
         };
 
         while (true) {
-            if (cancelled_ptr && *cancelled_ptr) {
+            if (cancelled && *cancelled) {
                 kill_child();
                 close(pipefd[0]);
                 truncate_output(output);
@@ -859,8 +857,7 @@ static Tool make_web_search_tool(const std::string& api_key,
             {{"query",
                 {{"type", "string"}, {"description", "Search query (max 500 characters)"}}}}},
         {"required", {"query"}}};
-    auto cancelled_ptr = cancelled ? &*cancelled : nullptr;
-    t.execute = [api_key, engine_id, endpoint_override, cancelled_ptr](
+    t.execute = [api_key, engine_id, endpoint_override, cancelled](
                     const json& args) -> Result<std::string> {
         auto query = args.value("query", std::string());
         if (query.empty())
@@ -932,7 +929,7 @@ static Tool make_web_search_tool(const std::string& api_key,
             int max_retries = 3;
             int delay_ms = 1000;
             for (int attempt = 0; attempt <= max_retries; attempt++) {
-                auto resp = http_get(url, 15, cancelled_ptr);
+                auto resp = http_get(url, 15, cancelled.get());
                 if (!resp) {
                     if (attempt == max_retries)
                         return std::unexpected(resp.error());
@@ -1065,7 +1062,7 @@ static Tool make_web_search_tool(const std::string& api_key,
         curl_easy_setopt(curl, CURLOPT_CAINFO, nullptr);
         curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, web_search_progress_cb);
         curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
-        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, cancelled_ptr);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, cancelled.get());
 
         CURLcode res = curl_easy_perform(curl);
         long http_code = 0;
@@ -1158,8 +1155,7 @@ static Tool make_web_fetch_tool(CancellationToken cancelled = nullptr) {
                         "Results are cached per session — re-fetching the same URL "
                         "returns the cached content."}}}}},
         {"required", {"url"}}};
-    auto cancelled_ptr = cancelled ? &*cancelled : nullptr;
-    t.execute = [cancelled_ptr](const json& args) -> Result<std::string> {
+    t.execute = [cancelled](const json& args) -> Result<std::string> {
         auto url = args.value("url", std::string());
         if (url.empty()) {
             return std::unexpected("url is required");
@@ -1202,7 +1198,7 @@ static Tool make_web_fetch_tool(CancellationToken cancelled = nullptr) {
         curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
         curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, web_search_progress_cb);
         curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
-        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, cancelled_ptr);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, cancelled.get());
 
         CURLcode res = curl_easy_perform(curl);
 
@@ -2076,8 +2072,7 @@ static Tool make_project_tree_tool(const std::string& safe_dir,
                     {{"type", "integer"},
                         {"description",
                             "Maximum output lines (default 500, max 500)"}}}}}};
-    auto cancelled_ptr = cancelled ? &*cancelled : nullptr;
-    t.execute = [safe_dir, read_only_paths, cancelled_ptr](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir, read_only_paths, cancelled](const json& args) -> Result<std::string> {
         auto raw = args.value("path", std::string("."));
         auto resolved = resolve_path(raw, safe_dir, read_only_paths);
         if (!resolved) {
@@ -2116,7 +2111,7 @@ static Tool make_project_tree_tool(const std::string& safe_dir,
                 truncated = true;
                 return;
             }
-            if (cancelled_ptr && *cancelled_ptr) {
+            if (cancelled && *cancelled) {
                 interrupted = true;
                 return;
             }
@@ -2132,7 +2127,7 @@ static Tool make_project_tree_tool(const std::string& safe_dir,
             }
             auto end = std::filesystem::directory_iterator{};
             for (; it != end; it.increment(ec2)) {
-                if (cancelled_ptr && *cancelled_ptr) {
+                if (cancelled && *cancelled) {
                     interrupted = true;
                     return;
                 }
@@ -2159,7 +2154,7 @@ static Tool make_project_tree_tool(const std::string& safe_dir,
                 });
 
             for (size_t i = 0; i < entries.size(); i++) {
-                if (cancelled_ptr && *cancelled_ptr) {
+                if (cancelled && *cancelled) {
                     interrupted = true;
                     return;
                 }
