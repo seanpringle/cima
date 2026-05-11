@@ -199,7 +199,11 @@ int gui_main(Config cfg) {
             Separator();
             auto plan_result = PlanBoard::instance().read_plan();
             if (plan_result) {
+                if (mono_font)
+                    PushFont(mono_font);
                 render_content(*plan_result);
+                if (mono_font)
+                    PopFont();
             } else {
                 TextDisabled("(empty plan)");
             }
