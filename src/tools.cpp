@@ -2452,6 +2452,8 @@ struct WorktreeState {
     bool active = false;
 };
 
+// Forward-declared in tools.h as struct WorktreeState.
+
 /// Sanitize a branch name for use as a filesystem directory component.
 /// Replaces '/' and other problematic characters with '-'.
 static std::string sanitize_branch_name(const std::string& branch) {
@@ -2473,9 +2475,7 @@ static std::string sanitize_branch_name(const std::string& branch) {
 
 Tool make_start_worktree_tool(std::shared_ptr<std::string> safe_dir_ptr,
     std::shared_ptr<std::string> worktree_base_ptr,
-    std::string original_repo_dir) {
-    auto state = std::make_shared<WorktreeState>();
-    state->original_safe_dir = std::move(original_repo_dir);
+    std::shared_ptr<WorktreeState> state) {
 
     Tool t;
     t.name = "start_worktree";
@@ -2594,9 +2594,7 @@ Tool make_start_worktree_tool(std::shared_ptr<std::string> safe_dir_ptr,
 // ===================================================================
 
 Tool make_stop_worktree_tool(std::shared_ptr<std::string> safe_dir_ptr,
-    std::string original_repo_dir) {
-    auto state = std::make_shared<WorktreeState>();
-    state->original_safe_dir = std::move(original_repo_dir);
+    std::shared_ptr<WorktreeState> state) {
 
     Tool t;
     t.name = "stop_worktree";
@@ -2798,15 +2796,19 @@ void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
     }
 
     // ── Worktree tools (always included, Internal permission) ──
+    // Both tools share a single WorktreeState so stop_worktree can see
+    // what start_worktree recorded.
+    auto wt_state = std::make_shared<WorktreeState>();
+    wt_state->original_safe_dir = *safe_dir_ptr;
     {
         auto t = make_start_worktree_tool(safe_dir_ptr,
             std::make_shared<std::string>(worktree_base),
-            *safe_dir_ptr);
+            wt_state);
         t.permission = ToolPermission::Internal;
         add(std::move(t));
     }
     {
-        auto t = make_stop_worktree_tool(safe_dir_ptr, *safe_dir_ptr);
+        auto t = make_stop_worktree_tool(safe_dir_ptr, wt_state);
         t.permission = ToolPermission::Internal;
         add(std::move(t));
     }

@@ -86,8 +86,10 @@ class ToolRegistry {
 // ---------------------------------------------------------------------------
 // Worktree tool declarations
 // ---------------------------------------------------------------------------
+struct WorktreeState;
+
 Tool make_start_worktree_tool(std::shared_ptr<std::string> safe_dir_ptr,
     std::shared_ptr<std::string> worktree_base_ptr,
-    std::string original_repo_dir);
+    std::shared_ptr<WorktreeState> state);
 Tool make_stop_worktree_tool(std::shared_ptr<std::string> safe_dir_ptr,
-    std::string original_repo_dir);
+    std::shared_ptr<WorktreeState> state);
