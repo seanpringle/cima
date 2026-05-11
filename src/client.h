@@ -21,6 +21,8 @@ class ChatClient {
     ChatClient(ChatClient&&) = delete;
     ChatClient& operator=(ChatClient&&) = delete;
 
+    void set_cancelled(CancellationToken t) { cancelled_ = std::move(t); }
+
     Result<json> chat(const json& payload);
     Result<void> stream_chat(const json& payload, SSEParser::Callbacks callbacks);
 
@@ -46,6 +48,7 @@ class ChatClient {
     // Low-level HTTP GET helper
     Result<std::string> http_get(const std::string& url);
 
+    CancellationToken cancelled_;
     std::string api_base_;
     std::string api_key_;
     std::string raw_response_;

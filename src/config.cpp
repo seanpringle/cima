@@ -1,11 +1,8 @@
 #include "config.h"
 
-#include <atomic>
 #include <cstdlib>
 #include <string>
 #include <unistd.h>
-
-std::atomic<bool> g_interrupted{false};
 
 // ---------------------------------------------------------------------------
 // Environment variable loading

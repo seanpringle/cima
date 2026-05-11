@@ -19,8 +19,6 @@ using std::string_view;
 using std::stringstream;
 using std::vector;
 
-extern std::atomic<bool> g_interrupted;
-
 namespace {
 
 bool debug_markdown = false;
@@ -497,12 +495,13 @@ void render_content(const string& text) {
 
 static void start_chat(AsyncChatState& chat, ChatSession& session, string input) {
     chat.running = true;
+    *chat.cancelled = false;
     chat.future = std::async(std::launch::async,
         [&session, input = std::move(input)]() { return session.run_once(input); });
 }
 
 static void cancel_chat(AsyncChatState& chat) {
-    g_interrupted = true;
+    *chat.cancelled = true;
     if (chat.future.valid()) {
         chat.future.wait();
         try {
@@ -512,7 +511,6 @@ static void cancel_chat(AsyncChatState& chat) {
         }
     }
     chat.running = false;
-    g_interrupted = false;
 }
 
 static void push_entry(ChatUIState& ui, EntryType type, const string& text, bool streaming) {

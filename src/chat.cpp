@@ -13,7 +13,12 @@ ChatSession::ChatSession(Config config)
       context_limit_(static_cast<size_t>(config.context_limit)),
       compact_threshold_(static_cast<size_t>(config.compact_threshold)),
       conversation_(config.system_prompt),
-      client_(std::move(config.api_base), std::move(config.api_key)) {
+      client_(std::move(config.api_base), std::move(config.api_key)),
+      cancelled_(make_cancellation_token()) {
+    // Share the cancellation token with tools and client
+    tools_.set_cancelled(cancelled_);
+    client_.set_cancelled(cancelled_);
+
     tools_.add_defaults(safe_dir_, config.read_only_paths, config.search_api_key,
         config.search_engine_id, config.search_endpoint,
         /*include_write=*/true);
@@ -155,7 +160,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
         if (!calls.empty()) {
             conversation_.add_assistant("", reasoning, calls);
 
-            if (g_interrupted) {
+            if (*cancelled_) {
                 conversation_.truncate(snapshot);
                 return std::unexpected("Interrupted during tool execution");
             }
@@ -177,7 +182,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                 if (has_write) {
                     // Serial execution for write tools
                     for (const auto& call : calls) {
-                        if (g_interrupted) {
+                        if (*cancelled_) {
                             conversation_.truncate(snapshot);
                             return std::unexpected("Interrupted during tool execution");
                         }
@@ -197,7 +202,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                             [&, i] { return tools_.execute(calls[i].name, calls[i].arguments); }));
                     }
                     for (size_t i = 0; i < calls.size(); i++) {
-                        if (g_interrupted) {
+                        if (*cancelled_) {
                             conversation_.truncate(snapshot);
                             return std::unexpected("Interrupted during tool execution");
                         }
@@ -211,7 +216,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                 }
             } else {
                 for (const auto& call : calls) {
-                    if (g_interrupted) {
+                    if (*cancelled_) {
                         conversation_.truncate(snapshot);
                         return std::unexpected("Interrupted during tool execution");
                     }

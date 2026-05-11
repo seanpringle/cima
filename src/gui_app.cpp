@@ -14,8 +14,6 @@ using namespace ImGui;
 #include <iostream>
 #include <thread>
 
-extern std::atomic<bool> g_interrupted;
-
 int gui_main(Config cfg) {
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         SDL_Log("SDL_Init error: %s", SDL_GetError());
@@ -114,6 +112,8 @@ int gui_main(Config cfg) {
         tab.title = model_name;
         tab.session = std::make_unique<ChatSession>(cfg);
         tab.chat_state = std::make_unique<AsyncChatState>();
+        // Wire up the per-tab cancellation token
+        tab.session->set_cancelled(tab.chat_state->cancelled);
         tab.ui_state.mono_font = mono_font;
         strncpy(tab.ui_state.title_buf, tab.title.c_str(), sizeof(tab.ui_state.title_buf) - 1);
         strncpy(tab.ui_state.model_buf, tab.session->model().c_str(),
@@ -140,12 +140,11 @@ int gui_main(Config cfg) {
                 done = true;
         }
 
-        // If any chat is running and we're quitting, signal interrupt
+        // If any chat is running and we're quitting, signal interrupt on all tabs
         if (done) {
             for (auto& tab : tabs) {
                 if (tab.chat_state->running) {
-                    g_interrupted = true;
-                    break;
+                    *tab.chat_state->cancelled = true;
                 }
             }
         }
@@ -174,13 +173,12 @@ int gui_main(Config cfg) {
             if (tabs.size() > 1 && active_tab >= 0 && active_tab < (int)tabs.size()) {
                 auto& tab = tabs[active_tab];
                 if (tab.chat_state->running) {
-                    g_interrupted = true;
+                    *tab.chat_state->cancelled = true;
                     if (tab.chat_state->future.valid()) {
                         tab.chat_state->future.wait();
                         try { tab.chat_state->future.get(); } catch (...) {}
                     }
                     tab.chat_state->running = false;
-                    g_interrupted = false;
                 }
                 tabs.erase(tabs.begin() + active_tab);
                 if (active_tab >= (int)tabs.size())
@@ -243,13 +241,12 @@ int gui_main(Config cfg) {
                     if (!is_open && can_close) {
                         // Tab was closed via the close button
                         if (tab.chat_state->running) {
-                            g_interrupted = true;
+                            *tab.chat_state->cancelled = true;
                             if (tab.chat_state->future.valid()) {
                                 tab.chat_state->future.wait();
                                 try { tab.chat_state->future.get(); } catch (...) {}
                             }
                             tab.chat_state->running = false;
-                            g_interrupted = false;
                         }
                         tabs.erase(tabs.begin() + ti);
                         if (active_tab >= (int)tabs.size())
@@ -285,7 +282,7 @@ int gui_main(Config cfg) {
     // ── clean up all tabs ──
     for (auto& tab : tabs) {
         if (tab.chat_state->running) {
-            g_interrupted = true;
+            *tab.chat_state->cancelled = true;
             if (tab.chat_state->future.valid()) {
                 tab.chat_state->future.wait();
                 try { tab.chat_state->future.get(); } catch (...) {}
@@ -293,7 +290,6 @@ int gui_main(Config cfg) {
             tab.chat_state->running = false;
         }
     }
-    g_interrupted = false;
 
     ImGui_ImplSDLRenderer3_Shutdown();
     ImGui_ImplSDL3_Shutdown();

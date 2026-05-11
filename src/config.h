@@ -3,10 +3,18 @@
 #include <atomic>
 #include <expected>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <vector>
 
-extern std::atomic<bool> g_interrupted;
+// Per-tab cancellation token: a shared pointer to an atomic bool.
+// Each tab gets its own token; when cancelled, the bool is set to true.
+// Worker threads hold a copy of the shared_ptr and periodically check *token.
+using CancellationToken = std::shared_ptr<std::atomic<bool>>;
+
+inline CancellationToken make_cancellation_token() {
+    return std::make_shared<std::atomic<bool>>(false);
+}
 
 template <typename T> using Result = std::expected<T, std::string>;
 

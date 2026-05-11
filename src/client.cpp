@@ -38,16 +38,18 @@ size_t ChatClient::write_stream(char* ptr, size_t size, size_t nmemb, void* user
     return size * nmemb;
 }
 
-static int progress_cb(void* /*clientp*/,
+static int progress_cb(void* clientp,
     curl_off_t /*dltotal*/,
     curl_off_t /*dlnow*/,
     curl_off_t /*ultotal*/,
     curl_off_t /*ulnow*/) {
-    return g_interrupted ? 1 : 0;
+    auto* cancelled = static_cast<std::atomic<bool>*>(clientp);
+    return (cancelled && *cancelled) ? 1 : 0;
 }
 
 static CURL* setup_curl(
-    const std::string& url, struct curl_slist* headers, const std::string& payload_str) {
+    const std::string& url, struct curl_slist* headers, const std::string& payload_str,
+    std::atomic<bool>* cancelled = nullptr) {
     CURL* curl = curl_easy_init();
     if (!curl)
         return nullptr;
@@ -80,6 +82,7 @@ static CURL* setup_curl(
 
     curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progress_cb);
     curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    curl_easy_setopt(curl, CURLOPT_XFERINFODATA, cancelled);
 
     return curl;
 }
@@ -144,6 +147,10 @@ Result<std::string> ChatClient::http_get(const std::string& url) {
     curl_easy_setopt(curl, CURLOPT_CAINFO, nullptr);
 
     curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
+
+    curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progress_cb);
+    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    curl_easy_setopt(curl, CURLOPT_XFERINFODATA, cancelled_.get());
 
     std::string body;
     long http_code = 0;
@@ -267,7 +274,7 @@ Result<json> ChatClient::chat(const json& payload) {
     long http_code = 0;
 
     auto* headers = make_headers();
-    CURL* curl = setup_curl(url(), headers, payload_str);
+    CURL* curl = setup_curl(url(), headers, payload_str, cancelled_.get());
     if (!curl) {
         curl_slist_free_all(headers);
         return std::unexpected(std::string("curl_easy_init failed"));
@@ -336,7 +343,7 @@ Result<void> ChatClient::stream_chat(const json& payload, SSEParser::Callbacks c
     SSEParser parser(std::move(guarded));
 
     auto* headers = make_headers();
-    CURL* curl = setup_curl(url(), headers, payload_str);
+    CURL* curl = setup_curl(url(), headers, payload_str, cancelled_.get());
     if (!curl) {
         curl_slist_free_all(headers);
         return std::unexpected(std::string("curl_easy_init failed"));

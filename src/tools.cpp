@@ -400,7 +400,8 @@ static bool is_gitignored(git_repository* repo,
 // ===================================================================
 
 static Tool make_grep_files_tool(const std::string& safe_dir,
-    const std::vector<std::string>& read_only_paths) {
+    const std::vector<std::string>& read_only_paths,
+    CancellationToken cancelled = nullptr) {
     Tool t;
     t.name = "grep_files";
     t.description = "Search file contents using a regex pattern (max 200 results)";
@@ -412,7 +413,8 @@ static Tool make_grep_files_tool(const std::string& safe_dir,
                     {{"type", "string"},
                         {"description", "File or directory to search in (defaults to .)"}}}}},
         {"required", {"pattern"}}};
-    t.execute = [safe_dir, read_only_paths](const json& args) -> Result<std::string> {
+    auto cancelled_ptr = cancelled ? &*cancelled : nullptr;
+    t.execute = [safe_dir, read_only_paths, cancelled_ptr](const json& args) -> Result<std::string> {
         auto pattern = args.value("pattern", std::string());
         if (pattern.empty()) {
             return std::unexpected(std::string("pattern is required"));
@@ -479,7 +481,7 @@ static Tool make_grep_files_tool(const std::string& safe_dir,
                 *resolved, std::filesystem::directory_options::skip_permission_denied, ec);
             auto end = std::filesystem::recursive_directory_iterator{};
             for (; it != end && count < max_results; it.increment(ec)) {
-                if (g_interrupted) {
+                if (cancelled_ptr && *cancelled_ptr) {
                     break;
                 }
                 if (it->path().filename() == ".git" && it->is_directory()) {
@@ -636,7 +638,8 @@ static Tool make_edit_file_tool(const std::string& safe_dir) {
     return t;
 }
 
-static Tool make_run_bash_tool(const std::string& safe_dir) {
+static Tool make_run_bash_tool(const std::string& safe_dir,
+    CancellationToken cancelled = nullptr) {
     Tool t;
     t.name = "run_bash";
     t.description = "Run a bash command in the project directory "
@@ -646,7 +649,8 @@ static Tool make_run_bash_tool(const std::string& safe_dir) {
         {"properties",
             {{"command", {{"type", "string"}, {"description", "Shell command to execute"}}}}},
         {"required", {"command"}}};
-    t.execute = [safe_dir](const json& args) -> Result<std::string> {
+    auto cancelled_ptr = cancelled ? &*cancelled : nullptr;
+    t.execute = [safe_dir, cancelled_ptr](const json& args) -> Result<std::string> {
         auto command = args.value("command", std::string());
         if (command.empty()) {
             return std::unexpected(std::string("command is required"));
@@ -714,7 +718,7 @@ static Tool make_run_bash_tool(const std::string& safe_dir) {
         };
 
         while (true) {
-            if (g_interrupted) {
+            if (cancelled_ptr && *cancelled_ptr) {
                 kill_child();
                 close(pipefd[0]);
                 truncate_output(output);
@@ -789,12 +793,13 @@ static size_t web_search_write_cb(char* ptr, size_t size, size_t nmemb, void* us
     return size * nmemb;
 }
 
-static int web_search_progress_cb(void* /*clientp*/,
+static int web_search_progress_cb(void* clientp,
     curl_off_t /*dltotal*/,
     curl_off_t /*dlnow*/,
     curl_off_t /*ultotal*/,
     curl_off_t /*ulnow*/) {
-    return g_interrupted ? 1 : 0;
+    auto* cancelled = static_cast<std::atomic<bool>*>(clientp);
+    return (cancelled && *cancelled) ? 1 : 0;
 }
 
 // ── DuckDuckGo rate limiter ──
@@ -805,7 +810,8 @@ static constexpr auto DDG_MIN_INTERVAL = std::chrono::milliseconds(1000);
 
 // ── Shared HTTP GET helper (used by web_search and web_fetch) ──
 // Returns (body, http_code) or an error string.
-static Result<std::pair<std::string, long>> http_get(const std::string& url, int timeout_sec = 15) {
+static Result<std::pair<std::string, long>> http_get(const std::string& url, int timeout_sec = 15,
+    std::atomic<bool>* cancelled = nullptr) {
     CURL* curl = curl_easy_init();
     if (!curl)
         return std::unexpected("curl_easy_init failed");
@@ -823,6 +829,7 @@ static Result<std::pair<std::string, long>> http_get(const std::string& url, int
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
     curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, web_search_progress_cb);
     curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+    curl_easy_setopt(curl, CURLOPT_XFERINFODATA, cancelled);
 
     CURLcode res = curl_easy_perform(curl);
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
@@ -837,7 +844,8 @@ static Result<std::pair<std::string, long>> http_get(const std::string& url, int
 
 static Tool make_web_search_tool(const std::string& api_key,
     const std::string& engine_id,
-    const std::string& endpoint_override) {
+    const std::string& endpoint_override,
+    CancellationToken cancelled = nullptr) {
     Tool t;
     t.name = "web_search";
     t.description =
@@ -851,7 +859,8 @@ static Tool make_web_search_tool(const std::string& api_key,
             {{"query",
                 {{"type", "string"}, {"description", "Search query (max 500 characters)"}}}}},
         {"required", {"query"}}};
-    t.execute = [api_key, engine_id, endpoint_override](
+    auto cancelled_ptr = cancelled ? &*cancelled : nullptr;
+    t.execute = [api_key, engine_id, endpoint_override, cancelled_ptr](
                     const json& args) -> Result<std::string> {
         auto query = args.value("query", std::string());
         if (query.empty())
@@ -923,7 +932,7 @@ static Tool make_web_search_tool(const std::string& api_key,
             int max_retries = 3;
             int delay_ms = 1000;
             for (int attempt = 0; attempt <= max_retries; attempt++) {
-                auto resp = http_get(url, 15);
+                auto resp = http_get(url, 15, cancelled_ptr);
                 if (!resp) {
                     if (attempt == max_retries)
                         return std::unexpected(resp.error());
@@ -1056,6 +1065,7 @@ static Tool make_web_search_tool(const std::string& api_key,
         curl_easy_setopt(curl, CURLOPT_CAINFO, nullptr);
         curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, web_search_progress_cb);
         curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, cancelled_ptr);
 
         CURLcode res = curl_easy_perform(curl);
         long http_code = 0;
@@ -1130,7 +1140,7 @@ static std::unordered_map<std::string, std::string> g_fetch_cache;
 
 // ── Tool factory ──
 
-static Tool make_web_fetch_tool() {
+static Tool make_web_fetch_tool(CancellationToken cancelled = nullptr) {
     Tool t;
     t.name = "web_fetch";
     t.description =
@@ -1148,7 +1158,8 @@ static Tool make_web_fetch_tool() {
                         "Results are cached per session — re-fetching the same URL "
                         "returns the cached content."}}}}},
         {"required", {"url"}}};
-    t.execute = [](const json& args) -> Result<std::string> {
+    auto cancelled_ptr = cancelled ? &*cancelled : nullptr;
+    t.execute = [cancelled_ptr](const json& args) -> Result<std::string> {
         auto url = args.value("url", std::string());
         if (url.empty()) {
             return std::unexpected("url is required");
@@ -1191,6 +1202,7 @@ static Tool make_web_fetch_tool() {
         curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
         curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, web_search_progress_cb);
         curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, cancelled_ptr);
 
         CURLcode res = curl_easy_perform(curl);
 
@@ -2040,7 +2052,8 @@ static Tool make_git_commit_tool(const std::string& safe_dir) {
 // ===================================================================
 
 static Tool make_project_tree_tool(const std::string& safe_dir,
-    const std::vector<std::string>& read_only_paths) {
+    const std::vector<std::string>& read_only_paths,
+    CancellationToken cancelled = nullptr) {
     Tool t;
     t.name = "project_tree";
     t.description =
@@ -2063,7 +2076,8 @@ static Tool make_project_tree_tool(const std::string& safe_dir,
                     {{"type", "integer"},
                         {"description",
                             "Maximum output lines (default 500, max 500)"}}}}}};
-    t.execute = [safe_dir, read_only_paths](const json& args) -> Result<std::string> {
+    auto cancelled_ptr = cancelled ? &*cancelled : nullptr;
+    t.execute = [safe_dir, read_only_paths, cancelled_ptr](const json& args) -> Result<std::string> {
         auto raw = args.value("path", std::string("."));
         auto resolved = resolve_path(raw, safe_dir, read_only_paths);
         if (!resolved) {
@@ -2102,7 +2116,7 @@ static Tool make_project_tree_tool(const std::string& safe_dir,
                 truncated = true;
                 return;
             }
-            if (g_interrupted) {
+            if (cancelled_ptr && *cancelled_ptr) {
                 interrupted = true;
                 return;
             }
@@ -2118,7 +2132,7 @@ static Tool make_project_tree_tool(const std::string& safe_dir,
             }
             auto end = std::filesystem::directory_iterator{};
             for (; it != end; it.increment(ec2)) {
-                if (g_interrupted) {
+                if (cancelled_ptr && *cancelled_ptr) {
                     interrupted = true;
                     return;
                 }
@@ -2145,7 +2159,7 @@ static Tool make_project_tree_tool(const std::string& safe_dir,
                 });
 
             for (size_t i = 0; i < entries.size(); i++) {
-                if (g_interrupted) {
+                if (cancelled_ptr && *cancelled_ptr) {
                     interrupted = true;
                     return;
                 }
@@ -2426,22 +2440,22 @@ void ToolRegistry::add_defaults(const std::string& safe_dir,
         add(std::move(t));
     }
     {
-        auto t = make_grep_files_tool(safe_dir, read_only_paths);
+        auto t = make_grep_files_tool(safe_dir, read_only_paths, cancelled_);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
     {
-        auto t = make_project_tree_tool(safe_dir, read_only_paths);
+        auto t = make_project_tree_tool(safe_dir, read_only_paths, cancelled_);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
     {
-        auto t = make_web_search_tool(search_api_key, search_engine_id, search_endpoint);
+        auto t = make_web_search_tool(search_api_key, search_engine_id, search_endpoint, cancelled_);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
     {
-        auto t = make_web_fetch_tool();
+        auto t = make_web_fetch_tool(cancelled_);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
@@ -2474,7 +2488,7 @@ void ToolRegistry::add_defaults(const std::string& safe_dir,
             add(std::move(t));
         }
         {
-            auto t = make_run_bash_tool(safe_dir);
+            auto t = make_run_bash_tool(safe_dir, cancelled_);
             t.permission = ToolPermission::Write;
             add(std::move(t));
         }

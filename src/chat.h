@@ -40,6 +40,13 @@ class ChatSession {
     // Expose the underlying client so the GUI can call fetch_models() etc.
     ChatClient& client_for_models() { return client_; }
 
+    // Set the cancellation token for this session.
+    void set_cancelled(CancellationToken t) {
+        cancelled_ = std::move(t);
+        tools_.set_cancelled(cancelled_);
+        client_.set_cancelled(cancelled_);
+    }
+
   private:
     std::string model_;
     std::string reasoning_effort_;
@@ -50,6 +57,7 @@ class ChatSession {
     size_t compact_threshold_;
     Conversation conversation_;
     ChatClient client_;
+    CancellationToken cancelled_;
     ToolRegistry tools_;
     OutputCallback output_cb_;
     Usage last_usage_;

@@ -19,6 +19,7 @@ struct AsyncChatState {
     std::vector<std::pair<std::string, OutputType>> pending;
     std::atomic<bool> running{false};
     std::future<Result<ChatResult>> future;
+    CancellationToken cancelled = make_cancellation_token();
 };
 
 struct ImFont;

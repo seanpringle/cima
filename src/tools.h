@@ -44,6 +44,8 @@ class ToolRegistry {
   public:
     ToolRegistry() = default;
 
+    void set_cancelled(CancellationToken t) { cancelled_ = std::move(t); }
+
     void add(Tool tool);
     void add_defaults(const std::string& safe_dir,
         const std::vector<std::string>& read_only_paths = {},
@@ -65,5 +67,6 @@ class ToolRegistry {
 
   private:
     Tool* find(const std::string& name);
+    CancellationToken cancelled_;
     std::vector<Tool> tools_;
 };
