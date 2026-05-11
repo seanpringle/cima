@@ -25,11 +25,6 @@ struct Usage {
 void from_json(const json& j, Usage& u);
 
 // ---------------------------------------------------------------------------
-// TabType — identifies the type of chat session tab
-// ---------------------------------------------------------------------------
-enum class TabType { Planner, Builder };
-
-// ---------------------------------------------------------------------------
 // Display types for the chat UI
 // ---------------------------------------------------------------------------
 enum class EntryType { UserText, Reasoning, Content, ToolCall };

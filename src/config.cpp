@@ -23,10 +23,8 @@ Config Config::from_env() {
     cfg.api_key = get_env("LLM_KEY", get_env("API_KEY", cfg.api_key));
     cfg.model = get_env("MODEL", cfg.model);
     cfg.reasoning_effort = get_env("LLM_REASONING_EFFORT", get_env("REASONING_EFFORT", cfg.reasoning_effort));
-    cfg.planner_prompt = get_env("LLM_PLANNER_PROMPT",
-        get_env("PLANNER_PROMPT", cfg.planner_prompt));
-    cfg.builder_prompt = get_env("LLM_BUILDER_PROMPT",
-        get_env("BUILDER_PROMPT", cfg.builder_prompt));
+    cfg.system_prompt = get_env("LLM_SYSTEM_PROMPT",
+        get_env("SYSTEM_PROMPT", cfg.system_prompt));
 
     {
         const char* val = std::getenv("LLM_MAX_TOOL_ITERATIONS");

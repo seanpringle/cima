@@ -102,62 +102,36 @@ int gui_main(Config cfg) {
     ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
     ImGui_ImplSDLRenderer3_Init(renderer);
 
-    // ── create the two fixed panels: Planner (left) and Builder (right) ──
-    TabInfo planner_tab;
-    TabInfo builder_tab;
+    // ── dynamic tab management ──
+    std::vector<TabInfo> tabs;
+    int next_tab_id = 0;
+    int active_tab = 0;
 
-    // Planner
-    planner_tab.id = 0;
-    planner_tab.type = TabType::Planner;
-    planner_tab.title = "Planner";
-    planner_tab.session = std::make_unique<ChatSession>(cfg, TabType::Planner);
-    planner_tab.chat_state = std::make_unique<AsyncChatState>();
-    planner_tab.ui_state.mono_font = mono_font;
-    planner_tab.ui_state.tab_type = TabType::Planner;
-    strncpy(planner_tab.ui_state.title_buf, "Planner", sizeof(planner_tab.ui_state.title_buf) - 1);
-    strncpy(planner_tab.ui_state.model_buf, planner_tab.session->model().c_str(),
-        sizeof(planner_tab.ui_state.model_buf) - 1);
-    planner_tab.session->set_output_callback(
-        [cs = planner_tab.chat_state.get()](const std::string& text, OutputType type) {
-            std::lock_guard<std::mutex> lock(cs->mutex);
-            cs->pending.emplace_back(text, type);
-        });
+    auto add_tab = [&](const std::string& model_name) {
+        TabInfo tab;
+        tab.id = next_tab_id++;
+        tab.title = model_name;
+        tab.session = std::make_unique<ChatSession>(cfg);
+        tab.chat_state = std::make_unique<AsyncChatState>();
+        tab.ui_state.mono_font = mono_font;
+        strncpy(tab.ui_state.title_buf, tab.title.c_str(), sizeof(tab.ui_state.title_buf) - 1);
+        strncpy(tab.ui_state.model_buf, tab.session->model().c_str(),
+            sizeof(tab.ui_state.model_buf) - 1);
+        tab.session->set_output_callback(
+            [cs = tab.chat_state.get()](const std::string& text, OutputType type) {
+                std::lock_guard<std::mutex> lock(cs->mutex);
+                cs->pending.emplace_back(text, type);
+            });
+        tabs.push_back(std::move(tab));
+    };
 
-    // Builder
-    builder_tab.id = 1;
-    builder_tab.type = TabType::Builder;
-    builder_tab.title = "Builder";
-    builder_tab.session = std::make_unique<ChatSession>(cfg, TabType::Builder);
-    builder_tab.chat_state = std::make_unique<AsyncChatState>();
-    builder_tab.ui_state.mono_font = mono_font;
-    builder_tab.ui_state.tab_type = TabType::Builder;
-    strncpy(builder_tab.ui_state.title_buf, "Builder", sizeof(builder_tab.ui_state.title_buf) - 1);
-    strncpy(builder_tab.ui_state.model_buf, builder_tab.session->model().c_str(),
-        sizeof(builder_tab.ui_state.model_buf) - 1);
-    builder_tab.session->set_output_callback(
-        [cs = builder_tab.chat_state.get()](const std::string& text, OutputType type) {
-            std::lock_guard<std::mutex> lock(cs->mutex);
-            cs->pending.emplace_back(text, type);
-        });
+    // Start with one default tab
+    add_tab(cfg.model);
 
     bool done = false;
-    static int s_active_agent_tab = 0;
     while (!done) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
-            // Intercept Tab key (without Ctrl/Alt modifiers) for agent switching.
-            // Block ImGui from ever seeing Tab so it can't use it for focus navigation.
-            // Trigger on KEY_UP so the switch happens after the key is released, not on press.
-            if ((event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) &&
-                event.key.key == SDLK_TAB &&
-                !(event.key.mod & SDL_KMOD_CTRL) &&
-                !(event.key.mod & SDL_KMOD_ALT)) {
-                if (event.type == SDL_EVENT_KEY_UP) {
-                    s_active_agent_tab = s_active_agent_tab ? 0 : 1;
-                }
-                continue; // Skip ImGui processing entirely
-            }
-
             ImGui_ImplSDL3_ProcessEvent(&event);
             if (event.type == SDL_EVENT_QUIT)
                 done = true;
@@ -167,8 +141,8 @@ int gui_main(Config cfg) {
 
         // If any chat is running and we're quitting, signal interrupt
         if (done) {
-            for (auto* tab : { &planner_tab, &builder_tab }) {
-                if (tab->chat_state->running) {
+            for (auto& tab : tabs) {
+                if (tab.chat_state->running) {
                     g_interrupted = true;
                     break;
                 }
@@ -188,9 +162,7 @@ int gui_main(Config cfg) {
                 ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
                 ImGuiWindowFlags_NoBringToFrontOnFocus);
 
-
-
-        // ── Left panel (40%) with Plan + Right panel (60%) with Planner/Builder tabs ──
+        // ── Left panel (40%) with Plan + Right panel (60%) with tabs ──
         {
             // Left panel: Plan document
             BeginChild("##plan_panel", ImVec2(GetContentRegionAvail().x * 0.4f, GetContentRegionAvail().y), true, ImGuiChildFlags_None);
@@ -210,33 +182,63 @@ int gui_main(Config cfg) {
 
             SameLine();
 
-            // Right panel: active chat session (no tab bar — both agents are always alive)
+            // Right panel: tabbed chat sessions
             BeginChild("##agent_panel", GetContentRegionAvail(), true, ImGuiChildFlags_None);
 
-            // Header showing which agent is active, with a hint to toggle
-            {
-                bool is_planner = (s_active_agent_tab == 0);
-                const char* agent_name = is_planner ? "Planner" : "Builder";
-                ImVec4 header_color = is_planner
-                    ? ImVec4(0.39f, 0.70f, 1.0f, 1.0f)   // blue
-                    : ImVec4(0.39f, 1.0f, 0.39f, 1.0f);  // green
+            // ── Tab bar ──
+            if (BeginTabBar("##chat_tabs", ImGuiTabBarFlags_NoTooltip)) {
+                for (int ti = 0; ti < (int)tabs.size(); ) {
+                    TabInfo& tab = tabs[ti];
+                    bool is_open = true;
 
-                TextColored(header_color, "%s  [Tab to switch]", agent_name);
-                Separator();
-            }
+                    // Use model name as tab title, or fallback to "Chat"
+                    std::string tab_label = tab.title.empty() ? "Chat" : tab.title;
 
-            // Drain pending output for the INACTIVE tab (so async work is not lost)
-            {
-                bool is_planner = (s_active_agent_tab == 0);
-                TabInfo& inactive = is_planner ? builder_tab : planner_tab;
-                drain_pending(inactive.ui_state, *inactive.chat_state);
-            }
+                    // Append a close button for all tabs (including the last one)
+                    // but ensure at least one tab remains
+                    bool can_close = tabs.size() > 1;
+                    if (can_close) {
+                        tab_label += "  \xE2\x9C\x97##close_" + std::to_string(tab.id);
+                    }
 
-            // Render the active chat UI
-            {
-                bool is_planner = (s_active_agent_tab == 0);
-                TabInfo& active = is_planner ? planner_tab : builder_tab;
-                render_chat_ui(active, done);
+                    PushID(tab.id);
+                    if (BeginTabItem(tab_label.c_str(), can_close ? &is_open : nullptr, ImGuiTabItemFlags_None)) {
+                        active_tab = ti;
+                        // Render the active chat UI for this tab
+                        render_chat_ui(tab, done);
+                        EndTabItem();
+                    }
+                    PopID();
+
+                    if (!is_open && can_close) {
+                        // Tab was closed via the close button
+                        if (tab.chat_state->running) {
+                            g_interrupted = true;
+                            if (tab.chat_state->future.valid()) {
+                                tab.chat_state->future.wait();
+                                try { tab.chat_state->future.get(); } catch (...) {}
+                            }
+                            tab.chat_state->running = false;
+                            g_interrupted = false;
+                        }
+                        tabs.erase(tabs.begin() + ti);
+                        if (active_tab >= (int)tabs.size())
+                            active_tab = (int)tabs.size() - 1;
+                        if (active_tab < 0)
+                            active_tab = 0;
+                        continue; // Don't increment ti — we just erased
+                    }
+                    ti++;
+                }
+
+                // ── Add tab button (+) ──
+                // Use a dummy tab item for the "+" button
+                if (BeginTabItem("+##add_tab", nullptr, ImGuiTabItemFlags_Trailing | ImGuiTabItemFlags_NoTooltip)) {
+                    add_tab(cfg.model);
+                    EndTabItem();
+                }
+
+                EndTabBar();
             }
 
             EndChild();
@@ -245,10 +247,8 @@ int gui_main(Config cfg) {
         End(); // main window
 
         // Render the active chat UI overlay
-        {
-            bool is_planner = (s_active_agent_tab == 0);
-            TabInfo& active = is_planner ? planner_tab : builder_tab;
-            render_chat_overlay(active, done);
+        if (active_tab >= 0 && active_tab < (int)tabs.size()) {
+            render_chat_overlay(tabs[active_tab], done);
         }
 
         ImGui::Render();
@@ -258,15 +258,15 @@ int gui_main(Config cfg) {
         SDL_RenderPresent(renderer);
     }
 
-    // ── clean up both panels ──
-    for (auto* tab : { &planner_tab, &builder_tab }) {
-        if (tab->chat_state->running) {
+    // ── clean up all tabs ──
+    for (auto& tab : tabs) {
+        if (tab.chat_state->running) {
             g_interrupted = true;
-            if (tab->chat_state->future.valid()) {
-                tab->chat_state->future.wait();
-                try { tab->chat_state->future.get(); } catch (...) {}
+            if (tab.chat_state->future.valid()) {
+                tab.chat_state->future.wait();
+                try { tab.chat_state->future.get(); } catch (...) {}
             }
-            tab->chat_state->running = false;
+            tab.chat_state->running = false;
         }
     }
     g_interrupted = false;

@@ -3,29 +3,23 @@
 
 #include <future>
 
-ChatSession::ChatSession(Config config, TabType tab_type)
+ChatSession::ChatSession(Config config)
     : model_(std::move(config.model)), reasoning_effort_(std::move(config.reasoning_effort)),
       safe_dir_(std::move(config.safe_dir)),
       api_key_(config.api_key),
       max_iterations_(config.max_tool_iterations),
       context_limit_(static_cast<size_t>(config.context_limit)),
       compact_threshold_(static_cast<size_t>(config.compact_threshold)),
-      tab_type_(tab_type),
-      conversation_(tab_type == TabType::Planner ? config.planner_prompt : config.builder_prompt),
+      conversation_(config.system_prompt),
       client_(std::move(config.api_base), std::move(config.api_key)) {
     tools_.add_defaults(safe_dir_, config.read_only_paths, config.search_api_key,
         config.search_engine_id, config.search_endpoint,
-        /*include_write=*/tab_type_ != TabType::Planner);
+        /*include_write=*/true);
 
-    // Planner gets all three plan tools; Builder gets read-only plan tools
-    if (tab_type_ == TabType::Planner) {
-        tools_.add(make_write_plan_tool());
-        tools_.add(make_read_plan_tool());
-        tools_.add(make_comment_plan_tool());
-    } else {
-        tools_.add(make_read_plan_tool());
-        tools_.add(make_comment_plan_tool());
-    }
+    // All sessions get all plan tools
+    tools_.add(make_write_plan_tool());
+    tools_.add(make_read_plan_tool());
+    tools_.add(make_comment_plan_tool());
 
     // Wire up the summary callback for compaction
     conversation_.set_summary_callback(

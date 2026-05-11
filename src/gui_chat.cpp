@@ -747,12 +747,8 @@ void render_chat_ui(TabInfo& tab, bool& done) {
     }
 
     // ── type indicator (same line as Cancel/Send) ──
-    const char* type_str = (tab.type == TabType::Planner) ? "[planner]" : "[builder]";
-    auto type_color = (tab.type == TabType::Planner)
-        ? IM_COL32(100, 180, 255, 255)
-        : IM_COL32(100, 255, 100, 255);
     SameLine(0, 16);
-    TextColored(ImColor(type_color), "%s", type_str);
+    TextColored(ImColor(IM_COL32(180, 180, 180, 255)), "[chat]");
 
     // ── token usage indicator (after type) ──
     {

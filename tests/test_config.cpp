@@ -26,10 +26,8 @@ static void clear_all_config_env() {
     unset_env("MODEL");
     unset_env("REASONING_EFFORT");
     unset_env("LLM_REASONING_EFFORT");
-    unset_env("LLM_PLANNER_PROMPT");
-    unset_env("LLM_BUILDER_PROMPT");
-    unset_env("PLANNER_PROMPT");
-    unset_env("BUILDER_PROMPT");
+    unset_env("LLM_SYSTEM_PROMPT");
+    unset_env("SYSTEM_PROMPT");
     unset_env("SAFE_DIR");
     unset_env("LLM_MAX_TOOL_ITERATIONS");
 }
@@ -45,8 +43,7 @@ TEST_CASE("Config defaults", "[config]") {
     REQUIRE(cfg.api_base == "http://127.0.0.1:11000/v1");
     REQUIRE(cfg.api_key == "");
     REQUIRE(cfg.model == "deepseek-v4-flash");
-    REQUIRE(cfg.planner_prompt.find("planning agent") != std::string::npos);
-    REQUIRE(cfg.builder_prompt.find("read_plan") != std::string::npos);
+    REQUIRE(cfg.system_prompt.find("AI coding assistant") != std::string::npos);
     REQUIRE(cfg.safe_dir == fs::current_path());
 }
 
@@ -59,16 +56,14 @@ TEST_CASE("Config env vars", "[config]") {
     set_env("LLM_API", "http://test:8080/v1");
     set_env("LLM_KEY", "sk-test123");
     set_env("MODEL", "gpt-4");
-    set_env("LLM_PLANNER_PROMPT", "Be brief.");
-    set_env("LLM_BUILDER_PROMPT", "Do work.");
+    set_env("LLM_SYSTEM_PROMPT", "Be brief.");
     set_env("SAFE_DIR", "/tmp");
 
     auto cfg = Config::from_env();
     REQUIRE(cfg.api_base == "http://test:8080/v1");
     REQUIRE(cfg.api_key == "sk-test123");
     REQUIRE(cfg.model == "gpt-4");
-    REQUIRE(cfg.planner_prompt == "Be brief.");
-    REQUIRE(cfg.builder_prompt == "Do work.");
+    REQUIRE(cfg.system_prompt == "Be brief.");
     REQUIRE(cfg.safe_dir == fs::weakly_canonical("/tmp"));
 }
 

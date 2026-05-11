@@ -22,7 +22,7 @@ using OutputCallback = std::function<void(const std::string& text, OutputType ty
 
 class ChatSession {
   public:
-    explicit ChatSession(Config config, TabType tab_type = TabType::Planner);
+    explicit ChatSession(Config config);
 
     ChatSession(const ChatSession&) = delete;
     ChatSession& operator=(const ChatSession&) = delete;
@@ -35,7 +35,6 @@ class ChatSession {
     void compact();
     const std::string& model() const { return model_; }
     void set_output_callback(OutputCallback cb) { output_cb_ = std::move(cb); }
-    TabType tab_type() const { return tab_type_; }
     const Usage& last_usage() const { return last_usage_; }
 
   private:
@@ -46,7 +45,6 @@ class ChatSession {
     int max_iterations_ = 100;  // overridden by config.max_tool_iterations
     size_t context_limit_;
     size_t compact_threshold_;
-    TabType tab_type_ = TabType::Planner;
     Conversation conversation_;
     ChatClient client_;
     ToolRegistry tools_;

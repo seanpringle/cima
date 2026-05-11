@@ -31,7 +31,6 @@ struct ChatUIState {
     char model_buf[256] = {};
     char title_buf[256] = {};
     ImFont* mono_font = nullptr;
-    TabType tab_type = TabType::Planner;
     int next_seq = 1;
     bool show_raw_popup = false;
 
@@ -43,7 +42,6 @@ struct TabInfo {
     ChatUIState ui_state;
     int id = 0;
     std::string title;
-    TabType type;
 };
 
 int gui_main(Config cfg);
