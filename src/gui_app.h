@@ -33,6 +33,7 @@ struct ChatUIState {
     ImFont* mono_font = nullptr;
     TabType tab_type = TabType::Planner;
     int next_seq = 1;
+    bool show_raw_popup = false;
 
 };
 

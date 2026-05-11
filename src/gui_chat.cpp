@@ -574,133 +574,143 @@ void render_chat_ui(TabInfo& tab, bool& done) {
         }
     }
 
-    // ── tabs (Chat / Raw) ──
+    // ── main content (previously inside "Chat" tab) ──
     float input_height = GetFrameHeightWithSpacing() * 3 + GetStyle().ItemSpacing.y * 2 +
         GetFrameHeightWithSpacing() + 8;
 
     if (ui.mono_font)
         PushFont(ui.mono_font);
 
-    if (BeginTabBar("##chat_tabs")) {
-        // ── Chat tab ──
-        if (BeginTabItem("Chat")) {
-            // ── toolbar ──
-            if (SmallButton("Clear")) {
-                session.clear();
-                ui.entries.clear();
-            }
-            SameLine();
-            if (SmallButton("Compact")) {
-                session.compact();
-                ui.entries.push_back({EntryType::Content, "[\u2302 compaction]", false, ui.next_seq++});
-            }
-            SameLine();
-            SetNextItemWidth(150);
-            PushID("model_input");
-            bool model_changed = InputText("##model", ui.model_buf, sizeof(ui.model_buf),
-                ImGuiInputTextFlags_EnterReturnsTrue);
-            PopID();
-            SameLine();
-            if (SmallButton("Model") || model_changed) {
-                session.set_model(ui.model_buf);
-            }
+    // ── toolbar ──
+    if (SmallButton("Clear")) {
+        session.clear();
+        ui.entries.clear();
+    }
+    SameLine();
+    if (SmallButton("Compact")) {
+        session.compact();
+        ui.entries.push_back({EntryType::Content, "[\u2302 compaction]", false, ui.next_seq++});
+    }
+    SameLine();
+    SetNextItemWidth(150);
+    PushID("model_input");
+    bool model_changed = InputText("##model", ui.model_buf, sizeof(ui.model_buf),
+        ImGuiInputTextFlags_EnterReturnsTrue);
+    PopID();
+    SameLine();
+    if (SmallButton("Model") || model_changed) {
+        session.set_model(ui.model_buf);
+    }
 
-            Separator();
+    // ── Raw popup toggle ──
+    SameLine();
+    if (SmallButton("Raw")) {
+        ui.show_raw_popup = !ui.show_raw_popup;
+    }
 
-            BeginChild("##chat",
-                ImVec2(0, -input_height),
+    Separator();
+
+    BeginChild("##chat",
+        ImVec2(0, -input_height),
+        false,
+        ImGuiWindowFlags_AlwaysVerticalScrollbar);
+
+    size_t i = 0;
+
+    if (ui.entries.size() > 30) {
+        i = ui.entries.size() - 30;
+        TextWrapped("%d old entries", int(i));
+        Separator();
+    }
+
+    for (; i < ui.entries.size(); i++) {
+        auto& entry = ui.entries[i];
+
+        if (entry.type == EntryType::Content && !entry.text.size())
+            continue;
+
+        PushID(string("entry-" + std::to_string(i)).c_str());
+
+        stringstream ss;
+
+        switch (entry.type) {
+        case EntryType::UserText:
+            PushStyleColor(ImGuiCol_Text, IM_COL32(100, 180, 255, 255));
+            PushTextWrapPos(0);
+            ss << "You: " << entry.text;
+            TextUnformatted(ss.str().c_str());
+            NewLine();
+            PopTextWrapPos();
+            PopStyleColor();
+            break;
+        case EntryType::Reasoning:
+            PushStyleColor(ImGuiCol_Text, IM_COL32(160, 160, 160, 255));
+            render_content("Thinking: " + entry.text);
+            PopStyleColor();
+            break;
+        case EntryType::Content:
+            PushStyleColor(ImGuiCol_Text, GetColorU32(ImGuiCol_Text));
+            render_content(entry.text);
+            PopStyleColor();
+            break;
+        case EntryType::ToolCall:
+            PushStyleColor(ImGuiCol_Text, IM_COL32(255, 165, 0, 255));
+            PushTextWrapPos(0);
+            text_unformatted_ellipsis(entry.text);
+            for (;
+                i + 1 < ui.entries.size() && ui.entries[i + 1].type == EntryType::ToolCall;
+                i++) {
+                text_unformatted_ellipsis(ui.entries[i + 1].text);
+            }
+            NewLine();
+            PopTextWrapPos();
+            PopStyleColor();
+            break;
+        }
+
+        PopID();
+    }
+
+    NewLine();
+
+    // auto-scroll
+    float scroll_y = GetScrollY();
+    float scroll_max = GetScrollMaxY();
+    if (scroll_y >= scroll_max - 10.0f)
+        ui.auto_scroll = true;
+    else
+        ui.auto_scroll = false;
+    if (ui.auto_scroll)
+        SetScrollHereY(1.0f);
+
+    EndChild();
+
+    if (ui.mono_font)
+        PopFont();
+
+    // ── Raw popup ──
+    if (ui.show_raw_popup) {
+        if (ui.mono_font)
+            PushFont(ui.mono_font);
+        string raw_title = "Raw##" + std::to_string(tab.id);
+        if (Begin(raw_title.c_str(), &ui.show_raw_popup, ImGuiWindowFlags_AlwaysAutoResize)) {
+            BeginChild("##raw_popup",
+                ImVec2(0, 0),
                 false,
                 ImGuiWindowFlags_AlwaysVerticalScrollbar);
 
-            size_t i = 0;
-
-            if (ui.entries.size() > 30) {
-                i = ui.entries.size() - 30;
-                TextWrapped("%d old entries", int(i));
-                Separator();
-            }
-
-            for (; i < ui.entries.size(); i++) {
-                auto& entry = ui.entries[i];
-
-                if (entry.type == EntryType::Content && !entry.text.size())
-                    continue;
-
-                PushID(string("entry-" + std::to_string(i)).c_str());
-
-                stringstream ss;
-
-                switch (entry.type) {
-                case EntryType::UserText:
-                    PushStyleColor(ImGuiCol_Text, IM_COL32(100, 180, 255, 255));
-                    PushTextWrapPos(0);
-                    ss << "You: " << entry.text;
-                    TextUnformatted(ss.str().c_str());
-                    NewLine();
-                    PopTextWrapPos();
-                    PopStyleColor();
-                    break;
-                case EntryType::Reasoning:
-                    PushStyleColor(ImGuiCol_Text, IM_COL32(160, 160, 160, 255));
-                    render_content("Thinking: " + entry.text);
-                    PopStyleColor();
-                    break;
-                case EntryType::Content:
-                    PushStyleColor(ImGuiCol_Text, GetColorU32(ImGuiCol_Text));
-                    render_content(entry.text);
-                    PopStyleColor();
-                    break;
-                case EntryType::ToolCall:
-                    PushStyleColor(ImGuiCol_Text, IM_COL32(255, 165, 0, 255));
-                    PushTextWrapPos(0);
-                    text_unformatted_ellipsis(entry.text);
-                    for (;
-                        i + 1 < ui.entries.size() && ui.entries[i + 1].type == EntryType::ToolCall;
-                        i++) {
-                        text_unformatted_ellipsis(ui.entries[i + 1].text);
-                    }
-                    NewLine();
-                    PopTextWrapPos();
-                    PopStyleColor();
-                    break;
-                }
-
-                PopID();
-            }
-
-            NewLine();
-
-            // auto-scroll
-            float scroll_y = GetScrollY();
-            float scroll_max = GetScrollMaxY();
-            if (scroll_y >= scroll_max - 10.0f)
-                ui.auto_scroll = true;
-            else
-                ui.auto_scroll = false;
-            if (ui.auto_scroll)
-                SetScrollHereY(1.0f);
-
-            EndChild();
-            EndTabItem();
-        }
-
-        // ── Raw tab ──
-        if (BeginTabItem("Raw")) {
-            BeginChild(
-                "##raw", ImVec2(0, -input_height), false, ImGuiWindowFlags_AlwaysVerticalScrollbar);
-
             PushStyleColor(ImGuiCol_Text, IM_COL32(180, 180, 180, 255));
 
-            size_t i = 0;
+            size_t ri = 0;
 
             if (ui.entries.size() > 30) {
-                i = ui.entries.size() - 30;
-                TextWrapped("%d old entries", int(i));
+                ri = ui.entries.size() - 30;
+                TextWrapped("%d old entries", int(ri));
                 Separator();
             }
 
-            for (; i < ui.entries.size(); i++) {
-                const auto& entry = ui.entries[i];
+            for (; ri < ui.entries.size(); ri++) {
+                const auto& entry = ui.entries[ri];
                 const char* prefix = "";
                 switch (entry.type) {
                 case EntryType::UserText:
@@ -725,14 +735,11 @@ void render_chat_ui(TabInfo& tab, bool& done) {
             PopStyleColor();
 
             EndChild();
-            EndTabItem();
         }
-
-        EndTabBar();
+        End();
+        if (ui.mono_font)
+            PopFont();
     }
-
-    if (ui.mono_font)
-        PopFont();
 
     // ── input area ──
     Separator();
