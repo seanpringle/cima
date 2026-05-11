@@ -594,7 +594,9 @@ void render_chat_ui(TabInfo& tab, bool& done) {
             } else {
                 ui.models_error = std::move(result.error());
             }
-            ui.models_fetched = true;
+            // Release-store publishes the non-atomic writes above to any
+            // acquire-load of models_fetched on the render thread.
+            ui.models_fetched->store(true, std::memory_order_release);
         });
         ui.models_future = task.get_future();
         std::thread(std::move(task)).detach();
@@ -610,7 +612,9 @@ void render_chat_ui(TabInfo& tab, bool& done) {
         SetNextItemWidth(GetContentRegionAvail().x*0.3f);
         if (BeginCombo("##model", preview.c_str(), ImGuiComboFlags_HeightLarge)) {
             // Show a loading indicator if models haven't arrived yet
-            if (!ui.models_fetched) {
+            // Acquire-load synchronises with the release-store in the
+            // model-fetch thread, making available_models/models_error visible.
+            if (!ui.models_fetched->load(std::memory_order_acquire)) {
                 TextDisabled("Loading models...");
             } else if (!ui.models_error.empty()) {
                 TextColored(ImColor(IM_COL32(255,100,100,255)), "Error: %s", ui.models_error.c_str());

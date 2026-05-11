@@ -38,7 +38,8 @@ struct ChatUIState {
     // Available models from the endpoint (populated by fetch_models)
     std::vector<std::string> available_models;
     bool models_loaded = false;      // true once the initial fetch has been attempted
-    bool models_fetched = false;     // true once the fetch actually completed
+    std::unique_ptr<std::atomic<bool>> models_fetched{
+        std::make_unique<std::atomic<bool>>(false)};  // publication flag (release/acquire synchronises the other fields)
     std::string models_error;
 
     // Tracks the async model-fetch so we can wait for completion before tab close
