@@ -2449,6 +2449,7 @@ struct WorktreeState {
     std::string original_safe_dir;   // main repo path (to restore on stop)
     std::string worktree_name;       // git worktree name
     std::string worktree_path;       // filesystem path to the worktree
+    std::string branch_name;         // branch name checked out in the worktree
     bool active = false;
 };
 
@@ -2587,6 +2588,7 @@ Tool make_start_worktree_tool(std::shared_ptr<std::string> safe_dir_ptr,
         // Store state
         state->worktree_name = wt_name;
         state->worktree_path = wt_path;
+        state->branch_name = branch;
         state->active = true;
 
         // Switch the session's safe_dir to the worktree path
@@ -2667,6 +2669,66 @@ static Result<std::string> check_worktree_dirty(git_repository* repo) {
 }
 
 // ===================================================================
+// Check whether a branch is fully merged into HEAD.
+// Returns true if the branch tip is an ancestor of HEAD (all commits
+// on the branch are reachable from HEAD).
+// ===================================================================
+
+static Result<bool> is_branch_merged(git_repository* repo, const std::string& branch) {
+    // Look up the branch
+    git_reference* branch_ref = nullptr;
+    int err = git_branch_lookup(&branch_ref, repo, branch.c_str(), GIT_BRANCH_LOCAL);
+    if (err) {
+        // Branch doesn't exist — treat as merged (nothing to lose)
+        if (err == GIT_ENOTFOUND)
+            return true;
+        const git_error* e = git_error_last();
+        return std::unexpected("cannot look up branch '" + branch + "': " +
+            (e ? std::string(e->message) : "unknown error"));
+    }
+    auto branch_cleanup = std::unique_ptr<git_reference, decltype(&git_reference_free)>(
+        branch_ref, git_reference_free);
+
+    // Get branch tip commit
+    git_commit* branch_commit = nullptr;
+    err = git_commit_lookup(&branch_commit, repo, git_reference_target(branch_ref));
+    if (err) {
+        const git_error* e = git_error_last();
+        return std::unexpected("cannot look up branch tip: " +
+            (e ? std::string(e->message) : "unknown error"));
+    }
+    auto branch_commit_cleanup = std::unique_ptr<git_commit, decltype(&git_commit_free)>(
+        branch_commit, git_commit_free);
+
+    // Get HEAD commit
+    git_commit* head_commit = nullptr;
+    err = git_revparse_single(reinterpret_cast<git_object**>(&head_commit),
+        repo, "HEAD^{commit}");
+    if (err) {
+        const git_error* e = git_error_last();
+        return std::unexpected("cannot resolve HEAD: " +
+            (e ? std::string(e->message) : "unknown error"));
+    }
+    auto head_commit_cleanup = std::unique_ptr<git_commit, decltype(&git_commit_free)>(
+        head_commit, git_commit_free);
+
+    // Find merge base
+    git_oid merge_base_oid;
+    err = git_merge_base(&merge_base_oid, repo,
+        git_commit_id(head_commit), git_commit_id(branch_commit));
+    if (err) {
+        const git_error* e = git_error_last();
+        return std::unexpected("cannot compute merge base: " +
+            (e ? std::string(e->message) : "unknown error"));
+    }
+
+    // Branch is fully merged into HEAD iff the merge base is the branch tip
+    // (i.e. every commit on the branch is also reachable from HEAD).
+    const git_oid* branch_oid = git_commit_id(branch_commit);
+    return git_oid_equal(&merge_base_oid, branch_oid);
+}
+
+// ===================================================================
 // stop_worktree tool
 // ===================================================================
 
@@ -2677,19 +2739,20 @@ Tool make_stop_worktree_tool(std::shared_ptr<std::string> safe_dir_ptr,
     t.name = "stop_worktree";
     t.description =
         "Stop the current worktree session and return to the main repository. "
-        "Cleans up the worktree directory and git worktree metadata. "
+        "Cleans up the worktree directory, git worktree metadata, "
+        "and deletes the worktree branch. "
         "After calling this, all tools operate on the original repository again.\n"
-        "If the worktree has uncommitted changes, the tool will refuse unless "
-        "`force` is set to true.\n"
-        "Use `force: true` to discard uncommitted changes and proceed.";
+        "Requires `force: true` if the worktree has uncommitted changes, "
+        "or if the branch has commits not yet merged into HEAD.\n"
+        "Use `force: true` to discard uncommitted changes and delete the branch.";
     t.timeout_sec = 30;
     t.parameters = {{"type", "object"},
         {"properties",
             {{"force",
                 {{"type", "boolean"},
                     {"description",
-                        "If true, discard uncommitted changes and stop the worktree "
-                        "even if it is dirty. Default false."}}}}},
+                        "If true, discard uncommitted changes and delete the branch "
+                        "even if it is dirty or unmerged. Default false."}}}}},
         {"required", json::array()}};
 
     t.execute = [safe_dir_ptr, state](const json& args) -> Result<std::string> {
@@ -2721,6 +2784,20 @@ Tool make_stop_worktree_tool(std::shared_ptr<std::string> safe_dir_ptr,
                     "stop_worktree: worktree has uncommitted changes.\n" +
                     *dirty +
                     "Use stop_worktree with {\"force\": true} to discard them and proceed.");
+            }
+        }
+
+        // Check if the branch is merged into HEAD (unless forced)
+        if (!force && !state->branch_name.empty()) {
+            auto merged = is_branch_merged(repo, state->branch_name);
+            if (!merged) {
+                return std::unexpected("stop_worktree: " + merged.error());
+            }
+            if (!*merged) {
+                return std::unexpected(
+                    "stop_worktree: branch '" + state->branch_name +
+                    "' has commits not yet merged into HEAD.\n"
+                    "Use stop_worktree with {\"force\": true} to delete the branch anyway.");
             }
         }
 
@@ -2757,18 +2834,38 @@ Tool make_stop_worktree_tool(std::shared_ptr<std::string> safe_dir_ptr,
             remove_all_safe(state->worktree_path);
         }
 
+        // Delete the worktree branch
+        if (!state->branch_name.empty()) {
+            git_reference* branch_ref = nullptr;
+            int err = git_branch_lookup(&branch_ref, repo,
+                state->branch_name.c_str(), GIT_BRANCH_LOCAL);
+            if (err == 0 && branch_ref) {
+                auto branch_cleanup = std::unique_ptr<git_reference,
+                    decltype(&git_reference_free)>(branch_ref, git_reference_free);
+                err = git_branch_delete(branch_ref);
+                if (err) {
+                    const git_error* e = git_error_last();
+                    return std::unexpected("stop_worktree: failed to delete branch '" +
+                        state->branch_name + "': " +
+                        (e ? std::string(e->message) : "unknown error"));
+                }
+            }
+        }
+
         // Restore safe_dir to original repo
         *safe_dir_ptr = state->original_safe_dir;
 
         // Clear state
         std::string wt_name = state->worktree_name;
         std::string wt_path = state->worktree_path;
+        std::string branch_name = state->branch_name;
         state->worktree_name.clear();
         state->worktree_path.clear();
+        state->branch_name.clear();
         state->active = false;
 
-        return "Worktree '" + wt_name + "' at " + wt_path +
-            " has been cleaned up. Tools now operate on the main repository.";
+        return "Worktree '" + wt_name + "' (branch '" + branch_name +
+            "') has been cleaned up. Tools now operate on the main repository.";
     };
     return t;
 }
