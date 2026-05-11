@@ -2,6 +2,8 @@
 #include "plan.h"
 
 #include <future>
+#include <mutex>
+#include <unordered_map>
 
 ChatSession::ChatSession(Config config)
     : model_(std::move(config.model)), reasoning_effort_(std::move(config.reasoning_effort)),
@@ -26,20 +28,6 @@ ChatSession::ChatSession(Config config)
         [this](const std::vector<Message>& msgs, size_t max_tokens) {
             return summarize_messages_(msgs, max_tokens);
         });
-
-    // Try to discover context limit from the API. Only use it if the user
-    // didn't explicitly set LLM_CONTEXT_LIMIT (config.context_limit still
-    // has the default 300000 if unset — we can't distinguish that, but the
-    // env var takes precedence because we only override if discovery succeeds
-    // and we treat config as the baseline). If the user set the env var to
-    // something, config.context_limit will already reflect it. Discovery
-    // only fills in if config.context_limit is still the hardcoded default.
-    if (config.context_limit == 300000) {
-        int discovered = client_.fetch_model_context_limit(model_);
-        if (discovered > 0) {
-            context_limit_ = static_cast<size_t>(discovered);
-        }
-    }
 }
 
 void ChatSession::clear() { conversation_.clear(); }
@@ -49,6 +37,32 @@ void ChatSession::compact() {
 }
 
 Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
+    // ── Discover context limit (once per model/endpoint) ──
+    if (!context_limit_discovered_) {
+        static std::mutex cache_mutex;
+        static std::unordered_map<std::string, int> cache;
+
+        std::string cache_key = client_.url() + ":" + model_;
+        {
+            std::lock_guard<std::mutex> lock(cache_mutex);
+            auto it = cache.find(cache_key);
+            if (it != cache.end()) {
+                context_limit_ = static_cast<size_t>(it->second);
+                context_limit_discovered_ = true;
+            }
+        }
+        if (!context_limit_discovered_) {
+            int discovered = client_.fetch_model_context_limit(model_);
+            if (discovered > 0) {
+                context_limit_ = static_cast<size_t>(discovered);
+            }
+            std::lock_guard<std::mutex> lock(cache_mutex);
+            if (discovered > 0)
+                cache[cache_key] = discovered;
+            context_limit_discovered_ = true;
+        }
+    }
+
     auto snapshot = conversation_.size();
     conversation_.add_user(user_input);
 
