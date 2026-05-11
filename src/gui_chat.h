@@ -9,5 +9,6 @@
 #include <vector>
 
 void render_chat_ui(TabInfo& tab, bool& done);
+void render_chat_overlay(TabInfo& tab, bool& done);
 void drain_pending(ChatUIState& ui, AsyncChatState& chat);
 void render_content(const std::string& text);

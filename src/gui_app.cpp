@@ -192,13 +192,8 @@ int gui_main(Config cfg) {
 
         // ── Left panel (40%) with Plan + Right panel (60%) with Planner/Builder tabs ──
         {
-            ImVec2 content = GetContentRegionAvail();
-            float separator_w = GetStyle().ItemSpacing.x;
-            float left_width = content.x * 0.4f;
-            float right_width = content.x - left_width - separator_w * 3;
-
             // Left panel: Plan document
-            BeginChild("##plan_panel", ImVec2(left_width - separator_w, content.y), true);
+            BeginChild("##plan_panel", ImVec2(GetContentRegionAvail().x * 0.4f, GetContentRegionAvail().y), true, ImGuiChildFlags_None);
             Text("Plan");
             Separator();
             auto plan_result = PlanBoard::instance().read_plan();
@@ -215,12 +210,8 @@ int gui_main(Config cfg) {
 
             SameLine();
 
-            // Vertical separator
-            SeparatorEx(ImGuiSeparatorFlags_Vertical);
-            SameLine();
-
             // Right panel: active chat session (no tab bar — both agents are always alive)
-            BeginChild("##agent_panel", ImVec2(right_width, content.y), true);
+            BeginChild("##agent_panel", GetContentRegionAvail(), true, ImGuiChildFlags_None);
 
             // Header showing which agent is active, with a hint to toggle
             {
@@ -252,6 +243,13 @@ int gui_main(Config cfg) {
         }
 
         End(); // main window
+
+        // Render the active chat UI overlay
+        {
+            bool is_planner = (s_active_agent_tab == 0);
+            TabInfo& active = is_planner ? planner_tab : builder_tab;
+            render_chat_overlay(active, done);
+        }
 
         ImGui::Render();
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
