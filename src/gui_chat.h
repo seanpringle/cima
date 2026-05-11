@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+void render_chat_controls(TabInfo& tab);
 void render_chat_ui(TabInfo& tab, bool& done);
 void render_chat_overlay(TabInfo& tab, bool& done);
 void drain_pending(ChatUIState& ui, AsyncChatState& chat);

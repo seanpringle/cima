@@ -215,6 +215,10 @@ int gui_main(Config cfg) {
                     if (BeginTabItem(tab_label.c_str(), can_close ? &is_open : nullptr, tab_flags)) {
                         active_tab = ti;
 
+                        // Controls row at tab level (model combo, raw, tokens, branch)
+                        render_chat_controls(tab);
+                        Separator();
+
                         // Inside each tab: 40% Plan (left) + 60% Chat (right)
                         {
                             // Left panel: Plan document

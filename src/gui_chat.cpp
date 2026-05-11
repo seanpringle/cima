@@ -530,45 +530,13 @@ void drain_pending(ChatUIState& ui, AsyncChatState& chat) {
     chat.pending.clear();
 }
 
-void render_chat_ui(TabInfo& tab, bool& done) {
+void render_chat_controls(TabInfo& tab) {
     auto& ui = tab.ui_state;
-    auto& chat = *tab.chat_state;
     auto& session = *tab.session;
-
-    // ── check if chat finished (before drain, so the drain catches any last items) ──
-    bool stream_ended = false;
-    Result<ChatResult> result = std::unexpected(string("unknown error"));
-    if (chat.running && chat.future.valid() &&
-        chat.future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        try {
-            result = chat.future.get();
-        } catch (const std::exception& e) {
-            result = std::unexpected(string(e.what()));
-        }
-        chat.running = false;
-        stream_ended = true;
-    }
-
-    // ── drain pending output (includes any items that arrived after last frame's drain) ──
-    drain_pending(ui, chat);
-
-    // ── finalize streaming entry now that all pending data is incorporated ──
-    if (stream_ended) {
-        if (!ui.entries.empty() && ui.entries.back().is_streaming) {
-            ui.entries.back().is_streaming = false;
-        }
-        if (!result) {
-            push_entry(ui, EntryType::Content, "Error: " + result.error(), false);
-        }
-    }
-
-    // ── main content (previously inside "Chat" tab) ──
-    float input_height = GetFrameHeightWithSpacing() * 6 + 8;
 
     if (ui.mono_font)
         PushFont(ui.mono_font);
 
-    // ── toolbar ──
     // ── Fetch models on first render ──
     if (!ui.models_loaded) {
         ui.models_loaded = true;
@@ -663,6 +631,48 @@ void render_chat_ui(TabInfo& tab, bool& done) {
             PopStyleColor();
         }
     }
+
+    if (ui.mono_font)
+        PopFont();
+}
+
+void render_chat_ui(TabInfo& tab, bool& done) {
+    auto& ui = tab.ui_state;
+    auto& chat = *tab.chat_state;
+    auto& session = *tab.session;
+
+    // ── check if chat finished (before drain, so the drain catches any last items) ──
+    bool stream_ended = false;
+    Result<ChatResult> result = std::unexpected(string("unknown error"));
+    if (chat.running && chat.future.valid() &&
+        chat.future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        try {
+            result = chat.future.get();
+        } catch (const std::exception& e) {
+            result = std::unexpected(string(e.what()));
+        }
+        chat.running = false;
+        stream_ended = true;
+    }
+
+    // ── drain pending output (includes any items that arrived after last frame's drain) ──
+    drain_pending(ui, chat);
+
+    // ── finalize streaming entry now that all pending data is incorporated ──
+    if (stream_ended) {
+        if (!ui.entries.empty() && ui.entries.back().is_streaming) {
+            ui.entries.back().is_streaming = false;
+        }
+        if (!result) {
+            push_entry(ui, EntryType::Content, "Error: " + result.error(), false);
+        }
+    }
+
+    // ── main content ──
+    float input_height = GetFrameHeightWithSpacing() * 6 + 8;
+
+    if (ui.mono_font)
+        PushFont(ui.mono_font);
 
     Separator();
 
