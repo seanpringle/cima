@@ -141,9 +141,23 @@ int gui_main(Config cfg) {
         });
 
     bool done = false;
+    static int s_active_agent_tab = 0;
     while (!done) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
+            // Intercept Tab key (without Ctrl/Alt modifiers) for agent switching.
+            // Block ImGui from ever seeing Tab so it can't use it for focus navigation.
+            // Trigger on KEY_UP so the switch happens after the key is released, not on press.
+            if ((event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) &&
+                event.key.key == SDLK_TAB &&
+                !(event.key.mod & SDL_KMOD_CTRL) &&
+                !(event.key.mod & SDL_KMOD_ALT)) {
+                if (event.type == SDL_EVENT_KEY_UP) {
+                    s_active_agent_tab = s_active_agent_tab ? 0 : 1;
+                }
+                continue; // Skip ImGui processing entirely
+            }
+
             ImGui_ImplSDL3_ProcessEvent(&event);
             if (event.type == SDL_EVENT_QUIT)
                 done = true;
@@ -164,14 +178,6 @@ int gui_main(Config cfg) {
         ImGui_ImplSDLRenderer3_NewFrame();
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
-
-        // ── Tab key to toggle between Planner/Builder agents ──
-        static int s_active_agent_tab = 0;
-
-        // Only trigger when no widget is actively being edited (e.g. not while typing).
-        if (ImGui::IsKeyPressed(ImGuiKey_Tab, false) && !ImGui::IsAnyItemActive()) {
-            s_active_agent_tab = s_active_agent_tab ? 0 : 1;
-        }
 
         // ── main window ──
         SetNextWindowPos(ImVec2(0, 0));
