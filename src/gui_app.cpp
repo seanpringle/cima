@@ -191,33 +191,8 @@ int gui_main(Config cfg) {
             }
         }
 
-        // ── Left panel (40%) with Plan + Right panel (60%) with tabs ──
+        // ── Full-width tabs, each with 40% Plan + 60% Chat split inside ──
         {
-            // Left panel: Plan document
-            BeginChild("##plan_panel", ImVec2(GetContentRegionAvail().x * 0.4f, GetContentRegionAvail().y), true, ImGuiChildFlags_None);
-            Text("Plan");
-            Separator();
-            if (active_tab >= 0 && active_tab < (int)tabs.size()) {
-                auto plan_result = tabs[active_tab].session->plan().read_plan();
-                if (plan_result) {
-                    if (mono_font)
-                        PushFont(mono_font);
-                    render_content(*plan_result);
-                    if (mono_font)
-                        PopFont();
-                } else {
-                    TextDisabled("(empty plan)");
-                }
-            } else {
-                TextDisabled("(empty plan)");
-            }
-            EndChild();
-
-            SameLine();
-
-            // Right panel: tabbed chat sessions
-            BeginChild("##agent_panel", GetContentRegionAvail(), true, ImGuiChildFlags_None);
-
             // ── Tab bar ──
             if (BeginTabBar("##chat_tabs", ImGuiTabBarFlags_NoTooltip)) {
                 for (int ti = 0; ti < (int)tabs.size(); ) {
@@ -239,8 +214,33 @@ int gui_main(Config cfg) {
                     }
                     if (BeginTabItem(tab_label.c_str(), can_close ? &is_open : nullptr, tab_flags)) {
                         active_tab = ti;
-                        // Render the active chat UI for this tab
-                        render_chat_ui(tab, done);
+
+                        // Inside each tab: 40% Plan (left) + 60% Chat (right)
+                        {
+                            // Left panel: Plan document
+                            BeginChild("##tab_plan", ImVec2(GetContentRegionAvail().x * 0.4f, GetContentRegionAvail().y), true, ImGuiChildFlags_None);
+                            Text("Plan");
+                            Separator();
+                            auto plan_result = tab.session->plan().read_plan();
+                            if (plan_result) {
+                                if (mono_font)
+                                    PushFont(mono_font);
+                                render_content(*plan_result);
+                                if (mono_font)
+                                    PopFont();
+                            } else {
+                                TextDisabled("(empty plan)");
+                            }
+                            EndChild();
+
+                            SameLine();
+
+                            // Right panel: Chat UI
+                            BeginChild("##tab_chat", GetContentRegionAvail(), true, ImGuiChildFlags_None);
+                            render_chat_ui(tab, done);
+                            EndChild();
+                        }
+
                         EndTabItem();
                     }
                     PopID();
@@ -272,8 +272,6 @@ int gui_main(Config cfg) {
 
                 EndTabBar();
             }
-
-            EndChild();
         }
 
         End(); // main window
