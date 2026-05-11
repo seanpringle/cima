@@ -693,7 +693,8 @@ void render_chat_ui(TabInfo& tab, bool& done) {
         if (ui.mono_font)
             PushFont(ui.mono_font);
         string raw_title = "Raw##" + std::to_string(tab.id);
-        if (Begin(raw_title.c_str(), &ui.show_raw_popup, ImGuiWindowFlags_AlwaysAutoResize)) {
+        SetNextWindowSize(ImVec2(600, 400), ImGuiCond_FirstUseEver);
+        if (Begin(raw_title.c_str(), &ui.show_raw_popup)) {
             BeginChild("##raw_popup",
                 ImVec2(0, 0),
                 false,
