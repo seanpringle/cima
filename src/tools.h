@@ -84,6 +84,16 @@ class ToolRegistry {
 };
 
 // ---------------------------------------------------------------------------
+// Git helpers
+// ---------------------------------------------------------------------------
+
+/// Get the current git branch name at the given repository path.
+/// Returns the branch name, or a description like "(detached HEAD at <hash>)"
+/// if the repo is in detached HEAD state.
+/// Returns an error if the path is not a git repository.
+Result<std::string> get_current_git_branch(const std::string& repo_path);
+
+// ---------------------------------------------------------------------------
 // Worktree tool declarations
 // ---------------------------------------------------------------------------
 struct WorktreeState;

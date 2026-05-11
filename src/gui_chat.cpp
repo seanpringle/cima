@@ -1,4 +1,5 @@
 #include "gui_chat.h"
+#include "tools.h"
 
 #include "imgui.h"
 
@@ -637,6 +638,29 @@ void render_chat_ui(TabInfo& tab, bool& done) {
         if (usage.total_tokens > 0) {
             SameLine(0, 8);
             TextColored(ImColor(IM_COL32(180, 180, 180, 255)), "[%d tokens]", usage.total_tokens);
+        }
+    }
+
+    // ── Git branch / workspace indicator ──
+    {
+        // Refresh workspace path from the session (may change via worktree tools)
+        auto current_safe_dir = session.safe_dir();
+        if (current_safe_dir != tab.workspace_path) {
+            tab.workspace_path = current_safe_dir;
+            auto branch_result = get_current_git_branch(current_safe_dir);
+            if (branch_result) {
+                tab.git_branch = std::move(*branch_result);
+            } else {
+                tab.git_branch.clear();
+            }
+        }
+        if (!tab.git_branch.empty()) {
+            SameLine(0, 16);
+            TextDisabled("Branch:");
+            SameLine(0, 4);
+            PushStyleColor(ImGuiCol_Text, IM_COL32(255, 180, 50, 255));
+            TextUnformatted(tab.git_branch.c_str());
+            PopStyleColor();
         }
     }
 

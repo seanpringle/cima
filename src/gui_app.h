@@ -52,6 +52,8 @@ struct TabInfo {
     ChatUIState ui_state;
     int id = 0;
     std::string title;
+    std::string git_branch;
+    std::string workspace_path;
 };
 
 int gui_main(Config cfg);
