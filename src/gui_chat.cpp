@@ -751,8 +751,12 @@ void render_chat_ui(TabInfo& tab, bool& done) {
 
     if (running_snapshot)
         BeginDisabled();
+
     if (ui.mono_font)
         PushFont(ui.mono_font);
+
+    if (!running_snapshot)
+        SetKeyboardFocusHere();
 
     if (InputTextMultiline("##input",
             ui.input_buf,
