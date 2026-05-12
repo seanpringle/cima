@@ -158,7 +158,9 @@ int gui_main(Config cfg) {
             nullptr,
             ImGuiWindowFlags_NoTitleBar |
                 ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
-                ImGuiWindowFlags_NoBringToFrontOnFocus);
+                ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoDecoration |
+                ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse
+            );
 
         // ── Global keyboard shortcuts ──
         // Ctrl+T: open a new tab and switch to it
@@ -212,20 +214,40 @@ int gui_main(Config cfg) {
                         tab_flags |= ImGuiTabItemFlags_SetSelected;
                         focus_tab_id = -1;
                     }
-                    if (BeginTabItem(tab_label.c_str(), can_close ? &is_open : nullptr, tab_flags)) {
+
+                    if (BeginTabItem((tab_label + "##tab-" + std::to_string(ti)).c_str(), can_close ? &is_open : nullptr, tab_flags)) {
                         active_tab = ti;
+
+                        auto padding = GetStyle().WindowPadding;
+                        auto space = GetContentRegionAvail();
+
+                        SetCursorPos(ImVec2(GetCursorPosX()-padding.x, GetCursorPosY()-GetStyle().ItemSpacing.y));
+                        BeginChild("##tab_view", ImVec2(space.x + padding.x*2, space.y+padding.y*2+GetStyle().ItemSpacing.y),
+                            ImGuiChildFlags_None, ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
                         // Controls row at tab level (model combo, raw, tokens, branch)
                         render_chat_controls(tab);
+
                         Separator();
 
                         // Inside each tab: 40% Plan (left) + 60% Chat (right)
                         {
+                            auto canvas = GetContentRegionAvail();
+                            auto tl = GetCursorPos();
+                            float gap = GetStyle().ItemSpacing.x*2.0f;
+                            float planWidth = canvas.x*0.4f - gap;
+                            auto planPos = tl;
+                            auto planSize = ImVec2(planWidth, canvas.y);
+                            auto chatPos = ImVec2(tl.x + planWidth + gap, tl.y);
+                            auto chatSize = ImVec2(-1, canvas.y);
+                            auto winPos = GetWindowPos();
+                            auto sepPosA = ImVec2(winPos.x + tl.x + planWidth + (gap/2), winPos.y + tl.y);
+                            auto sepPosB = ImVec2(sepPosA.x, winPos.y + tl.y + canvas.y);
+
                             // Left panel: Plan document
-                            PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-                            BeginChild("##tab_plan", ImVec2(GetContentRegionAvail().x * 0.4f, GetContentRegionAvail().y), false, ImGuiChildFlags_None);
-                            Text("Plan");
-                            Separator();
+                            SetCursorPos(planPos);
+                            BeginChild("##tab_plan", planSize, ImGuiChildFlags_None, ImGuiWindowFlags_None);
+
                             auto plan_result = tab.session->plan().read_plan();
                             if (plan_result) {
                                 if (mono_font)
@@ -237,27 +259,19 @@ int gui_main(Config cfg) {
                                 TextDisabled("(empty plan)");
                             }
                             EndChild();
-                            PopStyleVar();
 
-                            SameLine(0, 0);
-
-                            // Vertical separator between panels
-                            ImVec2 sep_pos = GetCursorScreenPos();
-                            float sep_height = GetContentRegionAvail().y;
-                            GetWindowDrawList()->AddLine(
-                                ImVec2(sep_pos.x + 1, sep_pos.y),
-                                ImVec2(sep_pos.x + 1, sep_pos.y + sep_height),
-                                GetColorU32(ImGuiCol_Separator), 1.0f);
-                            SameLine(0, 0);
+                            GetWindowDrawList()->AddLine(sepPosA, sepPosB, GetColorU32(ImGuiCol_Separator), GetStyle().ChildBorderSize);
 
                             // Right panel: Chat UI
                             PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-                            BeginChild("##tab_chat", GetContentRegionAvail(), false, ImGuiChildFlags_None);
+                            SetCursorPos(chatPos);
+                            BeginChild("##tab_chat", chatSize, ImGuiChildFlags_None, ImGuiWindowFlags_None);
+                            PopStyleVar();
                             render_chat_ui(tab, done);
                             EndChild();
-                            PopStyleVar();
                         }
 
+                        EndChild();
                         EndTabItem();
                     }
                     PopID();

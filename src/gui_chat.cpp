@@ -1,12 +1,14 @@
 #include "gui_chat.h"
 #include "tools.h"
 
+#define IMGUI_DEFINE_MATH_OPERATORS
 #include "imgui.h"
 
 #include <algorithm>
 #include <cctype>
 #include <chrono>
 #include <cstring>
+#include <git2/branch.h>
 #include <iomanip>
 #include <iostream>
 #include <md4c.h>
@@ -534,9 +536,6 @@ void render_chat_controls(TabInfo& tab) {
     auto& ui = tab.ui_state;
     auto& session = *tab.session;
 
-    if (ui.mono_font)
-        PushFont(ui.mono_font);
-
     // ── Fetch models on first render ──
     if (!ui.models_loaded) {
         ui.models_loaded = true;
@@ -558,15 +557,8 @@ void render_chat_controls(TabInfo& tab) {
         std::thread(std::move(task)).detach();
     }
 
-    // ── Model combo selector ──
-    {
-        // Build a preview string (current model or fallback)
-        std::string preview = session.model();
-        if (preview.empty()) preview = "(select model)";
-
-        PushID("model_combo");
-        SetNextItemWidth(GetContentRegionAvail().x*0.3f);
-        if (BeginCombo("##model", preview.c_str(), ImGuiComboFlags_HeightLarge)) {
+    if (BeginMenuBar()) {
+        if (BeginMenu("Model")) {
             // Show a loading indicator if models haven't arrived yet
             // Acquire-load synchronises with the release-store in the
             // model-fetch thread, making available_models/models_error visible.
@@ -579,61 +571,55 @@ void render_chat_controls(TabInfo& tab) {
             } else {
                 for (const auto& m : ui.available_models) {
                     bool is_selected = (m == session.model());
-                    if (Selectable(m.c_str(), is_selected)) {
+                    if (MenuItem(m.c_str(), nullptr, is_selected)) {
                         session.set_model(m);
                         // Sync the model_buf so it stays in sync
                         strncpy(ui.model_buf, m.c_str(), sizeof(ui.model_buf) - 1);
                         // Update the tab title to reflect the new model
                         tab.title = m;
                     }
-                    if (is_selected) {
-                        SetItemDefaultFocus();
-                    }
                 }
             }
-            EndCombo();
+            EndMenu();
         }
-        PopID();
+        if (BeginMenu("Debug")) {
+            Checkbox("Raw", &ui.show_raw);
+            EndMenu();
+        }
+        EndMenuBar();
     }
 
-    // ── Raw / Markdown toggle ──
-    SameLine();
-    Checkbox("Raw", &ui.show_raw);
+    string tokenInfo = std::to_string(session.last_usage().total_tokens) + " tokens";
 
-    // ── token usage indicator ──
-    {
-        const auto& usage = session.last_usage();
-        if (usage.total_tokens > 0) {
-            SameLine(0, 8);
-            TextColored(ImColor(IM_COL32(180, 180, 180, 255)), "[%d tokens]", usage.total_tokens);
-        }
-    }
-
-    // ── Git branch / workspace indicator ──
-    {
-        // Refresh workspace path from the session (may change via worktree tools)
-        auto current_safe_dir = session.safe_dir();
-        if (current_safe_dir != tab.workspace_path) {
-            tab.workspace_path = current_safe_dir;
-            auto branch_result = get_current_git_branch(current_safe_dir);
-            if (branch_result) {
-                tab.git_branch = std::move(*branch_result);
-            } else {
-                tab.git_branch.clear();
-            }
-        }
-        if (!tab.git_branch.empty()) {
-            SameLine(0, 16);
-            TextDisabled("Branch:");
-            SameLine(0, 4);
-            PushStyleColor(ImGuiCol_Text, IM_COL32(255, 180, 50, 255));
-            TextUnformatted(tab.git_branch.c_str());
-            PopStyleColor();
+    // Refresh workspace path from the session (may change via worktree tools)
+    auto current_safe_dir = session.safe_dir();
+    if (current_safe_dir != tab.workspace_path) {
+        tab.workspace_path = current_safe_dir;
+        auto branch_result = get_current_git_branch(current_safe_dir);
+        if (branch_result) {
+            tab.git_branch = std::move(*branch_result);
+        } else {
+            tab.git_branch.clear();
         }
     }
 
-    if (ui.mono_font)
-        PopFont();
+    string branchInfo = tab.git_branch;
+
+    string sep = " :: ";
+
+    auto tokenInfoSize = CalcTextSize(tokenInfo.c_str());
+    auto branchInfoSize = CalcTextSize(branchInfo.c_str());
+    auto sepSize = CalcTextSize(sep.c_str());
+
+    auto branchPos = ImVec2(GetContentRegionMax().x - branchInfoSize.x - GetStyle().WindowPadding.x, GetFrameHeight()/2 - branchInfoSize.y/2);
+    auto sepPos = ImVec2(branchPos.x - sepSize.x, GetFrameHeight()/2 - sepSize.y/2);
+    auto tokenPos = ImVec2(sepPos.x - tokenInfoSize.x, GetFrameHeight()/2 - tokenInfoSize.y/2);
+
+    GetForegroundDrawList()->AddText(GetWindowPos() + tokenPos, ImColor(IM_COL32(180, 180, 180, 255)), tokenInfo.c_str());
+    GetForegroundDrawList()->AddText(GetWindowPos() + sepPos, GetColorU32(ImGuiCol_TextDisabled), sep.c_str());
+    GetForegroundDrawList()->AddText(GetWindowPos() + branchPos, ImColor(IM_COL32(255, 180, 50, 255)), branchInfo.c_str());
+
+    SetCursorPos(ImVec2(0, GetFrameHeightWithSpacing()));
 }
 
 void render_chat_ui(TabInfo& tab, bool& done) {
@@ -673,8 +659,6 @@ void render_chat_ui(TabInfo& tab, bool& done) {
 
     if (ui.mono_font)
         PushFont(ui.mono_font);
-
-    Separator();
 
     BeginChild("##chat",
         ImVec2(0, -input_height),
