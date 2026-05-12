@@ -39,9 +39,7 @@ Tool make_web_search_tool(const std::string& api_key,
 
         // Build the request URL
         std::string url;
-        std::string response_format_hint; // "google", "duckduckgo", "custom"
         if (use_custom) {
-            response_format_hint = "custom";
             url = endpoint_override;
             auto pos = url.find("{query}");
             if (pos != std::string::npos) {
@@ -52,7 +50,6 @@ Tool make_web_search_tool(const std::string& api_key,
                 curl_free(encoded);
             }
         } else if (use_google) {
-            response_format_hint = "google";
             char* enc_key = curl_easy_escape(nullptr, api_key.c_str(), 0);
             char* enc_cx = curl_easy_escape(nullptr, engine_id.c_str(), 0);
             char* enc_q = curl_easy_escape(nullptr, query.c_str(), 0);
@@ -69,7 +66,6 @@ Tool make_web_search_tool(const std::string& api_key,
             curl_free(enc_q);
         } else {
             // DuckDuckGo Instant Answer API — no API key required
-            response_format_hint = "duckduckgo";
             char* enc_q = curl_easy_escape(nullptr, query.c_str(), 0);
             if (!enc_q)
                 return std::unexpected("curl_easy_escape failed");

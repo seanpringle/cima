@@ -8,8 +8,6 @@
 #include <cctype>
 #include <chrono>
 #include <cstring>
-#include <git2/branch.h>
-#include <iomanip>
 #include <iostream>
 #include <md4c.h>
 #include <string>
@@ -24,44 +22,7 @@ using std::vector;
 
 namespace {
 
-bool debug_markdown = false;
 
-string dump(const string_view s) {
-    std::span<const uint8_t> buf((const uint8_t*)s.data(), s.size());
-    stringstream ss;
-    for (size_t row = 0, lim = s.size() / 16 + std::min(size_t(1u), s.size() % 16); row < lim;
-        row++) {
-        for (size_t col = 0; col < 16; col++) {
-            if (col == 8)
-                ss << ' ';
-            size_t i = row * 16 + col;
-            if (i < buf.size()) {
-                uint32_t b = buf[i];
-                ss << std::hex << std::fixed << std::setw(2) << b << ' ';
-            } else {
-                ss << "   ";
-            }
-        }
-        ss << ' ';
-        for (size_t col = 0; col < 16; col++) {
-            if (col == 8)
-                ss << ' ';
-            size_t i = row * 16 + col;
-            if (i < buf.size()) {
-                char b = buf[i];
-                if (b > ' ' && b <= 'z') {
-                    ss << b;
-                } else {
-                    ss << '.';
-                }
-            } else {
-                ss << ' ';
-            }
-        }
-        ss << '\n';
-    }
-    return ss.str();
-};
 
 void text_unformatted_ellipsis(const string& text) {
     auto canvas = GetContentRegionAvail();
@@ -107,7 +68,6 @@ struct RenderCtx {
     bool in_code_block = false;
     string code_buf;
     ImVec2 code_start;
-    float code_width;
     ImDrawListSplitter code_splitter;
     int list_levels = 0;
 
@@ -125,63 +85,11 @@ struct RenderCtx {
         }
     }
 
-    void newline(MD_BLOCKTYPE type) {
-        if (debug_markdown) {
-            GetWindowDrawList()->AddCircleFilled(GetCursorScreenPos(), 5, IM_COL32(255, 0, 0, 255));
-            ImVec2 tl(GetCursorScreenPos().x-5, GetCursorScreenPos().y-5);
-            ImVec2 br(GetCursorScreenPos().x+5, GetCursorScreenPos().y+5);
-            if (IsMouseHoveringRect(tl, br) && BeginTooltip()) {
-                string name = [&]() {
-                    switch (type) {
-                        case MD_BLOCK_DOC: return "MD_BLOCK_DOC";
-                        case MD_BLOCK_QUOTE: return "MD_BLOCK_QUOTE";
-                        case MD_BLOCK_UL: return "MD_BLOCK_UL";
-                        case MD_BLOCK_OL: return "MD_BLOCK_OL";
-                        case MD_BLOCK_LI: return "MD_BLOCK_LI";
-                        case MD_BLOCK_HR: return "MD_BLOCK_HR";
-                        case MD_BLOCK_H: return "MD_BLOCK_H";
-                        case MD_BLOCK_CODE: return "MD_BLOCK_CODE";
-                        case MD_BLOCK_HTML: return "MD_BLOCK_HTML";
-                        case MD_BLOCK_P: return "MD_BLOCK_P";
-                        case MD_BLOCK_TABLE: return "MD_BLOCK_TABLE";
-                        case MD_BLOCK_THEAD: return "MD_BLOCK_THEAD";
-                        case MD_BLOCK_TBODY: return "MD_BLOCK_TBODY";
-                        case MD_BLOCK_TR: return "MD_BLOCK_TR";
-                        case MD_BLOCK_TH: return "MD_BLOCK_TH";
-                        case MD_BLOCK_TD: return "MD_BLOCK_TD";
-                    }
-                    return "(unknown)";
-                }();
-                Text("%s", name.c_str());
-                EndTooltip();
-            }
-        }
+    void newline(MD_BLOCKTYPE /*type*/) {
         NewLine();
     }
 
-    void newline(MD_TEXTTYPE type) {
-        if (debug_markdown) {
-            GetWindowDrawList()->AddCircleFilled(GetCursorScreenPos(), 5, IM_COL32(255, 0, 0, 255));
-            ImVec2 tl(GetCursorScreenPos().x-5, GetCursorScreenPos().y-5);
-            ImVec2 br(GetCursorScreenPos().x+5, GetCursorScreenPos().y+5);
-            if (IsMouseHoveringRect(tl, br) && BeginTooltip()) {
-                string name = [&]() {
-                    switch (type) {
-                        case MD_TEXT_BR: return "MD_TEXT_BR";
-                        case MD_TEXT_SOFTBR: return "MD_TEXT_SOFTBR";
-                        case MD_TEXT_NORMAL: return "MD_TEXT_NORMAL";
-                        case MD_TEXT_NULLCHAR: return "MD_TEXT_NULLCHAR";
-                        case MD_TEXT_ENTITY: return "MD_TEXT_ENTITY";
-                        case MD_TEXT_CODE: return "MD_TEXT_CODE";
-                        case MD_TEXT_HTML: return "MD_TEXT_HTML";
-                        case MD_TEXT_LATEXMATH: return "MD_TEXT_LATEXMATH";
-                    }
-                    return "(unknown)";
-                }();
-                Text("%s", name.c_str());
-                EndTooltip();
-            }
-        }
+    void newline(MD_TEXTTYPE /*type*/) {
         NewLine();
     }
 };
@@ -209,7 +117,6 @@ static int enter_block_cb(MD_BLOCKTYPE type, void* detail, void* userdata) {
         ctx.in_code_block = true;
         ctx.code_buf.clear();
         ctx.code_start = GetCursorScreenPos();
-        ctx.code_width = GetContentRegionAvail().x;
         auto* dl = GetWindowDrawList();
         ctx.code_splitter.Split(dl, 2);
         ctx.code_splitter.SetCurrentChannel(dl, 1);
@@ -446,8 +353,7 @@ static int text_cb(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* us
         }
         break;
     case MD_TEXT_BR:
-        NewLine();
-        NewLine();
+        ctx.newline(type);
         break;
     case MD_TEXT_SOFTBR:
         text_unformatted_inline_wrap(" ");
@@ -797,8 +703,3 @@ void render_chat_ui(TabInfo& tab, bool& done) {
         EndDisabled();
 }
 
-void render_chat_overlay(TabInfo& tab, bool& done) {
-    (void)tab;
-    (void)done;
-    // No longer used — raw viewing is now a checkbox toggle in the main chat UI.
-}

@@ -304,12 +304,6 @@ int gui_main(Config cfg) {
 
         End(); // main window
 
-        // Render the active chat UI overlay (currently unused — raw viewing is
-        // now a checkbox toggle in the main chat UI)
-        if (active_tab >= 0 && active_tab < (int)tabs.size()) {
-            render_chat_overlay(tabs[active_tab], done);
-        }
-
         ImGui::Render();
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);

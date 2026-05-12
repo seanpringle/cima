@@ -47,8 +47,6 @@ struct ToolCall {
     std::string arguments; // accumulated JSON fragment from streaming
 };
 
-void to_json(json& j, const ToolCall& tc);
-
 // ---------------------------------------------------------------------------
 // RetentionClass — how a message is treated during compaction
 // ---------------------------------------------------------------------------
