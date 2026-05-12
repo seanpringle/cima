@@ -29,8 +29,6 @@ struct ChatUIState {
     char input_buf[4096] = {};
     bool auto_scroll = true;
     bool request_cancel = false;
-    char model_buf[256] = {};
-    char title_buf[256] = {};
     ImFont* mono_font = nullptr;
     int next_seq = 1;
     bool show_raw = false;

@@ -113,9 +113,6 @@ int gui_main(Config cfg) {
         tab.chat_state = std::make_unique<AsyncChatState>();
         tab.session = std::make_unique<ChatSession>(cfg, tab.chat_state->cancelled);
         tab.ui_state.mono_font = mono_font;
-        strncpy(tab.ui_state.title_buf, tab.title.c_str(), sizeof(tab.ui_state.title_buf) - 1);
-        strncpy(tab.ui_state.model_buf, tab.session->model().c_str(),
-            sizeof(tab.ui_state.model_buf) - 1);
         tab.session->set_output_callback(
             [cs = tab.chat_state.get()](const std::string& text, OutputType type) {
                 std::lock_guard<std::mutex> lock(cs->mutex);

@@ -573,8 +573,6 @@ void render_chat_controls(TabInfo& tab) {
                     bool is_selected = (m == session.model());
                     if (MenuItem(m.c_str(), nullptr, is_selected)) {
                         session.set_model(m);
-                        // Sync the model_buf so it stays in sync
-                        strncpy(ui.model_buf, m.c_str(), sizeof(ui.model_buf) - 1);
                         // Update the tab title to reflect the new model
                         tab.title = m;
                     }
