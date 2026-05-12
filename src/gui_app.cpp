@@ -222,7 +222,8 @@ int gui_main(Config cfg) {
                         // Inside each tab: 40% Plan (left) + 60% Chat (right)
                         {
                             // Left panel: Plan document
-                            BeginChild("##tab_plan", ImVec2(GetContentRegionAvail().x * 0.4f, GetContentRegionAvail().y), true, ImGuiChildFlags_None);
+                            PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+                            BeginChild("##tab_plan", ImVec2(GetContentRegionAvail().x * 0.4f, GetContentRegionAvail().y), false, ImGuiChildFlags_None);
                             Text("Plan");
                             Separator();
                             auto plan_result = tab.session->plan().read_plan();
@@ -236,13 +237,25 @@ int gui_main(Config cfg) {
                                 TextDisabled("(empty plan)");
                             }
                             EndChild();
+                            PopStyleVar();
 
-                            SameLine();
+                            SameLine(0, 0);
+
+                            // Vertical separator between panels
+                            ImVec2 sep_pos = GetCursorScreenPos();
+                            float sep_height = GetContentRegionAvail().y;
+                            GetWindowDrawList()->AddLine(
+                                ImVec2(sep_pos.x + 1, sep_pos.y),
+                                ImVec2(sep_pos.x + 1, sep_pos.y + sep_height),
+                                GetColorU32(ImGuiCol_Separator), 1.0f);
+                            SameLine(0, 0);
 
                             // Right panel: Chat UI
-                            BeginChild("##tab_chat", GetContentRegionAvail(), true, ImGuiChildFlags_None);
+                            PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+                            BeginChild("##tab_chat", GetContentRegionAvail(), false, ImGuiChildFlags_None);
                             render_chat_ui(tab, done);
                             EndChild();
+                            PopStyleVar();
                         }
 
                         EndTabItem();
