@@ -42,6 +42,10 @@ struct Config {
         "You have access to a markdown Plan document visible to the user."
         " Always start a task by researching the user's instructions and writing your Plan document."
         " Always explicitly ask the user to review and approve your completed Plan document before you start implementation.\n"
+        "\n"
+        "When merging a worktree branch back to the repo, always rebase the worktree branch first, rebuild and re-test, then"
+        " use a clean `git push . <worktree-branch>:<target-branch>` to do a local fast-forward merge from inside your cwd."
+        " Do not merge using the main repo checked-out worktree in case merge conflict artifacts interfere with other agents.\n"
     ;
 
     static Config from_env();
