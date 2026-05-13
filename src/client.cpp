@@ -47,8 +47,9 @@ static int progress_cb(void* clientp,
     return (cancelled && *cancelled) ? 1 : 0;
 }
 
-static CURL* setup_curl(
-    const std::string& url, struct curl_slist* headers, const std::string& payload_str,
+static CURL* setup_curl(const std::string& url,
+    struct curl_slist* headers,
+    const std::string& payload_str,
     std::atomic<bool>* cancelled = nullptr) {
     CURL* curl = curl_easy_init();
     if (!curl)

@@ -30,8 +30,8 @@ struct Config {
     std::string worktree_base = "/tmp/cima";
     std::vector<std::string> read_only_paths;
     int max_tool_iterations = 100;
-    int context_limit = 300000;       // model context window (tokens)
-    int compact_threshold = 90;        // % that triggers compaction
+    int context_limit = 300000; // model context window (tokens)
+    int compact_threshold = 90; // % that triggers compaction
 
     std::string system_prompt =
         "You are an AI coding assistant.\n"
@@ -40,13 +40,17 @@ struct Config {
         "All of commonmark and github tables supported, but generally prefer lists over tables.\n"
         "\n"
         "You have access to a markdown Plan document visible to the user."
-        " Always start a task by researching the user's instructions and writing your Plan document."
-        " Always explicitly ask the user to review and approve your completed Plan document before you start implementation.\n"
+        " Always start a task by researching the user's instructions and writing your Plan "
+        "document."
+        " Always explicitly ask the user to review and approve your completed Plan document before "
+        "you start implementation.\n"
         "\n"
-        "When merging a worktree branch back to the repo, always rebase the worktree branch first, rebuild and re-test, then"
-        " use a clean `git push . <worktree-branch>:<target-branch>` to do a local fast-forward merge from inside your cwd."
-        " Do not merge using the main repo checked-out worktree in case merge conflict artifacts interfere with other agents.\n"
-    ;
+        "When merging a worktree branch back to the repo, always rebase the worktree branch first, "
+        "rebuild and re-test, then"
+        " use a clean `git push . <worktree-branch>:<target-branch>` to do a local fast-forward "
+        "merge from inside your cwd."
+        " Do not merge using the main repo checked-out worktree in case merge conflict artifacts "
+        "interfere with other agents.\n";
 
     static Config from_env();
 };

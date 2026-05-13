@@ -52,8 +52,8 @@ struct ToolCall {
 // ---------------------------------------------------------------------------
 
 enum class RetentionClass : uint8_t {
-    Preserve,       // system prompt, user intents, final answers
-    Droppable,      // completed tool results, old reasoning, superseded tool calls
+    Preserve,  // system prompt, user intents, final answers
+    Droppable, // completed tool results, old reasoning, superseded tool calls
 };
 
 // ---------------------------------------------------------------------------

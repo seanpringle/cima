@@ -8,8 +8,7 @@
 ChatSession::ChatSession(Config config, CancellationToken cancelled)
     : model_(std::move(config.model)), reasoning_effort_(std::move(config.reasoning_effort)),
       safe_dir_(std::make_shared<std::string>(std::move(config.safe_dir))),
-      api_key_(config.api_key),
-      max_iterations_(config.max_tool_iterations),
+      api_key_(config.api_key), max_iterations_(config.max_tool_iterations),
       context_limit_(static_cast<size_t>(config.context_limit)),
       compact_threshold_(static_cast<size_t>(config.compact_threshold)),
       conversation_(config.system_prompt),
@@ -19,9 +18,13 @@ ChatSession::ChatSession(Config config, CancellationToken cancelled)
     tools_.set_cancelled(cancelled_);
     client_.set_cancelled(cancelled_);
 
-    tools_.add_defaults(safe_dir_, config.read_only_paths, config.search_api_key,
-        config.search_engine_id, config.search_endpoint,
-        config.worktree_base, /*include_write=*/true);
+    tools_.add_defaults(safe_dir_,
+        config.read_only_paths,
+        config.search_api_key,
+        config.search_engine_id,
+        config.search_endpoint,
+        config.worktree_base,
+        /*include_write=*/true);
 
     // Each session gets its own plan tools tied to its PlanBoard
     tools_.add(make_write_plan_tool(plan_));
@@ -29,17 +32,14 @@ ChatSession::ChatSession(Config config, CancellationToken cancelled)
     tools_.add(make_comment_plan_tool(plan_));
 
     // Wire up the summary callback for compaction
-    conversation_.set_summary_callback(
-        [this](const std::vector<Message>& msgs, size_t max_tokens) {
-            return summarize_messages_(msgs, max_tokens);
-        });
+    conversation_.set_summary_callback([this](const std::vector<Message>& msgs, size_t max_tokens) {
+        return summarize_messages_(msgs, max_tokens);
+    });
 }
 
 void ChatSession::clear() { conversation_.clear(); }
 
-void ChatSession::compact() {
-    conversation_.compact();
-}
+void ChatSession::compact() { conversation_.compact(); }
 
 Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
     // ── Discover context limit (once per model/endpoint) ──
@@ -85,7 +85,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
             {"messages", conversation_.to_openai_messages()},
             {"tools", tools_.to_openai_tools()},
             {"stream", true}};
-
+        payload["stream_options"] = {{"include_usage", true}};
         std::string content;
         std::string reasoning;
         ToolAccumulator tool_acc;
@@ -207,7 +207,8 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                             return std::unexpected("Interrupted during tool execution");
                         }
                         if (output_cb_) {
-                            output_cb_("\xE2\x86\x92 " + calls[i].name + "(" + calls[i].arguments + ")",
+                            output_cb_(
+                                "\xE2\x86\x92 " + calls[i].name + "(" + calls[i].arguments + ")",
                                 OutputType::ToolInvocation);
                         }
                         auto tr = futures[i].get();
@@ -236,19 +237,17 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
     }
 
     conversation_.truncate(snapshot);
-    return std::unexpected(
-        "Maximum tool call iterations (" + std::to_string(max_iterations_) +
-            ") reached. Increase via LLM_MAX_TOOL_ITERATIONS env var.");
+    return std::unexpected("Maximum tool call iterations (" + std::to_string(max_iterations_) +
+        ") reached. Increase via LLM_MAX_TOOL_ITERATIONS env var.");
 }
 
 std::optional<std::string> ChatSession::summarize_messages_(
     const std::vector<Message>& msgs, size_t max_tokens) {
     // Build a compact conversation asking the LLM to summarize old exchanges.
-    Conversation summary_conv(
-        "Summarize the following conversation exchanges concisely. "
-        "Preserve the user's intent, key decisions, and any information "
-        "that will be needed to continue the task. "
-        "Output only the summary, no preamble.");
+    Conversation summary_conv("Summarize the following conversation exchanges concisely. "
+                              "Preserve the user's intent, key decisions, and any information "
+                              "that will be needed to continue the task. "
+                              "Output only the summary, no preamble.");
 
     for (const auto& msg : msgs) {
         if (msg.role == "user" && msg.content) {
@@ -259,7 +258,8 @@ std::optional<std::string> ChatSession::summarize_messages_(
             // Tool-call-only assistant messages: just note what was called
             std::string summary;
             for (const auto& tc : msg.tool_calls) {
-                if (!summary.empty()) summary += ", ";
+                if (!summary.empty())
+                    summary += ", ";
                 summary += tc.name + "(" + tc.arguments + ")";
             }
             summary_conv.add_assistant("[called tools: " + summary + "]");
@@ -290,5 +290,3 @@ std::optional<std::string> ChatSession::summarize_messages_(
         return std::nullopt;
     }
 }
-
-

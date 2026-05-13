@@ -49,17 +49,13 @@ Result<void> PlanBoard::comment_plan(const std::string& markdown) {
 Tool make_write_plan_tool(PlanBoard& board) {
     Tool t;
     t.name = "write_plan";
-    t.description =
-        "Write the Plan document. This completely replaces the plan "
-        "body (comments are preserved separately). Use this from the Planner "
-        "to document the implementation plan for the Builder.";
+    t.description = "Write the Plan document. This completely replaces the plan "
+                    "body (comments are preserved separately). Use this from the Planner "
+                    "to document the implementation plan for the Builder.";
     t.permission = ToolPermission::Write;
     t.parameters = {{"type", "object"},
         {"properties",
-            {{"markdown",
-                {{"type", "string"},
-                    {"description",
-                        "Markdown content of the plan"}}}}},
+            {{"markdown", {{"type", "string"}, {"description", "Markdown content of the plan"}}}}},
         {"required", {"markdown"}}};
     t.execute = [&board](const json& args) -> Result<std::string> {
         auto markdown = args.value("markdown", std::string());
@@ -79,14 +75,12 @@ Tool make_write_plan_tool(PlanBoard& board) {
 Tool make_read_plan_tool(PlanBoard& board) {
     Tool t;
     t.name = "read_plan";
-    t.description =
-        "Read the Plan document (plan body + comments). "
-        "Returns a markdown document with the plan and any comments.";
+    t.description = "Read the Plan document (plan body + comments). "
+                    "Returns a markdown document with the plan and any comments.";
     t.permission = ToolPermission::ReadOnly;
-    t.parameters = {{"type", "object"}, {"properties", json::object()}, {"required", json::array()}};
-    t.execute = [&board](const json& /*args*/) -> Result<std::string> {
-        return board.read_plan();
-    };
+    t.parameters = {
+        {"type", "object"}, {"properties", json::object()}, {"required", json::array()}};
+    t.execute = [&board](const json& /*args*/) -> Result<std::string> { return board.read_plan(); };
     return t;
 }
 
@@ -97,17 +91,14 @@ Tool make_read_plan_tool(PlanBoard& board) {
 Tool make_comment_plan_tool(PlanBoard& board) {
     Tool t;
     t.name = "comment_plan";
-    t.description =
-        "Append a comment to the Plan document. Comments are preserved "
-        "separately from the plan body and listed after it. Use this for "
-        "progress updates, review feedback, or change requests.";
+    t.description = "Append a comment to the Plan document. Comments are preserved "
+                    "separately from the plan body and listed after it. Use this for "
+                    "progress updates, review feedback, or change requests.";
     t.permission = ToolPermission::ReadOnly;
     t.parameters = {{"type", "object"},
         {"properties",
             {{"comment",
-                {{"type", "string"},
-                    {"description",
-                        "Markdown comment to append to the plan"}}}}},
+                {{"type", "string"}, {"description", "Markdown comment to append to the plan"}}}}},
         {"required", {"comment"}}};
     t.execute = [&board](const json& args) -> Result<std::string> {
         auto comment = args.value("comment", std::string());

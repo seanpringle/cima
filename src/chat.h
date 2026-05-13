@@ -53,8 +53,8 @@ class ChatSession {
     std::string model_;
     std::string reasoning_effort_;
     std::shared_ptr<std::string> safe_dir_;
-    std::string api_key_;        // API key for authentication
-    int max_iterations_ = 100;  // overridden by config.max_tool_iterations
+    std::string api_key_;      // API key for authentication
+    int max_iterations_ = 100; // overridden by config.max_tool_iterations
     size_t context_limit_;
     size_t compact_threshold_;
     PlanBoard plan_;

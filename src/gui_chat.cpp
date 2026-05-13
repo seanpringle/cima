@@ -1,5 +1,7 @@
 #include "gui_chat.h"
 #include "tools.h"
+#include <cassert>
+#include <iostream>
 
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include "imgui.h"
@@ -8,7 +10,6 @@
 #include <cctype>
 #include <chrono>
 #include <cstring>
-#include <iostream>
 #include <md4c.h>
 #include <string>
 #include <future>
@@ -22,8 +23,6 @@ using std::vector;
 
 namespace {
 
-
-
 void text_unformatted_ellipsis(const string& text) {
     auto canvas = GetContentRegionAvail();
     auto size = CalcTextSize(text.c_str());
@@ -32,7 +31,7 @@ void text_unformatted_ellipsis(const string& text) {
         return;
     }
     auto glyph = CalcTextSize("_");
-    int cols = std::max(0, std::min(int(text.size()), int(canvas.x/glyph.x)-4));
+    int cols = std::max(0, std::min(int(text.size()), int(canvas.x / glyph.x) - 4));
     stringstream ss;
     ss << string_view(text.data(), cols) << "...";
     TextUnformatted(ss.str().c_str());
@@ -41,7 +40,8 @@ void text_unformatted_ellipsis(const string& text) {
 void text_unformatted_inline_wrap(const string& text) {
     auto blit = [&](string_view chunk) {
         auto size = CalcTextSize(chunk.data(), chunk.data() + chunk.size());
-        if (!(GetContentRegionAvail().x > size.x)) NewLine();
+        if (!(GetContentRegionAvail().x > size.x))
+            NewLine();
         auto pos = GetCursorPos();
         TextUnformatted(chunk.data(), chunk.data() + chunk.size());
         SetCursorPos(ImVec2(pos.x + size.x, pos.y));
@@ -51,13 +51,14 @@ void text_unformatted_inline_wrap(const string& text) {
 
     while (cur.size()) {
         if (std::isspace(cur.front())) {
-            blit(string_view(cur.data(),1));
+            blit(string_view(cur.data(), 1));
             cur.remove_prefix(1);
             continue;
         }
         auto left = cur;
-        while (cur.size() && !std::isspace(cur.front())) cur.remove_prefix(1);
-        blit(string_view(left.data(), left.size()-cur.size()));
+        while (cur.size() && !std::isspace(cur.front()))
+            cur.remove_prefix(1);
+        blit(string_view(left.data(), left.size() - cur.size()));
     }
 }
 
@@ -85,13 +86,9 @@ struct RenderCtx {
         }
     }
 
-    void newline(MD_BLOCKTYPE /*type*/) {
-        NewLine();
-    }
+    void newline(MD_BLOCKTYPE /*type*/) { NewLine(); }
 
-    void newline(MD_TEXTTYPE /*type*/) {
-        NewLine();
-    }
+    void newline(MD_TEXTTYPE /*type*/) { NewLine(); }
 };
 
 static int enter_block_cb(MD_BLOCKTYPE type, void* detail, void* userdata) {
@@ -150,14 +147,13 @@ static int enter_block_cb(MD_BLOCKTYPE type, void* detail, void* userdata) {
         }
         auto after = GetCursorPos();
         SetCursorPos(before);
-        ctx.indent(after.x-before.x);
+        ctx.indent(after.x - before.x);
         break;
     }
     case MD_BLOCK_TABLE: {
         auto* table = static_cast<MD_BLOCK_TABLE_DETAIL*>(detail);
         string tid = "##tbl" + std::to_string(++ctx.tables);
-        BeginTable(tid.c_str(), table->col_count,
-            ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg);
+        BeginTable(tid.c_str(), table->col_count, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg);
         for (unsigned i = 0; i < table->col_count; i++) {
             string cid = "##c" + std::to_string(i);
             ImGuiTableColumnFlags flags = (i == table->col_count - 1)
@@ -219,16 +215,14 @@ static int leave_block_cb(MD_BLOCKTYPE type, void* detail, void* userdata) {
             size_t pos = 0;
             while (pos < ctx.code_buf.size()) {
                 size_t nl = ctx.code_buf.find('\n', pos);
-                string line = (nl == string::npos)
-                    ? ctx.code_buf.substr(pos)
-                    : ctx.code_buf.substr(pos, nl - pos);
+                string line = (nl == string::npos) ? ctx.code_buf.substr(pos)
+                                                   : ctx.code_buf.substr(pos, nl - pos);
                 TextUnformatted(line.c_str());
                 if (nl == string::npos)
                     break;
                 pos = nl + 1;
                 SetCursorScreenPos(
-                    ImVec2(ctx.code_start.x + GetStyle().IndentSpacing,
-                        GetCursorScreenPos().y));
+                    ImVec2(ctx.code_start.x + GetStyle().IndentSpacing, GetCursorScreenPos().y));
             }
         }
         ctx.newline(type);
@@ -375,7 +369,8 @@ static int text_cb(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* us
 
 void render_content(const string& text) {
     string_view trim(text);
-    while (trim.size() && std::isspace(trim.back())) trim.remove_suffix(1);
+    while (trim.size() && std::isspace(trim.back()))
+        trim.remove_suffix(1);
 
     string clean(trim);
     clean.erase(
@@ -471,7 +466,8 @@ void render_chat_controls(TabInfo& tab) {
             if (!ui.models_fetched->load(std::memory_order_acquire)) {
                 TextDisabled("Loading models...");
             } else if (!ui.models_error.empty()) {
-                TextColored(ImColor(IM_COL32(255,100,100,255)), "Error: %s", ui.models_error.c_str());
+                TextColored(
+                    ImColor(IM_COL32(255, 100, 100, 255)), "Error: %s", ui.models_error.c_str());
             } else if (ui.available_models.empty()) {
                 TextDisabled("(no models returned)");
             } else {
@@ -515,13 +511,17 @@ void render_chat_controls(TabInfo& tab) {
     auto branchInfoSize = CalcTextSize(branchInfo.c_str());
     auto sepSize = CalcTextSize(sep.c_str());
 
-    auto branchPos = ImVec2(GetContentRegionMax().x - branchInfoSize.x - GetStyle().WindowPadding.x, GetFrameHeight()/2 - branchInfoSize.y/2);
-    auto sepPos = ImVec2(branchPos.x - sepSize.x, GetFrameHeight()/2 - sepSize.y/2);
-    auto tokenPos = ImVec2(sepPos.x - tokenInfoSize.x, GetFrameHeight()/2 - tokenInfoSize.y/2);
+    auto branchPos = ImVec2(GetContentRegionMax().x - branchInfoSize.x - GetStyle().WindowPadding.x,
+        GetFrameHeight() / 2 - branchInfoSize.y / 2);
+    auto sepPos = ImVec2(branchPos.x - sepSize.x, GetFrameHeight() / 2 - sepSize.y / 2);
+    auto tokenPos = ImVec2(sepPos.x - tokenInfoSize.x, GetFrameHeight() / 2 - tokenInfoSize.y / 2);
 
-    GetForegroundDrawList()->AddText(GetWindowPos() + tokenPos, ImColor(IM_COL32(180, 180, 180, 255)), tokenInfo.c_str());
-    GetForegroundDrawList()->AddText(GetWindowPos() + sepPos, GetColorU32(ImGuiCol_TextDisabled), sep.c_str());
-    GetForegroundDrawList()->AddText(GetWindowPos() + branchPos, ImColor(IM_COL32(255, 180, 50, 255)), branchInfo.c_str());
+    GetForegroundDrawList()->AddText(
+        GetWindowPos() + tokenPos, ImColor(IM_COL32(180, 180, 180, 255)), tokenInfo.c_str());
+    GetForegroundDrawList()->AddText(
+        GetWindowPos() + sepPos, GetColorU32(ImGuiCol_TextDisabled), sep.c_str());
+    GetForegroundDrawList()->AddText(
+        GetWindowPos() + branchPos, ImColor(IM_COL32(255, 180, 50, 255)), branchInfo.c_str());
 
     SetCursorPos(ImVec2(0, GetFrameHeightWithSpacing()));
 }
@@ -561,13 +561,9 @@ void render_chat_ui(TabInfo& tab, bool& done) {
     // ── main content ──
     float input_height = GetFrameHeightWithSpacing() * 6 + 8;
 
-    if (ui.mono_font)
-        PushFont(ui.mono_font);
+    PushFont(ui.mono_font);
 
-    BeginChild("##chat",
-        ImVec2(0, -input_height),
-        false,
-        ImGuiWindowFlags_AlwaysVerticalScrollbar);
+    BeginChild("##chat", ImVec2(0, -input_height), false, ImGuiWindowFlags_AlwaysVerticalScrollbar);
 
     size_t i = 0;
 
@@ -591,10 +587,18 @@ void render_chat_ui(TabInfo& tab, bool& done) {
             // ── Raw text mode ──
             const char* prefix = "";
             switch (entry.type) {
-            case EntryType::UserText:    prefix = "[You] "; break;
-            case EntryType::Reasoning:   prefix = "[Reasoning] "; break;
-            case EntryType::Content:     prefix = "[Assistant] "; break;
-            case EntryType::ToolCall:    prefix = "[Tool] "; break;
+            case EntryType::UserText:
+                prefix = "[You] ";
+                break;
+            case EntryType::Reasoning:
+                prefix = "[Reasoning] ";
+                break;
+            case EntryType::Content:
+                prefix = "[Assistant] ";
+                break;
+            case EntryType::ToolCall:
+                prefix = "[Tool] ";
+                break;
             }
             PushTextWrapPos(0);
             ss << prefix << entry.text;
@@ -626,8 +630,7 @@ void render_chat_ui(TabInfo& tab, bool& done) {
                 PushStyleColor(ImGuiCol_Text, IM_COL32(255, 165, 0, 255));
                 PushTextWrapPos(0);
                 text_unformatted_ellipsis(entry.text);
-                for (;
-                    i + 1 < ui.entries.size() && ui.entries[i + 1].type == EntryType::ToolCall;
+                for (; i + 1 < ui.entries.size() && ui.entries[i + 1].type == EntryType::ToolCall;
                     i++) {
                     text_unformatted_ellipsis(ui.entries[i + 1].text);
                 }
@@ -655,51 +658,69 @@ void render_chat_ui(TabInfo& tab, bool& done) {
 
     EndChild();
 
-    if (ui.mono_font)
-        PopFont();
+    PopFont();
 
     // ── input area ──
     Separator();
 
-    bool running_snapshot = chat.running;
-
     SetNextItemWidth(GetContentRegionAvail().x);
 
-    if (running_snapshot)
-        BeginDisabled();
+    PushFont(ui.mono_font);
 
-    if (ui.mono_font)
-        PushFont(ui.mono_font);
+    uint32_t inputFlags = ImGuiInputTextFlags_CtrlEnterForNewLine |
+        ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_WordWrap;
 
-    if (!running_snapshot && IsWindowAppearing()) {
+    ImVec2 inputSize(0, std::max(GetFrameHeightWithSpacing() * 3, GetContentRegionAvail().y - 4));
+
+    auto trimWhite = [](string_view cur) -> string_view {
+        while (cur.size() && isspace(cur.front())) cur.remove_prefix(1);
+        while (cur.size() && isspace(cur.back())) cur.remove_suffix(1);
+        return cur;
+    };
+
+    auto& buffer = ui.input_buffer;
+    auto& history = ui.input_history;
+
+    if (IsKeyDown(ImGuiKey_LeftCtrl) && IsKeyReleased(ImGuiKey_UpArrow) && history.size() > 0) {
+        history.emplace_back() = std::move(history.front());
+        history.pop_front();
+        buffer = {history.back().begin(), history.back().end()};
+        buffer.resize(buffer.size()+10,0);
         SetKeyboardFocusHere();
     }
 
-    if (InputTextMultiline("##input",
-            ui.input_buf,
-            sizeof(ui.input_buf),
-            ImVec2(0, std::max(GetFrameHeightWithSpacing() * 3, GetContentRegionAvail().y - 4)),
-            ImGuiInputTextFlags_CtrlEnterForNewLine | ImGuiInputTextFlags_EnterReturnsTrue |
-                ImGuiInputTextFlags_WordWrap)) {
-        string input(ui.input_buf);
-        ui.input_buf[0] = '\0';
-        if (!input.empty()) {
-            if (input == "/clear") {
-                session.clear();
-                ui.entries.clear();
-            } else if (input == "/compact") {
-                session.compact();
-                ui.entries.push_back({EntryType::Content, "[\u2302 compaction]", false, ui.next_seq++});
-            } else {
-                ui.entries.push_back({EntryType::UserText, input, false, ui.next_seq++});
-                start_chat(chat, session, std::move(input));
-            }
+    if (IsKeyDown(ImGuiKey_LeftCtrl) && IsKeyReleased(ImGuiKey_DownArrow) && history.size() > 0) {
+        history.emplace_front() = std::move(history.back());
+        history.pop_back();
+        buffer = {history.back().begin(), history.back().end()};
+        buffer.resize(buffer.size()+10,0);
+        SetKeyboardFocusHere();
+    }
+
+    buffer.resize(1024*1024,0);
+
+    if (!chat.running && IsWindowAppearing()) {
+        SetKeyboardFocusHere();
+    }
+
+    if (InputTextMultiline("##input", buffer.data(), buffer.size(), inputSize, inputFlags) && !chat.running) {
+        string input(trimWhite(buffer.data()));
+        if (input == "/clear") {
+            session.clear();
+            ui.entries.clear();
+        } else if (input == "/compact") {
+            session.compact();
+            ui.entries.push_back(
+                {EntryType::Content, "[\u2302 compaction]", false, ui.next_seq++});
+        } else if (input.size()) {
+            ui.entries.push_back({EntryType::UserText, input, false, ui.next_seq++});
+            start_chat(chat, session, input);
+            for (auto it = history.begin(); it != history.end();
+                it = *it == input ? history.erase(it): ++it);
+            history.push_back(input);
+            buffer.front() = 0;
         }
     }
 
-    if (ui.mono_font)
-        PopFont();
-    if (running_snapshot)
-        EndDisabled();
+    PopFont();
 }
-

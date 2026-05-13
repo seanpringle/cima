@@ -40,8 +40,6 @@ struct Tool {
     std::function<Result<std::string>(const json& args)> execute;
 };
 
-
-
 // ---------------------------------------------------------------------------
 // ToolRegistry
 // ---------------------------------------------------------------------------
@@ -110,8 +108,8 @@ char status_char_for_workdir(unsigned int flags);
 /// @param abs_path  Absolute filesystem path to check.
 /// @param workdir   The repository worktree root (from git_repository_workdir()).
 bool is_gitignored(git_repository* repo,
-                   const std::filesystem::path& abs_path,
-                   const std::filesystem::path& workdir);
+    const std::filesystem::path& abs_path,
+    const std::filesystem::path& workdir);
 
 /// Get the current git branch name at the given repository path.
 /// Returns the branch name, or a description like "(detached HEAD at <hash>)"
@@ -126,14 +124,12 @@ Result<std::string> get_current_git_branch(const std::string& repo_path);
 /// Callback for curl to write response body into a std::string.
 size_t web_search_write_cb(char* ptr, size_t size, size_t nmemb, void* userdata);
 /// Progress callback for curl to support cancellation.
-int web_search_progress_cb(void* clientp,
-    curl_off_t dltotal, curl_off_t dlnow,
-    curl_off_t ultotal, curl_off_t ulnow);
+int web_search_progress_cb(
+    void* clientp, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow);
 
 /// Shared HTTP GET helper.
-Result<std::pair<std::string, long>> http_get(const std::string& url,
-    int timeout_sec = 15,
-    std::atomic<bool>* cancelled = nullptr);
+Result<std::pair<std::string, long>> http_get(
+    const std::string& url, int timeout_sec = 15, std::atomic<bool>* cancelled = nullptr);
 
 /// Returns true if the scheme is http or https (case-insensitive).
 bool is_valid_fetch_scheme(const std::string& url);
@@ -171,25 +167,25 @@ struct WorktreeState {
 Tool make_start_worktree_tool(std::shared_ptr<std::string> safe_dir_ptr,
     std::shared_ptr<std::string> worktree_base_ptr,
     std::shared_ptr<WorktreeState> state);
-Tool make_stop_worktree_tool(std::shared_ptr<std::string> safe_dir_ptr,
-    std::shared_ptr<WorktreeState> state);
+Tool make_stop_worktree_tool(
+    std::shared_ptr<std::string> safe_dir_ptr, std::shared_ptr<WorktreeState> state);
 
 // ---------------------------------------------------------------------------
 // Tool factory declarations (used by ToolRegistry::add_defaults)
 // ---------------------------------------------------------------------------
-Tool make_list_files_tool(std::shared_ptr<std::string> safe_dir_ptr,
-    const std::vector<std::string>& read_only_paths);
-Tool make_read_file_lines_tool(std::shared_ptr<std::string> safe_dir_ptr,
-    const std::vector<std::string>& read_only_paths);
-Tool make_read_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
-    const std::vector<std::string>& read_only_paths);
+Tool make_list_files_tool(
+    std::shared_ptr<std::string> safe_dir_ptr, const std::vector<std::string>& read_only_paths);
+Tool make_read_file_lines_tool(
+    std::shared_ptr<std::string> safe_dir_ptr, const std::vector<std::string>& read_only_paths);
+Tool make_read_file_tool(
+    std::shared_ptr<std::string> safe_dir_ptr, const std::vector<std::string>& read_only_paths);
 Tool make_grep_files_tool(std::shared_ptr<std::string> safe_dir_ptr,
     const std::vector<std::string>& read_only_paths,
     CancellationToken cancelled = nullptr);
 Tool make_write_file_tool(std::shared_ptr<std::string> safe_dir_ptr);
 Tool make_edit_file_tool(std::shared_ptr<std::string> safe_dir_ptr);
-Tool make_run_bash_tool(std::shared_ptr<std::string> safe_dir_ptr,
-    CancellationToken cancelled = nullptr);
+Tool make_run_bash_tool(
+    std::shared_ptr<std::string> safe_dir_ptr, CancellationToken cancelled = nullptr);
 Tool make_web_search_tool(const std::string& api_key,
     const std::string& engine_id,
     const std::string& endpoint_override,

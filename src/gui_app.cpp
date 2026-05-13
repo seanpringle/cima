@@ -3,16 +3,12 @@
 #include "plan.h"
 
 #include "imgui.h"
-#include "imgui_internal.h"
 #include "backends/imgui_impl_sdl3.h"
 #include "backends/imgui_impl_sdlrenderer3.h"
 
 using namespace ImGui;
 
-#include <chrono>
 #include <csignal>
-#include <iostream>
-#include <thread>
 
 int gui_main(Config cfg) {
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -85,6 +81,10 @@ int gui_main(Config cfg) {
 
         mono_font = ImGui::GetIO().Fonts->AddFontFromFileTTF(
             "font/DejaVuSansMono.ttf", fs * 0.9f, &cfg, latin);
+        if (!mono_font) {
+            SDL_Log("Failed to load mono font: font/DejaVuSansMono.ttf");
+            return 1;
+        }
         ImGui::GetIO().Fonts->AddFontFromFileTTF(
             "font/DejaVuSansMono.ttf", fs * 0.9f, &merge, unicode);
         ImGui::GetIO().Fonts->AddFontFromFileTTF(
@@ -153,11 +153,9 @@ int gui_main(Config cfg) {
         SetNextWindowSize(GetIO().DisplaySize);
         Begin("cima",
             nullptr,
-            ImGuiWindowFlags_NoTitleBar |
-                ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+            ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
                 ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoDecoration |
-                ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse
-            );
+                ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
         // ── Global keyboard shortcuts ──
         // Ctrl+T: open a new tab and switch to it
@@ -173,7 +171,10 @@ int gui_main(Config cfg) {
                     *tab.chat_state->cancelled = true;
                     if (tab.chat_state->future.valid()) {
                         tab.chat_state->future.wait();
-                        try { tab.chat_state->future.get(); } catch (...) {}
+                        try {
+                            tab.chat_state->future.get();
+                        } catch (...) {
+                        }
                     }
                     tab.chat_state->running = false;
                 }
@@ -194,7 +195,7 @@ int gui_main(Config cfg) {
         {
             // ── Tab bar ──
             if (BeginTabBar("##chat_tabs", ImGuiTabBarFlags_NoTooltip)) {
-                for (int ti = 0; ti < (int)tabs.size(); ) {
+                for (int ti = 0; ti < (int)tabs.size();) {
                     TabInfo& tab = tabs[ti];
                     bool is_open = true;
 
@@ -212,15 +213,22 @@ int gui_main(Config cfg) {
                         focus_tab_id = -1;
                     }
 
-                    if (BeginTabItem((tab_label + "##tab-" + std::to_string(ti)).c_str(), can_close ? &is_open : nullptr, tab_flags)) {
+                    if (BeginTabItem((tab_label + "##tab-" + std::to_string(ti)).c_str(),
+                            can_close ? &is_open : nullptr,
+                            tab_flags)) {
                         active_tab = ti;
 
                         auto padding = GetStyle().WindowPadding;
                         auto space = GetContentRegionAvail();
 
-                        SetCursorPos(ImVec2(GetCursorPosX()-padding.x, GetCursorPosY()-GetStyle().ItemSpacing.y));
-                        BeginChild("##tab_view", ImVec2(space.x + padding.x*2, space.y+padding.y*2+GetStyle().ItemSpacing.y),
-                            ImGuiChildFlags_None, ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+                        SetCursorPos(ImVec2(GetCursorPosX() - padding.x,
+                            GetCursorPosY() - GetStyle().ItemSpacing.y));
+                        BeginChild("##tab_view",
+                            ImVec2(space.x + padding.x * 2,
+                                space.y + padding.y * 2 + GetStyle().ItemSpacing.y),
+                            ImGuiChildFlags_None,
+                            ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoScrollbar |
+                                ImGuiWindowFlags_NoScrollWithMouse);
 
                         // Controls row at tab level (model combo, raw, tokens, branch)
                         render_chat_controls(tab);
@@ -231,38 +239,46 @@ int gui_main(Config cfg) {
                         {
                             auto canvas = GetContentRegionAvail();
                             auto tl = GetCursorPos();
-                            float gap = GetStyle().ItemSpacing.x*2.0f;
-                            float planWidth = canvas.x*0.4f - gap;
+                            float gap = GetStyle().ItemSpacing.x * 2.0f;
+                            float planWidth = canvas.x * 0.4f - gap;
                             auto planPos = tl;
                             auto planSize = ImVec2(planWidth, canvas.y);
                             auto chatPos = ImVec2(tl.x + planWidth + gap, tl.y);
                             auto chatSize = ImVec2(-1, canvas.y);
                             auto winPos = GetWindowPos();
-                            auto sepPosA = ImVec2(winPos.x + tl.x + planWidth + (gap/2), winPos.y + tl.y);
+                            auto sepPosA =
+                                ImVec2(winPos.x + tl.x + planWidth + (gap / 2), winPos.y + tl.y);
                             auto sepPosB = ImVec2(sepPosA.x, winPos.y + tl.y + canvas.y);
 
                             // Left panel: Plan document
                             SetCursorPos(planPos);
-                            BeginChild("##tab_plan", planSize, ImGuiChildFlags_None, ImGuiWindowFlags_None);
+                            BeginChild("##tab_plan",
+                                planSize,
+                                ImGuiChildFlags_None,
+                                ImGuiWindowFlags_None);
 
                             auto plan_result = tab.session->plan().read_plan();
                             if (plan_result) {
-                                if (mono_font)
-                                    PushFont(mono_font);
+                                PushFont(mono_font);
                                 render_content(*plan_result);
-                                if (mono_font)
-                                    PopFont();
+                                PopFont();
                             } else {
                                 TextDisabled("(empty plan)");
                             }
                             EndChild();
 
-                            GetWindowDrawList()->AddLine(sepPosA, sepPosB, GetColorU32(ImGuiCol_Separator), GetStyle().ChildBorderSize);
+                            GetWindowDrawList()->AddLine(sepPosA,
+                                sepPosB,
+                                GetColorU32(ImGuiCol_Separator),
+                                GetStyle().ChildBorderSize);
 
                             // Right panel: Chat UI
                             PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
                             SetCursorPos(chatPos);
-                            BeginChild("##tab_chat", chatSize, ImGuiChildFlags_None, ImGuiWindowFlags_None);
+                            BeginChild("##tab_chat",
+                                chatSize,
+                                ImGuiChildFlags_None,
+                                ImGuiWindowFlags_None);
                             PopStyleVar();
                             render_chat_ui(tab, done);
                             EndChild();
@@ -279,7 +295,10 @@ int gui_main(Config cfg) {
                             *tab.chat_state->cancelled = true;
                             if (tab.chat_state->future.valid()) {
                                 tab.chat_state->future.wait();
-                                try { tab.chat_state->future.get(); } catch (...) {}
+                                try {
+                                    tab.chat_state->future.get();
+                                } catch (...) {
+                                }
                             }
                             tab.chat_state->running = false;
                         }
@@ -317,7 +336,10 @@ int gui_main(Config cfg) {
             *tab.chat_state->cancelled = true;
             if (tab.chat_state->future.valid()) {
                 tab.chat_state->future.wait();
-                try { tab.chat_state->future.get(); } catch (...) {}
+                try {
+                    tab.chat_state->future.get();
+                } catch (...) {
+                }
             }
             tab.chat_state->running = false;
         }

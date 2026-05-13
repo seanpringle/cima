@@ -19,9 +19,9 @@ Config Config::from_env() {
     cfg.api_base = get_env("LLM_API", get_env("API_BASE", cfg.api_base));
     cfg.api_key = get_env("LLM_KEY", get_env("API_KEY", cfg.api_key));
     cfg.model = get_env("MODEL", cfg.model);
-    cfg.reasoning_effort = get_env("LLM_REASONING_EFFORT", get_env("REASONING_EFFORT", cfg.reasoning_effort));
-    cfg.system_prompt = get_env("LLM_SYSTEM_PROMPT",
-        get_env("SYSTEM_PROMPT", cfg.system_prompt));
+    cfg.reasoning_effort =
+        get_env("LLM_REASONING_EFFORT", get_env("REASONING_EFFORT", cfg.reasoning_effort));
+    cfg.system_prompt = get_env("LLM_SYSTEM_PROMPT", get_env("SYSTEM_PROMPT", cfg.system_prompt));
 
     {
         const char* val = std::getenv("LLM_MAX_TOOL_ITERATIONS");
@@ -85,9 +85,8 @@ Config Config::from_env() {
             size_t start = 0;
             while (start < s.size()) {
                 auto colon = s.find(':', start);
-                std::string p = (colon == std::string::npos)
-                                    ? s.substr(start)
-                                    : s.substr(start, colon - start);
+                std::string p =
+                    (colon == std::string::npos) ? s.substr(start) : s.substr(start, colon - start);
                 // Trim leading whitespace
                 while (!p.empty() && (p.front() == ' ' || p.front() == '\t'))
                     p.erase(0, 1);

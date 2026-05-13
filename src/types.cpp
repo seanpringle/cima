@@ -139,10 +139,9 @@ std::vector<ToolCall> ToolAccumulator::finalize() const {
     for (const auto& [idx, tc] : calls_) {
         result.push_back(tc);
     }
-    std::sort(result.begin(), result.end(),
-              [](const ToolCall& a, const ToolCall& b) {
-                  return a.index < b.index;
-              });
+    std::sort(result.begin(), result.end(), [](const ToolCall& a, const ToolCall& b) {
+        return a.index < b.index;
+    });
     return result;
 }
 
@@ -230,8 +229,7 @@ void SSEParser::reset() {
 // Conversation
 // ---------------------------------------------------------------------------
 
-Conversation::Conversation(std::string system_prompt)
-    : system_prompt_(std::move(system_prompt)) {}
+Conversation::Conversation(std::string system_prompt) : system_prompt_(std::move(system_prompt)) {}
 
 void Conversation::add_user(std::string content) {
     messages_.push_back(Message{
@@ -286,7 +284,8 @@ void Conversation::mark_superseded_tool_calls() {
             found_content = true;
             continue;
         }
-        if (!found_content) continue; // we haven't hit the final answer yet
+        if (!found_content)
+            continue; // we haven't hit the final answer yet
 
         if (it->role == "assistant" && !it->tool_calls.empty()) {
             // This assistant triggered tool calls that have now been answered.
@@ -320,7 +319,8 @@ size_t Conversation::estimate_total_tokens() const {
 }
 
 bool Conversation::needs_compaction(size_t context_limit, size_t compact_threshold_pct) const {
-    if (context_limit == 0) return false;
+    if (context_limit == 0)
+        return false;
     size_t threshold = context_limit * compact_threshold_pct / 100;
     return estimate_total_tokens() > threshold;
 }
@@ -369,15 +369,15 @@ void Conversation::compact() {
         }
     }
 
-    if (!summary_cb_) return;
+    if (!summary_cb_)
+        return;
 
     size_t summary_budget = 10000;
     auto summary = summary_cb_(messages_, summary_budget);
     if (summary.has_value()) {
         Message summary_msg;
         summary_msg.role = "user";
-        summary_msg.content =
-            "[Previous exchanges summarized: " + *summary + "]";
+        summary_msg.content = "[Previous exchanges summarized: " + *summary + "]";
         summary_msg.retain = RetentionClass::Preserve;
         messages_ = {summary_msg};
     }
