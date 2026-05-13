@@ -450,12 +450,27 @@ void render_chat_controls(TabInfo& tab) {
             } else {
                 ui.models_error = std::move(result.error());
             }
-            // Release-store publishes the non-atomic writes above to any
-            // acquire-load of models_fetched on the render thread.
             ui.models_fetched->store(true, std::memory_order_release);
         });
         ui.models_future = task.get_future();
         std::thread(std::move(task)).detach();
+    }
+
+    // Validate current model selection on the render thread (once)
+    // so we can safely access tab.session and tab.title without races.
+    if (!ui.models_validated) {
+        if (ui.models_fetched->load(std::memory_order_acquire)) {
+            ui.models_validated = true;
+            if (!ui.available_models.empty()) {
+                const auto& current = session.model();
+                bool found = std::any_of(ui.available_models.begin(), ui.available_models.end(),
+                    [&current](const std::string& m) { return m == current; });
+                if (!found) {
+                    session.set_model(ui.available_models.front());
+                    tab.title = ui.available_models.front();
+                }
+            }
+        }
     }
 
     if (BeginMenuBar()) {

@@ -42,6 +42,8 @@ struct ChatUIState {
     // Tracks the async model-fetch so we can wait for completion before tab close
     std::future<void> models_future;
 
+    bool models_validated = false; // true once the render thread has applied auto-select
+
     std::deque<std::string> input_history;
     std::vector<char> input_buffer = {0};
 };

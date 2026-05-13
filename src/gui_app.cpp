@@ -8,6 +8,7 @@
 
 using namespace ImGui;
 
+#include <algorithm>
 #include <csignal>
 
 int gui_main(Config cfg) {
@@ -118,6 +119,7 @@ int gui_main(Config cfg) {
                 std::lock_guard<std::mutex> lock(cs->mutex);
                 cs->pending.emplace_back(text, type);
             });
+
         tabs.push_back(std::move(tab));
     };
 
