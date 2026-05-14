@@ -66,7 +66,7 @@ Tool make_project_tree_tool(std::shared_ptr<std::string> safe_dir_ptr,
         "Maximum depth of 5 to avoid huge outputs. "
         "Use this to understand project structure in a single call "
         "instead of calling list_files repeatedly.";
-    t.timeout_sec = 5;
+    t.timeout_sec = tool_timeout("LLM_PROJECT_TREE_TIMEOUT", 5);
     t.parameters = {{"type", "object"},
         {"properties",
             {{"path",

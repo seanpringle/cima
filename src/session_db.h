@@ -93,12 +93,31 @@ class SessionDB {
     /// assistant tool-call messages (same logic as old Conversation::compact).
     void prune_droppable();
 
+    // ── Persistence ────────────────────────────────────────────────────
+
+    /// Save the in-memory database to a file on disk (full backup).
+    /// Returns an error if the backup fails.
+    Result<void> save_to_file(const std::string& path);
+
+    /// Load the database from a file on disk, replacing the current
+    /// in-memory contents.  Returns an error if the file can't be opened
+    /// or the backup fails.
+    Result<void> load_from_file(const std::string& path);
+
+    /// If set, the DB is automatically saved to this path on destruction
+    /// and whenever the conversation changes significantly.
+    void set_auto_save_path(const std::string& path) { auto_save_path_ = path; }
+    const std::string& auto_save_path() const { return auto_save_path_; }
+
   private:
     sqlite3* db_ = nullptr;
     mutable std::mutex mutex_; // guard execute() — may be called from parallel tool paths
 
     // Next sequence number for messages
     int64_t next_seq_ = 0;
+
+    // Optional auto-save path (set by ChatSession if persistence is configured)
+    std::string auto_save_path_;
 
     // Internal helper: get the next seq and increment
     int64_t claim_seq();

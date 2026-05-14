@@ -2,6 +2,7 @@
 
 #include "config.h"
 
+#include <cstdlib>
 #include <chrono>
 #include <curl/curl.h>
 #include <filesystem>
@@ -15,6 +16,17 @@
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
+
+// ---------------------------------------------------------------------------
+// Helper: look up an environment variable for a tool timeout, falling back
+// to a default.  Each tool factory uses this so operators can tune timeouts.
+// ---------------------------------------------------------------------------
+inline int tool_timeout(const char* env_var, int default_sec) {
+    const char* val = std::getenv(env_var);
+    if (!val || !val[0]) return default_sec;
+    int n = std::atoi(val);
+    return (n > 0) ? n : default_sec;
+}
 
 // ---------------------------------------------------------------------------
 // Path sandbox

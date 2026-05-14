@@ -1,6 +1,8 @@
 #include "chat.h"
 #include "plan.h"
 
+#include <cctype>
+#include <iostream>
 #include <chrono>
 #include <future>
 #include <mutex>
@@ -10,7 +12,7 @@
 ChatSession::ChatSession(Config config, CancellationToken cancelled)
     : model_(std::move(config.model)), reasoning_effort_(std::move(config.reasoning_effort)),
       safe_dir_(std::make_shared<std::string>(std::move(config.safe_dir))),
-      api_key_(config.api_key), max_iterations_(config.max_tool_iterations),
+      api_base_(config.api_base), api_key_(config.api_key), max_iterations_(config.max_tool_iterations),
       context_limit_(config.context_limit),
       system_prompt_(std::move(config.system_prompt)),
       client_(std::move(config.api_base), std::move(config.api_key)),
@@ -40,6 +42,16 @@ ChatSession::ChatSession(Config config, CancellationToken cancelled)
     cont_slot_.max_steps = config.max_continuation_steps;
     cont_slot_.delay_ms = config.continuation_delay_ms;
     tools_.add(make_schedule_continuation_tool(cont_slot_, cancelled_));
+
+    // ── Session DB persistence ──
+    if (!config.session_db_path.empty()) {
+        auto load_result = session_db_.load_from_file(config.session_db_path);
+        if (!load_result) {
+            // If load fails (e.g. first run, file doesn't exist), that's OK —
+            // we'll start with a fresh DB and save on close.
+        }
+        session_db_.set_auto_save_path(config.session_db_path);
+    }
 }
 
 void ChatSession::clear() { session_db_.clear_conversation(); }
@@ -79,15 +91,18 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
     std::string last_content;
     std::string last_reasoning;
 
-    // Add initial user input and snapshot so errors roll it back
-    session_db_.add_user(user_input);
-    auto initial_msg_count = session_db_.message_count();
+    // The prompt for the current turn.  Starts with the user's input; on
+    // subsequent turns it comes from the continuation slot.
+    std::string turn_prompt = user_input;
 
     while (true) {
-        // Snapshot at the start of this turn — this is AFTER any user/continuation
-        // message has been added, so errors roll back the entire turn including
-        // its initiating prompt.
+        // Snapshot BEFORE adding this turn's prompt.  If anything goes wrong
+        // we roll back to here, which removes the prompt + all subsequent
+        // messages from this turn, preserving prior conversation history.
         auto turn_snapshot = session_db_.message_count();
+
+        // Add the prompt for this turn (user input or continuation)
+        session_db_.add_user(turn_prompt);
 
         bool produced_content = false;
 
@@ -306,16 +321,16 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
             break;
         }
 
-        // Inject the continuation prompt as a new user message
+        // Set up the next turn's prompt from the continuation slot.
+        // The prompt will be added (with a fresh snapshot) at the top of
+        // the next loop iteration.
         {
-            auto prompt = std::move(*cont_slot_.prompt);
+            turn_prompt = std::move(*cont_slot_.prompt);
             cont_slot_.prompt.reset();
-
-            session_db_.add_user(prompt);
 
             // Notify the UI via the output callback
             if (output_cb_)
-                output_cb_("Continuing: " + prompt, OutputType::Continuation);
+                output_cb_("Continuing: " + turn_prompt, OutputType::Continuation);
 
             cont_slot_.step_count++;
 
@@ -330,4 +345,89 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
     }
 
     return ChatResult{std::move(last_content), std::move(last_reasoning)};
+}
+
+// ===================================================================
+// Session title generation (free function + instance method wrapper)
+// ===================================================================
+
+static Result<std::string> clean_title_response(const json& j) {
+    auto title = j["choices"][0]["message"]["content"].get<std::string>();
+
+    // Clean up the title: lowercase, replace non-alphanumeric with hyphens
+    std::string clean;
+    for (char c : title) {
+        if (std::isalnum(static_cast<unsigned char>(c))) {
+            clean += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        } else if (!clean.empty() && clean.back() != '-') {
+            clean += '-';
+        }
+    }
+    // Trim trailing hyphens
+    while (!clean.empty() && clean.back() == '-') {
+        clean.pop_back();
+    }
+    // Limit length
+    if (clean.size() > 50) {
+        clean = clean.substr(0, 50);
+        while (!clean.empty() && clean.back() == '-') {
+            clean.pop_back();
+        }
+    }
+    if (clean.empty()) {
+        std::cerr << "cima: title generation produced empty title from raw response:\n"
+                  << j.dump(2) << std::endl;
+        clean = "untitled";
+    }
+    return clean;
+}
+
+Result<std::string> generate_session_title(const std::string& api_base,
+    const std::string& api_key,
+    const std::string& model,
+    const std::vector<std::string>& conversation) {
+
+    // Build messages: include the conversation as context, then ask for a title.
+    json msgs = json::array();
+
+    msgs.push_back({{"role", "system"},
+        {"content",
+            "You are a title generator. Given a conversation between a user and an "
+            "AI coding assistant, generate a short session title (3-5 words, lowercase, "
+            "use hyphens for spaces, filesystem-safe). Return ONLY the title. "
+            "No punctuation, no quotes, no explanation."}});
+
+    // Add conversation context (alternating user/assistant messages).
+    for (size_t i = 0; i < conversation.size(); i++) {
+        std::string role = (i % 2 == 0) ? "user" : "assistant";
+        msgs.push_back({{"role", role}, {"content", conversation[i]}});
+    }
+
+    // Final instruction to produce the title.
+    msgs.push_back({{"role", "user"},
+        {"content",
+            "Based on this conversation, generate a short session title "
+            "(3-5 words, lowercase, hyphens for spaces, filesystem-safe). "
+            "Return ONLY the title."}});
+
+    json payload = {{"model", model},
+        {"messages", msgs},
+        {"max_tokens", 150},
+        {"stream", false}};
+
+    ChatClient temp_client(api_base, api_key);
+    auto result = temp_client.chat(payload);
+    if (!result) {
+        return std::unexpected(result.error());
+    }
+
+    try {
+        return clean_title_response(*result);
+    } catch (const std::exception& e) {
+        return std::unexpected("Failed to parse title: " + std::string(e.what()));
+    }
+}
+
+Result<std::string> ChatSession::generate_session_title(const std::string& prompt) {
+    return ::generate_session_title(api_base_, api_key_, model_, {prompt});
 }

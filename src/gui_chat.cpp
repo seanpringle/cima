@@ -1,4 +1,5 @@
 #include "gui_chat.h"
+#include "client.h"
 #include "tools.h"
 #include <cassert>
 #include <iostream>
@@ -9,10 +10,13 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cstdlib>
 #include <cstring>
+#include <ctime>
+#include <filesystem>
+#include <future>
 #include <md4c.h>
 #include <string>
-#include <future>
 #include <thread>
 
 using namespace ImGui;
@@ -509,6 +513,8 @@ void render_chat_controls(TabInfo& tab) {
         EndMenuBar();
     }
 
+    // ── Session title ──
+    string titleInfo = ui.session_title;
     string tokenInfo = std::to_string(session.last_usage().total_tokens) + " tokens";
 
     auto current_safe_dir = session.safe_dir();
@@ -526,19 +532,31 @@ void render_chat_controls(TabInfo& tab) {
 
     string sep = " :: ";
 
-    auto tokenInfoSize = CalcTextSize(tokenInfo.c_str());
     auto branchInfoSize = CalcTextSize(branchInfo.c_str());
     auto sepSize = CalcTextSize(sep.c_str());
+    auto tokenInfoSize = CalcTextSize(tokenInfo.c_str());
+    auto titleInfoSize = CalcTextSize(titleInfo.c_str());
 
-    auto branchPos = ImVec2(GetContentRegionMax().x - branchInfoSize.x - GetStyle().WindowPadding.x,
+    // Lay out right-aligned: [title] :: [tokens] :: [branch]
+    auto rightEdge = GetContentRegionMax().x - GetStyle().WindowPadding.x;
+
+    auto branchPos = ImVec2(rightEdge - branchInfoSize.x,
         GetFrameHeight() / 2 - branchInfoSize.y / 2);
-    auto sepPos = ImVec2(branchPos.x - sepSize.x, GetFrameHeight() / 2 - sepSize.y / 2);
-    auto tokenPos = ImVec2(sepPos.x - tokenInfoSize.x, GetFrameHeight() / 2 - tokenInfoSize.y / 2);
+    auto sep2Pos = ImVec2(branchPos.x - sepSize.x, GetFrameHeight() / 2 - sepSize.y / 2);
+    auto tokenPos = ImVec2(sep2Pos.x - tokenInfoSize.x, GetFrameHeight() / 2 - tokenInfoSize.y / 2);
+    auto sep1Pos = ImVec2(tokenPos.x - sepSize.x, GetFrameHeight() / 2 - sepSize.y / 2);
+    auto titlePos = ImVec2(sep1Pos.x - titleInfoSize.x, GetFrameHeight() / 2 - titleInfoSize.y / 2);
 
+    if (!titleInfo.empty()) {
+        GetForegroundDrawList()->AddText(
+            GetWindowPos() + titlePos, ImColor(IM_COL32(130, 200, 130, 255)), titleInfo.c_str());
+        GetForegroundDrawList()->AddText(
+            GetWindowPos() + sep1Pos, GetColorU32(ImGuiCol_TextDisabled), sep.c_str());
+    }
     GetForegroundDrawList()->AddText(
         GetWindowPos() + tokenPos, ImColor(IM_COL32(180, 180, 180, 255)), tokenInfo.c_str());
     GetForegroundDrawList()->AddText(
-        GetWindowPos() + sepPos, GetColorU32(ImGuiCol_TextDisabled), sep.c_str());
+        GetWindowPos() + sep2Pos, GetColorU32(ImGuiCol_TextDisabled), sep.c_str());
     GetForegroundDrawList()->AddText(
         GetWindowPos() + branchPos, ImColor(IM_COL32(255, 180, 50, 255)), branchInfo.c_str());
 
@@ -574,6 +592,82 @@ void render_chat_ui(TabInfo& tab, bool& done) {
         }
         if (!result) {
             push_entry(ui, EntryType::Content, "Error: " + result.error(), false);
+        } else {
+            // ── First successful chat: kick off session title generation ──
+            if (!ui.title_generation_triggered) {
+                ui.title_generation_triggered = true;
+                // Collect the first user+assistant exchange from entries
+                // to give the title generator meaningful conversation context.
+                vector<string> conversation;
+                bool got_user = false;
+                for (const auto& e : ui.entries) {
+                    if (e.type == EntryType::UserText && !e.text.empty() && !got_user) {
+                        conversation.push_back(e.text);
+                        got_user = true;
+                    } else if (e.type == EntryType::Content && !e.text.empty() && got_user) {
+                        conversation.push_back(e.text);
+                        break;
+                    }
+                }
+                // Capture copies of API config so the background task is
+                // independent of the session lifetime (the tab can close
+                // without blocking on title generation).
+                auto api_base = session.api_base();
+                auto api_key = session.api_key();
+                auto model = session.model();
+                ui.title_future = std::async(std::launch::async,
+                    [conversation, api_base, api_key, model]() -> Result<std::string> {
+                        return generate_session_title(
+                            api_base, api_key, model, conversation);
+                    });
+            }
+        }
+    }
+
+    // ── Poll for session title completion and auto-save ──
+    if (ui.title_generation_triggered && !ui.title_generated &&
+        ui.title_future.valid() &&
+        ui.title_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        auto title_result = ui.title_future.get();
+        if (title_result) {
+            ui.session_title = std::move(*title_result);
+        } else {
+            // Fallback: use timestamp only
+            ui.session_title.clear();
+        }
+        ui.title_generated = true;
+
+        // Build the auto-save path
+        auto now = std::time(nullptr);
+        struct tm local_tm{};
+        localtime_r(&now, &local_tm);
+        char ts[16];
+        std::strftime(ts, sizeof(ts), "%y%m%d%H%M%S", &local_tm);
+
+        const char* home = getenv("HOME");
+        if (!home || !home[0]) {
+            home = getenv("USERPROFILE"); // Windows fallback
+        }
+        std::string dir = (home ? home : ".") + std::string("/.local/state/cima/session");
+        std::error_code ec;
+        std::filesystem::create_directories(dir, ec);
+
+        std::string filename = ts;
+        if (!ui.session_title.empty()) {
+            filename += "-" + ui.session_title;
+        }
+        filename += ".db";
+
+        auto db_path = dir + "/" + filename;
+        session.session_db().set_auto_save_path(db_path);
+
+        // Also trigger an immediate save (don't wait for destruction)
+        auto save_result = session.session_db().save_to_file(db_path);
+        if (save_result) {
+            // Optionally update the tab title with the session name
+            if (!ui.session_title.empty()) {
+                tab.title = ui.session_title;
+            }
         }
     }
 
@@ -712,23 +806,38 @@ void render_chat_ui(TabInfo& tab, bool& done) {
     auto& buffer = ui.input_buffer;
     auto& history = ui.input_history;
 
+    // Ensure adequate capacity once; avoid per-frame resize
+    constexpr size_t kInputBufferSize = 1024 * 1024;
+    if (buffer.size() < kInputBufferSize) {
+        buffer.resize(kInputBufferSize, 0);
+    }
+
     if (IsKeyDown(ImGuiKey_LeftCtrl) && IsKeyReleased(ImGuiKey_UpArrow) && history.size() > 0) {
         history.emplace_back() = std::move(history.front());
         history.pop_front();
-        buffer = {history.back().begin(), history.back().end()};
-        buffer.resize(buffer.size()+10,0);
+        // Copy history entry into buffer, ensuring null termination + adequate size
+        auto& hist_entry = history.back();
+        buffer.assign(hist_entry.begin(), hist_entry.end());
+        if (buffer.size() < kInputBufferSize) {
+            buffer.resize(kInputBufferSize, 0);
+        } else {
+            buffer.push_back('\0');
+        }
         SetKeyboardFocusHere();
     }
 
     if (IsKeyDown(ImGuiKey_LeftCtrl) && IsKeyReleased(ImGuiKey_DownArrow) && history.size() > 0) {
         history.emplace_front() = std::move(history.back());
         history.pop_back();
-        buffer = {history.back().begin(), history.back().end()};
-        buffer.resize(buffer.size()+10,0);
+        auto& hist_entry = history.back();
+        buffer.assign(hist_entry.begin(), hist_entry.end());
+        if (buffer.size() < kInputBufferSize) {
+            buffer.resize(kInputBufferSize, 0);
+        } else {
+            buffer.push_back('\0');
+        }
         SetKeyboardFocusHere();
     }
-
-    buffer.resize(1024*1024,0);
 
     if (!chat.running && IsWindowAppearing()) {
         SetKeyboardFocusHere();
@@ -757,6 +866,44 @@ void render_chat_ui(TabInfo& tab, bool& done) {
 }
 
 void render_session_db_view(SessionDB& db) {
+    // ── Persistence controls ──
+    auto& auto_path = db.auto_save_path();
+    if (!auto_path.empty()) {
+        PushStyleColor(ImGuiCol_Text, IM_COL32(140, 200, 140, 255));
+        TextUnformatted(("Auto-save: " + auto_path).c_str());
+        PopStyleColor();
+    }
+    if (Button("Save DB to file...")) {
+        // Use a fixed path for now; in a full implementation we'd show a
+        // file dialog.  For now, save next to the workspace.
+        auto path = auto_path.empty()
+            ? "./cima_session.db"
+            : auto_path;
+        auto result = db.save_to_file(path);
+        if (!result) {
+            TextColored(ImColor(IM_COL32(255,100,100,255)),
+                "Save failed: %s", result.error().c_str());
+        } else {
+            TextColored(ImColor(IM_COL32(100,255,100,255)),
+                "Saved to %s", path.c_str());
+        }
+    }
+    SameLine();
+    if (Button("Load DB from file...")) {
+        auto path = auto_path.empty()
+            ? "./cima_session.db"
+            : auto_path;
+        auto result = db.load_from_file(path);
+        if (!result) {
+            TextColored(ImColor(IM_COL32(255,100,100,255)),
+                "Load failed: %s", result.error().c_str());
+        } else {
+            TextColored(ImColor(IM_COL32(100,255,100,255)),
+                "Loaded from %s", path.c_str());
+        }
+    }
+    Separator();
+
     // ── Table list ──
     auto tables_result = db.execute("SELECT name, sql FROM sqlite_master WHERE type='table' ORDER BY name");
     if (!tables_result) {

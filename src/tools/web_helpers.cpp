@@ -51,6 +51,7 @@ Result<std::pair<std::string, long>> http_get(const std::string& url, int timeou
     // Use system default CA bundle — do NOT set a custom CA path so that
     // curl finds the system trust store automatically.
     curl_easy_setopt(curl, CURLOPT_CAINFO, nullptr);
+    curl_easy_setopt(curl, CURLOPT_ACCEPT_ENCODING, "");
     curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, web_search_progress_cb);
     curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
     curl_easy_setopt(curl, CURLOPT_XFERINFODATA, cancelled);

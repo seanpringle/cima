@@ -89,6 +89,14 @@ Config Config::from_env() {
         cfg.safe_dir = canonical.string();
     }
 
+    // ---- session DB persistence ----
+    {
+        const char* val = std::getenv("LLM_SESSION_DB_PATH");
+        if (val && val[0]) {
+            cfg.session_db_path = val;
+        }
+    }
+
     // ---- read-only paths whitelist ----
     // Default paths always included
     cfg.read_only_paths = {"/usr/include", "/usr/share/doc"};

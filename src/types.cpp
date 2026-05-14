@@ -4,7 +4,12 @@
 #include <unordered_set>
 
 // ---------------------------------------------------------------------------
-// UTF-8 sanitization — replace invalid byte sequences with U+FFFD
+// UTF-8 sanitization — replace invalid byte sequences with U+FFFD.
+// Validates structural UTF-8 AND semantic constraints:
+//   - Rejects overlong encodings (e.g. C0 BF for U+007F)
+//   - Rejects encoded UTF-16 surrogates (ED A0 80 .. ED BF BF)
+//   - Rejects codepoints above U+10FFFF (F4 90 ..)
+// Each invalid byte (lead or continuation) is replaced by one U+FFFD.
 // ---------------------------------------------------------------------------
 
 std::string sanitize_utf8(const std::string& s) {

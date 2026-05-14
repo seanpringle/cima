@@ -16,7 +16,7 @@ Tool make_run_bash_tool(std::shared_ptr<std::string> safe_dir_ptr,
     t.name = "run_bash";
     t.description = "Run a bash command in the project directory "
                     "(e.g. build, test, lint). Output is capped at 500 lines / 16000 chars.";
-    t.timeout_sec = 30;
+    t.timeout_sec = 0; // bash manages its own timeout internally
     t.parameters = {{"type", "object"},
         {"properties",
             {{"command", {{"type", "string"}, {"description", "Shell command to execute"}}}}},
@@ -48,7 +48,10 @@ Tool make_run_bash_tool(std::shared_ptr<std::string> safe_dir_ptr,
             if (pipefd[1] > STDERR_FILENO)
                 close(pipefd[1]);
 
-            setpgid(0, 0); // new process group
+            // Create new process group so we can kill the whole process tree.
+            // Both parent and child call setpgid to avoid a race (whichever
+            // runs first succeeds; the other gets EACCES which we ignore).
+            setpgid(0, 0);
 
             if (!safe_dir_ptr->empty()) {
                 if (chdir(safe_dir_ptr->c_str()) != 0) {
@@ -64,7 +67,10 @@ Tool make_run_bash_tool(std::shared_ptr<std::string> safe_dir_ptr,
 
         // ---- parent ----
         close(pipefd[1]);
-        setpgid(pid, pid); // eliminate race with child's setpgid(0,0)
+        // Both parent and child call setpgid to avoid a race (whichever
+        // runs first succeeds; the other gets EACCES which we ignore).
+        setpgid(pid, pid);
+
 
         std::string output;
         char buf[4096];
@@ -81,7 +87,11 @@ Tool make_run_bash_tool(std::shared_ptr<std::string> safe_dir_ptr,
         }
 
         auto kill_child = [&] {
-            killpg(pid, SIGKILL);
+            // killpg targets the process group; fall back to kill if the
+            // child didn't successfully become a process group leader.
+            if (killpg(pid, SIGKILL) != 0) {
+                kill(pid, SIGKILL);
+            }
             int st;
             waitpid(pid, &st, 0);
         };

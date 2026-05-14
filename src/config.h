@@ -34,6 +34,10 @@ struct Config {
     int context_limit = 300000; // model context window (tokens)
     int compact_threshold = 90; // % that triggers compaction
 
+    // If non-empty, the session DB is loaded from this path at session
+    // start and saved to it on session close (and periodically).
+    std::string session_db_path;
+
     std::string system_prompt =
         "You are an AI coding assistant.\n"
         "\n"

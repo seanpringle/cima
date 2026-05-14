@@ -21,7 +21,7 @@ Tool make_git_status_tool(std::shared_ptr<std::string> safe_dir_ptr) {
         "  ' ' = unmodified, M = modified, A = added, D = deleted, "
         "R = renamed, C = copied, U = updated, ? = untracked, ! = ignored\n"
         "Output is sorted by path and capped at 200 entries.";
-    t.timeout_sec = 10;
+    t.timeout_sec = tool_timeout("LLM_GIT_STATUS_TIMEOUT", 10);
     t.parameters = {{"type", "object"},
         {"properties", json::object()},
         {"required", json::array()}};
@@ -115,7 +115,7 @@ Tool make_git_diff_tool(std::shared_ptr<std::string> safe_dir_ptr) {
         "If 'staged' is true, shows the diff that would be committed "
         "(index vs HEAD). If false (default), shows unstaged changes "
         "(working tree vs index).";
-    t.timeout_sec = 10;
+    t.timeout_sec = tool_timeout("LLM_GIT_DIFF_TIMEOUT", 10);
     t.parameters = {{"type", "object"},
         {"properties",
             {{"staged",
@@ -262,7 +262,7 @@ Tool make_git_log_tool(std::shared_ptr<std::string> safe_dir_ptr) {
         "  'full': commit hash, author, date, and full message body\n"
         "Use 'branch' to specify a revision (branch, tag, commit hash, HEAD~N, etc.).\n"
         "Defaults to HEAD (current branch tip).";
-    t.timeout_sec = 10;
+    t.timeout_sec = tool_timeout("LLM_GIT_LOG_TIMEOUT", 10);
     t.parameters = {{"type", "object"},
         {"properties",
             {{"max_count",
@@ -493,7 +493,7 @@ Tool make_git_add_tool(std::shared_ptr<std::string> safe_dir_ptr) {
         "If 'path' is specified, only that file or pathspec is staged.\n"
         "Use git_status first to see which files are changed, "
         "then git_add to stage them, then git_commit to commit.";
-    t.timeout_sec = 10;
+    t.timeout_sec = tool_timeout("LLM_GIT_ADD_TIMEOUT", 10);
     t.parameters = {{"type", "object"},
         {"properties",
             {{"path",
@@ -665,7 +665,7 @@ Tool make_git_commit_tool(std::shared_ptr<std::string> safe_dir_ptr) {
         "If 'all' is true, stages all changes before committing (like 'git commit -a').\n"
         "Use git_status first to see which files are changed, "
         "then git_add to stage them, then git_commit to commit.";
-    t.timeout_sec = 10;
+    t.timeout_sec = tool_timeout("LLM_GIT_COMMIT_TIMEOUT", 10);
     t.parameters = {{"type", "object"},
         {"properties",
             {{"message",

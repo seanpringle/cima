@@ -23,6 +23,10 @@ SessionDB::SessionDB() {
 }
 
 SessionDB::~SessionDB() {
+    // Auto-save if a path was configured
+    if (db_ && !auto_save_path_.empty()) {
+        save_to_file(auto_save_path_);
+    }
     if (db_) {
         sqlite3_close(db_);
     }
@@ -643,4 +647,117 @@ Result<std::string> SessionDB::execute(const std::string& sql) {
         json result = {{"rows_affected", changes}};
         return result.dump();
     }
+}
+
+// ===================================================================
+// Persistence — save / load via SQLite backup API
+// ===================================================================
+
+Result<void> SessionDB::save_to_file(const std::string& path) {
+    if (!db_) {
+        return std::unexpected(std::string("Database handle is null"));
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    // Open the destination file (creates or overwrites)
+    sqlite3* file_db = nullptr;
+    int rc = sqlite3_open(path.c_str(), &file_db);
+    if (rc != SQLITE_OK) {
+        std::string err = sqlite3_errmsg(file_db);
+        sqlite3_close(file_db);
+        return std::unexpected("Failed to open save file: " + err);
+    }
+    auto file_cleanup =
+        std::unique_ptr<sqlite3, decltype(&sqlite3_close)>(file_db, sqlite3_close);
+
+    // Backup in-memory DB → file DB
+    sqlite3_backup* backup = sqlite3_backup_init(file_db, "main", db_, "main");
+    if (!backup) {
+        std::string err = sqlite3_errmsg(file_db);
+        return std::unexpected("Failed to init backup: " + err);
+    }
+    auto backup_cleanup =
+        std::unique_ptr<sqlite3_backup, decltype(&sqlite3_backup_finish)>(
+            backup, sqlite3_backup_finish);
+
+    // Step the backup to completion (single call copies everything for
+    // an in-memory database since it's small — typically < 100 pages).
+    rc = sqlite3_backup_step(backup, -1);
+    if (rc != SQLITE_DONE) {
+        std::string err = sqlite3_errmsg(file_db);
+        return std::unexpected("Backup failed: " + err);
+    }
+
+    return {};
+}
+
+Result<void> SessionDB::load_from_file(const std::string& path) {
+    if (!db_) {
+        return std::unexpected(std::string("Database handle is null"));
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    // Open the source file (read-only)
+    sqlite3* file_db = nullptr;
+    int rc = sqlite3_open_v2(path.c_str(), &file_db,
+        SQLITE_OPEN_READONLY, nullptr);
+    if (rc != SQLITE_OK) {
+        std::string err = sqlite3_errmsg(file_db);
+        sqlite3_close(file_db);
+        return std::unexpected("Failed to open load file: " + err);
+    }
+    auto file_cleanup =
+        std::unique_ptr<sqlite3, decltype(&sqlite3_close)>(file_db, sqlite3_close);
+
+    // We need to replace the current in-memory DB entirely.  Since
+    // transactions and backup can't target two different in-memory
+    // databases atomically, we create a fresh in-memory DB, backup
+    // the file into it, then swap handles.
+    sqlite3* new_db = nullptr;
+    rc = sqlite3_open(":memory:", &new_db);
+    if (rc != SQLITE_OK) {
+        std::string err = sqlite3_errmsg(new_db);
+        sqlite3_close(new_db);
+        return std::unexpected("Failed to create in-memory DB: " + err);
+    }
+
+    // Backup file DB → new in-memory DB
+    sqlite3_backup* backup = sqlite3_backup_init(new_db, "main", file_db, "main");
+    if (!backup) {
+        std::string err = sqlite3_errmsg(new_db);
+        sqlite3_close(new_db);
+        return std::unexpected("Failed to init backup: " + err);
+    }
+    auto backup_cleanup =
+        std::unique_ptr<sqlite3_backup, decltype(&sqlite3_backup_finish)>(
+            backup, sqlite3_backup_finish);
+
+    rc = sqlite3_backup_step(backup, -1);
+    if (rc != SQLITE_DONE) {
+        std::string err = sqlite3_errmsg(new_db);
+        sqlite3_close(new_db);
+        return std::unexpected("Backup failed: " + err);
+    }
+    backup_cleanup.reset();
+
+    // Close the file DB (no longer needed)
+    file_cleanup.reset();
+
+    // Close the old in-memory DB and swap in the new one
+    sqlite3_close(db_);
+    db_ = new_db;
+
+    // Reset sequence counter from the loaded data
+    next_seq_ = 0;
+    sqlite3_stmt* stmt = nullptr;
+    rc = sqlite3_prepare_v2(db_, "SELECT COALESCE(MAX(seq), 0) FROM messages",
+        -1, &stmt, nullptr);
+    if (rc == SQLITE_OK && sqlite3_step(stmt) == SQLITE_ROW) {
+        next_seq_ = sqlite3_column_int64(stmt, 0);
+    }
+    sqlite3_finalize(stmt);
+
+    return {};
 }
