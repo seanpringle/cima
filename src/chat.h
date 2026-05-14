@@ -50,7 +50,6 @@ class ChatSession {
     ChatClient& client_for_models() { return client_; }
 
     // Return the current safe directory (workspace) path for this session.
-    // This can change over time (e.g. via worktree tools).
     const std::string& safe_dir() const { return *safe_dir_; }
 
     // Access the continuation slot (used by GUI to display state).

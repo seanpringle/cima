@@ -23,7 +23,6 @@ ChatSession::ChatSession(Config config, CancellationToken cancelled)
         config.search_api_key,
         config.search_engine_id,
         config.search_endpoint,
-        config.worktree_base,
         /*include_write=*/true);
 
     // Each session gets its own plan tools tied to its PlanBoard
@@ -183,6 +182,8 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                     return std::unexpected("Interrupted during tool execution");
                 }
 
+                int remaining = max_iterations_ - iter - 1;
+
                 if (calls.size() > 1) {
                     // If any tool in the batch has Write permission, serialize
                     // the batch to avoid race conditions on shared resources
@@ -211,7 +212,10 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                                     OutputType::ToolInvocation);
                             }
                             auto tr = tools_.execute(call.name, call.arguments);
-                            session_db_.add_tool(call.id, tr ? *tr : tr.error());
+                            auto result = tr ? *tr : tr.error();
+                            session_db_.add_tool(call.id,
+                                "── Remaining tool call budget: " + std::to_string(remaining) +
+                                    "/" + std::to_string(max_iterations_) + " ──\n\n" + result);
                         }
                     } else {
                         // Parallel execution for read-only tools
@@ -236,7 +240,10 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                                     OutputType::ToolInvocation);
                             }
                             auto tr = futures[i].get();
-                            session_db_.add_tool(calls[i].id, tr ? *tr : tr.error());
+                            auto result = tr ? *tr : tr.error();
+                            session_db_.add_tool(calls[i].id,
+                                "── Remaining tool call budget: " + std::to_string(remaining) +
+                                    "/" + std::to_string(max_iterations_) + " ──\n\n" + result);
                         }
                     }
                 } else {
@@ -251,7 +258,10 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                                 OutputType::ToolInvocation);
                         }
                         auto tr = tools_.execute(call.name, call.arguments);
-                        session_db_.add_tool(call.id, tr ? *tr : tr.error());
+                        auto result = tr ? *tr : tr.error();
+                        session_db_.add_tool(call.id,
+                            "── Remaining tool call budget: " + std::to_string(remaining) +
+                                "/" + std::to_string(max_iterations_) + " ──\n\n" + result);
                     }
                 }
                 continue;
@@ -267,12 +277,16 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
         }
 
         if (!produced_content) {
-            // The for-loop exhausted max_iterations_ without producing content
-            session_db_.truncate_conversation(turn_snapshot);
+            // Budget exhausted — preserve accumulated work so the user/agent
+            // can continue (e.g. via schedule_continuation).
             cont_slot_.prompt.reset();
-            return std::unexpected("Maximum tool call iterations (" +
-                std::to_string(max_iterations_) +
-                ") reached. Increase via LLM_MAX_TOOL_ITERATIONS env var.");
+            std::string msg = "Tool call budget exhausted (" +
+                std::to_string(max_iterations_) + " iterations). " +
+                "Use `schedule_continuation` to continue in a new turn if needed.";
+            session_db_.add_assistant(msg, "");
+            last_content = msg;
+            last_reasoning = "";
+            produced_content = true;
         }
 
         // ── Check for scheduled continuation ──

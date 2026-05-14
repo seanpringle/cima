@@ -511,7 +511,6 @@ void render_chat_controls(TabInfo& tab) {
 
     string tokenInfo = std::to_string(session.last_usage().total_tokens) + " tokens";
 
-    // Refresh workspace path from the session (may change via worktree tools)
     auto current_safe_dir = session.safe_dir();
     if (current_safe_dir != tab.workspace_path) {
         tab.workspace_path = current_safe_dir;
@@ -755,4 +754,225 @@ void render_chat_ui(TabInfo& tab, bool& done) {
     }
 
     PopFont();
+}
+
+void render_session_db_view(SessionDB& db) {
+    // ── Table list ──
+    auto tables_result = db.execute("SELECT name, sql FROM sqlite_master WHERE type='table' ORDER BY name");
+    if (!tables_result) {
+        TextDisabled("(database unavailable)");
+        return;
+    }
+
+    json tables_json;
+    try {
+        tables_json = json::parse(*tables_result);
+    } catch (...) {
+        TextDisabled("(error reading schema)");
+        return;
+    }
+
+    if (!tables_json.is_array() || tables_json.empty()) {
+        TextDisabled("(no tables)");
+        return;
+    }
+
+    // Build table name list and remember selected index
+    static string selected_table;
+    vector<string> table_names;
+    for (const auto& t : tables_json) {
+        table_names.push_back(t.value("name", ""));
+    }
+
+    // Ensure selected_table is still valid
+    bool found = false;
+    for (const auto& n : table_names) {
+        if (n == selected_table) {
+            found = true;
+            break;
+        }
+    }
+    if (!found && !table_names.empty()) {
+        selected_table = table_names.front();
+    }
+
+    // Combo to select a table
+    if (table_names.empty())
+        return;
+
+    int current = 0;
+    for (int i = 0; i < (int)table_names.size(); i++) {
+        if (table_names[i] == selected_table) {
+            current = i;
+            break;
+        }
+    }
+    string combo_label = "##db-table-select";
+    PushItemWidth(GetContentRegionAvail().x);
+    if (BeginCombo(combo_label.c_str(), selected_table.c_str())) {
+        for (int i = 0; i < (int)table_names.size(); i++) {
+            bool is_selected = (table_names[i] == selected_table);
+            if (Selectable(table_names[i].c_str(), is_selected)) {
+                selected_table = table_names[i];
+            }
+            if (is_selected) {
+                SetItemDefaultFocus();
+            }
+        }
+        EndCombo();
+    }
+    PopItemWidth();
+
+    if (selected_table.empty())
+        return;
+
+    SeparatorText("Schema");
+
+    // ── Schema (PRAGMA table_info) ──
+    string pragma_sql = "PRAGMA table_info(" + selected_table + ")";
+    auto schema_result = db.execute(pragma_sql);
+    if (!schema_result) {
+        TextDisabled("(schema unavailable)");
+        return;
+    }
+
+    json schema_json;
+    try {
+        schema_json = json::parse(*schema_result);
+    } catch (...) {
+        TextDisabled("(error parsing schema)");
+        return;
+    }
+
+    struct ColInfo {
+        string name;
+        string type;
+        bool notnull;
+        bool pk;
+    };
+    vector<ColInfo> cols;
+    if (schema_json.is_array()) {
+        for (const auto& row : schema_json) {
+            ColInfo ci;
+            ci.name = row.value("name", "");
+            ci.type = row.value("type", "");
+            ci.notnull = row.value("notnull", 0) != 0;
+            ci.pk = row.value("pk", 0) != 0;
+            cols.push_back(ci);
+        }
+    }
+
+    if (cols.empty()) {
+        TextDisabled("(no columns)");
+        return;
+    }
+
+    // Render schema as a small table
+    if (BeginTable("##db-schema", 4,
+            ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit)) {
+        TableSetupColumn("Column");
+        TableSetupColumn("Type");
+        TableSetupColumn("Not Null");
+        TableSetupColumn("PK");
+        TableHeadersRow();
+
+        for (const auto& ci : cols) {
+            TableNextRow();
+            TableNextColumn();
+            TextUnformatted(ci.name.c_str());
+            TableNextColumn();
+            TextUnformatted(ci.type.c_str());
+            TableNextColumn();
+            TextUnformatted(ci.notnull ? "\xe2\x9c\x93" : "");
+            TableNextColumn();
+            TextUnformatted(ci.pk ? "\xe2\x9c\x93" : "");
+        }
+        EndTable();
+    }
+
+    SeparatorText("Data");
+
+    // ── Data (SELECT * with LIMIT) ──
+    string data_sql = "SELECT * FROM \"" + selected_table + "\" LIMIT 200";
+    auto data_result = db.execute(data_sql);
+    if (!data_result) {
+        TextDisabled("(data unavailable)");
+        return;
+    }
+
+    json data_json;
+    try {
+        data_json = json::parse(*data_result);
+    } catch (...) {
+        TextDisabled("(error parsing data)");
+        return;
+    }
+
+    if (!data_json.is_array()) {
+        TextDisabled("(no data)");
+        return;
+    }
+
+    size_t row_count = data_json.size();
+    TextUnformatted((std::to_string(row_count) + " rows").c_str());
+
+    if (row_count == 0)
+        return;
+
+    auto canvas = GetContentRegionAvail();
+    float data_table_height = canvas.y - GetCursorPosY() + GetScrollY() - 8;
+    if (data_table_height < 60.0f)
+        data_table_height = 60.0f;
+
+    ImVec2 outer_size(canvas.x, data_table_height);
+    if (BeginTable("##db-data", (int)cols.size(),
+            ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY |
+                ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_Resizable,
+            outer_size)) {
+        // Column headers
+        for (const auto& ci : cols) {
+            TableSetupColumn(ci.name.c_str(),
+                ImGuiTableColumnFlags_None | ImGuiTableColumnFlags_NoHide);
+        }
+        TableSetupScrollFreeze(0, 1); // freeze header row
+        TableHeadersRow();
+
+        // Data rows
+        for (const auto& row : data_json) {
+            TableNextRow();
+            for (size_t ci = 0; ci < cols.size(); ci++) {
+                TableNextColumn();
+                if (row.contains(cols[ci].name)) {
+                    const auto& val = row[cols[ci].name];
+                    if (val.is_null()) {
+                        TextDisabled("NULL");
+                    } else if (val.is_string()) {
+                        string s = val.get<string>();
+                        // Truncate very long strings
+                        if (s.size() > 500) {
+                            s.resize(500);
+                            s += "...";
+                        }
+                        TextUnformatted(s.c_str());
+                    } else if (val.is_number()) {
+                        if (val.is_number_integer()) {
+                            Text("%lld", (long long)val.get<int64_t>());
+                        } else {
+                            Text("%g", val.get<double>());
+                        }
+                    } else if (val.is_boolean()) {
+                        TextUnformatted(val.get<bool>() ? "true" : "false");
+                    } else {
+                        string s = val.dump();
+                        if (s.size() > 500) {
+                            s.resize(500);
+                            s += "...";
+                        }
+                        TextUnformatted(s.c_str());
+                    }
+                }
+            }
+        }
+        EndTable();
+    }
 }

@@ -94,7 +94,6 @@ add_library(cima_core
     src/tools/path.cpp
     src/tools/git_helpers.cpp
     src/tools/web_helpers.cpp
-    src/tools/worktree.cpp
     src/tools/factories/filesystem.cpp
     src/tools/factories/file_io.cpp
     src/tools/factories/grep.cpp

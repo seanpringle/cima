@@ -272,7 +272,7 @@ int gui_main(Config cfg) {
                                     EndTabItem();
                                 }
                                 if (BeginTabItem("Database")) {
-                                    // todo session db view
+                                    render_session_db_view(tab.session->session_db());
                                     EndTabItem();
                                 }
                                 EndTabBar();

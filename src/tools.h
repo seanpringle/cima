@@ -55,18 +55,14 @@ class ToolRegistry {
         const std::string& search_api_key = {},
         const std::string& search_engine_id = {},
         const std::string& search_endpoint = {},
-        const std::string& worktree_base = "/tmp/cima",
         bool include_write = true);
 
     // Convenience overload: accepts a plain string safe_dir (wraps in shared_ptr internally).
-    // Note: this creates a non-shared safe_dir — worktree tools won't be able to
-    // redirect the safe_dir. For tests and tools that don't need worktree support.
     void add_defaults(const std::string& safe_dir,
         const std::vector<std::string>& read_only_paths = {},
         const std::string& search_api_key = {},
         const std::string& search_engine_id = {},
         const std::string& search_endpoint = {},
-        const std::string& worktree_base = "/tmp/cima",
         bool include_write = true);
 
     json to_openai_tools() const;
@@ -91,7 +87,6 @@ class ToolRegistry {
 // ---------------------------------------------------------------------------
 
 struct git_repository;
-struct git_worktree;
 
 /// Open the git repository at or walking up from safe_dir.
 /// Returns the repo handle or an error string.
@@ -142,33 +137,6 @@ inline constexpr std::chrono::milliseconds DDG_MIN_INTERVAL = std::chrono::milli
 // ── web_fetch cache globals ──
 extern std::mutex g_fetch_cache_mutex;
 extern std::unordered_map<std::string, std::string> g_fetch_cache;
-
-// ---------------------------------------------------------------------------
-// Worktree helpers
-// ---------------------------------------------------------------------------
-
-/// Recursively delete \p dir without following any symlinks.
-void remove_all_safe(const std::filesystem::path& dir);
-
-/// Sanitize a branch name for use as a filesystem directory component.
-std::string sanitize_branch_name(const std::string& branch);
-
-// ---------------------------------------------------------------------------
-// Worktree state — shared between start_worktree and stop_worktree
-// ---------------------------------------------------------------------------
-struct WorktreeState {
-    std::string original_safe_dir;
-    std::string worktree_name;
-    std::string worktree_path;
-    std::string branch_name;
-    bool active = false;
-};
-
-Tool make_start_worktree_tool(std::shared_ptr<std::string> safe_dir_ptr,
-    std::shared_ptr<std::string> worktree_base_ptr,
-    std::shared_ptr<WorktreeState> state);
-Tool make_stop_worktree_tool(
-    std::shared_ptr<std::string> safe_dir_ptr, std::shared_ptr<WorktreeState> state);
 
 // ---------------------------------------------------------------------------
 // Tool factory declarations (used by ToolRegistry::add_defaults)

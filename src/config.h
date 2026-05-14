@@ -27,7 +27,6 @@ struct Config {
     std::string search_api_key;
     std::string search_engine_id;
     std::string search_endpoint;
-    std::string worktree_base = "/tmp/cima";
     std::vector<std::string> read_only_paths;
     int max_tool_iterations = 100;
     int max_continuation_steps = 10;
@@ -46,13 +45,6 @@ struct Config {
         "document."
         " Always explicitly ask the user to review and approve your completed Plan document before "
         "you start implementation.\n"
-        "\n"
-        "When merging a worktree branch back to the repo, always rebase the worktree branch first, "
-        "rebuild and re-test, then"
-        " use a clean `git push . <worktree-branch>:<target-branch>` to do a local fast-forward "
-        "merge from inside your cwd."
-        " Do not merge using the main repo checked-out worktree in case merge conflict artifacts "
-        "interfere with other agents.\n"
         "\n"
         "### Continuations\n"
         "\n"

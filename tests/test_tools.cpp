@@ -111,7 +111,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
 
     json tools = reg.to_openai_tools();
     REQUIRE(tools.is_array());
-    REQUIRE(tools.size() == 20);
+    REQUIRE(tools.size() == 18);
 
     // Check structure of first tool
     CHECK(tools[0]["type"] == "function");
@@ -131,19 +131,18 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
                        "edit_file", "run_bash", "web_search", "web_fetch",
                        "project_tree", "git_status", "git_diff", "git_log",
                        "git_add", "git_commit",
-                       "delete_file", "move_file", "rename_file",
-                       "start_worktree", "stop_worktree"});
+                       "delete_file", "move_file", "rename_file"});
 }
 
 TEST_CASE("ToolRegistry without write tools (Planner-style)", "[tools][registry]") {
     ToolRegistry reg;
-    reg.add_defaults("/tmp", {}, "", "", "", "/tmp/cima", /*include_write=*/false);
+    reg.add_defaults("/tmp", {}, "", "", "", /*include_write=*/false);
 
     json tools = reg.to_openai_tools();
     REQUIRE(tools.is_array());
     // 10 read-only tools: list_files, read_file, read_file_lines, grep_files,
     // project_tree, web_search, web_fetch, git_status, git_diff, git_log
-    REQUIRE(tools.size() == 12);
+    REQUIRE(tools.size() == 10);
 
     // No write tools should be present
     std::set<std::string> names;

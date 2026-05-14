@@ -13,11 +13,10 @@ void ToolRegistry::add_defaults(const std::string& safe_dir,
     const std::string& search_api_key,
     const std::string& search_engine_id,
     const std::string& search_endpoint,
-    const std::string& worktree_base,
     bool include_write) {
     add_defaults(std::make_shared<std::string>(safe_dir),
         read_only_paths, search_api_key, search_engine_id,
-        search_endpoint, worktree_base, include_write);
+        search_endpoint, include_write);
 }
 
 void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
@@ -25,7 +24,6 @@ void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
     const std::string& search_api_key,
     const std::string& search_engine_id,
     const std::string& search_endpoint,
-    const std::string& worktree_base,
     bool include_write) {
     // ── Read-only tools (receive whitelist for extra path access) ──
     {
@@ -123,23 +121,6 @@ void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
         }
     }
 
-    // ── Worktree tools (always included, Internal permission) ──
-    // Both tools share a single WorktreeState so stop_worktree can see
-    // what start_worktree recorded.
-    auto wt_state = std::make_shared<WorktreeState>();
-    wt_state->original_safe_dir = *safe_dir_ptr;
-    {
-        auto t = make_start_worktree_tool(safe_dir_ptr,
-            std::make_shared<std::string>(worktree_base),
-            wt_state);
-        t.permission = ToolPermission::Internal;
-        add(std::move(t));
-    }
-    {
-        auto t = make_stop_worktree_tool(safe_dir_ptr, wt_state);
-        t.permission = ToolPermission::Internal;
-        add(std::move(t));
-    }
 }
 
 json ToolRegistry::to_openai_tools() const {
