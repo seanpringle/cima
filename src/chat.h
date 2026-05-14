@@ -51,12 +51,6 @@ class ChatSession {
     // Expose the underlying client so the GUI can call fetch_models() etc.
     ChatClient& client_for_models() { return client_; }
 
-    /// Generate a short, filesystem-safe session title from a conversation.
-    /// Makes a lightweight non-streaming API call asking the model to
-    /// summarise the conversation topic into 3-5 words.  Returns the title
-    /// on success, or an error string on failure.
-    Result<std::string> generate_session_title(const std::string& prompt);
-
     // Return the current safe directory (workspace) path for this session.
     const std::string& safe_dir() const { return *safe_dir_; }
 
@@ -89,12 +83,4 @@ class ChatSession {
     bool context_limit_discovered_ = false;
 };
 
-// Free function for generating a session title without requiring a ChatSession instance.
-// Takes explicit connection parameters so callers (e.g. GUI background tasks) can pass
-// copies without lifetime concerns.
-// `conversation` is a vector of alternating user/assistant text messages from
-// the session's first exchange, used as context for title generation.
-Result<std::string> generate_session_title(const std::string& api_base,
-    const std::string& api_key,
-    const std::string& model,
-    const std::vector<std::string>& conversation);
+

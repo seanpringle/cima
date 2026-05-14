@@ -180,13 +180,10 @@ int gui_main(Config cfg) {
                     }
                     tab.chat_state->running = false;
                 }
-                // Wait for any outstanding model-fetch or title-generation to
+                // Wait for any outstanding model-fetch to
                 // complete before destroying the tab's ChatUIState / ChatSession
                 if (tab.ui_state.models_future.valid()) {
                     tab.ui_state.models_future.wait();
-                }
-                if (tab.ui_state.title_future.valid()) {
-                    tab.ui_state.title_future.wait();
                 }
                 tabs.erase(tabs.begin() + active_tab);
                 if (active_tab >= (int)tabs.size())

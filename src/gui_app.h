@@ -44,12 +44,6 @@ struct ChatUIState {
 
     bool models_validated = false; // true once the render thread has applied auto-select
 
-    // Session title generation (auto-save naming)
-    bool title_generated = false;
-    bool title_generation_triggered = false;
-    std::future<Result<std::string>> title_future;
-    std::string session_title;
-
     std::deque<std::string> input_history;
     std::vector<char> input_buffer = {0};
 };
