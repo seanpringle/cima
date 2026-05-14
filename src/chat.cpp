@@ -143,12 +143,15 @@ std::string ChatSession::inject_usage_notices(std::string result) {
     }
 
     // ── Inbox notifications ──
+    // Only a generic notification with count — don't dequeue;
+    // the agent must call next_message() to retrieve the content.
     if (inbox_ && !agent_name_.empty()) {
-        while (true) {
-            auto msg = inbox_->next_message(agent_name_);
-            if (!msg.has_value()) break;
-            banners += "[Message from " + msg->from + ": " + msg->message +
-                " — use next_message() to read and respond.]\n\n";
+        int count = inbox_->pending_count(agent_name_);
+        if (count > 0) {
+            banners += "[you have " + std::to_string(count)
+                + (count == 1 ? " message" : " messages")
+                + " in your inbox — use next_message() to read "
+                + (count == 1 ? "it" : "them") + ".]\n\n";
         }
     }
 
@@ -184,22 +187,19 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
         }
     }
 
-    // ── Inject pending inbox messages ──
+    // ── Inject pending inbox notifications ──
     // Checks before each turn so a new message that arrived mid-turn will be
     // picked up at the start of the next turn.
+    // Only a generic notification is injected — the agent must call
+    // next_message() to retrieve the actual content.
     if (inbox_ && !agent_name_.empty()) {
-        while (true) {
-            auto msg = inbox_->next_message(agent_name_);
-            if (!msg.has_value()) break;
-            std::string user_msg = "[Message from " + msg->from + "]: " + msg->message;
-            // Escape single quotes for SQL
-            size_t pos = 0;
-            while ((pos = user_msg.find('\'', pos)) != std::string::npos) {
-                user_msg.insert(pos, "'");
-                pos += 2;
-            }
+        int count = inbox_->pending_count(agent_name_);
+        if (count > 0) {
+            std::string notice = "[you have " + std::to_string(count)
+                + (count == 1 ? " message" : " messages")
+                + " in your inbox]";
             auto sql = "INSERT INTO messages (role, content, retention) VALUES ('user', '"
-                + user_msg + "', 'droppable')";
+                + notice + "', 'droppable')";
             auto seq = session_db_.execute(sql);
             (void)seq;
         }

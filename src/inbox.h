@@ -43,6 +43,10 @@ class Inbox {
     /// Check if an agent name is registered.
     bool is_registered(const std::string& name) const;
 
+    /// Return the number of pending (undelivered) messages for an agent.
+    /// Returns 0 if the agent is not registered.
+    int pending_count(const std::string& agent_name) const;
+
   private:
     mutable std::mutex mutex_;
     std::unordered_map<std::string, std::vector<InboxMessage>> queues_;

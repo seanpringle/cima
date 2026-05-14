@@ -59,3 +59,10 @@ bool Inbox::is_registered(const std::string& name) const {
     std::lock_guard<std::mutex> lock(mutex_);
     return agents_.find(name) != agents_.end();
 }
+
+int Inbox::pending_count(const std::string& agent_name) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = queues_.find(agent_name);
+    if (it == queues_.end()) return 0;
+    return static_cast<int>(it->second.size());
+}
