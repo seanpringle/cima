@@ -2,6 +2,8 @@
 
 #include "chat.h"
 #include "config.h"
+#include "group_channel.h"
+#include "ship_name.h"
 #include "types.h"
 
 #include <SDL3/SDL.h>
@@ -53,7 +55,8 @@ struct TabInfo {
     std::unique_ptr<AsyncChatState> chat_state;
     ChatUIState ui_state;
     int id = 0;
-    std::string title;
+    std::string title;          // Culture ship name
+    std::string model_name;     // actual model name (shown in dropdown)
     std::string git_branch;
     std::string workspace_path;
 };

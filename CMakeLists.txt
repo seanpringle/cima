@@ -91,6 +91,8 @@ endif()
 add_library(cima_core
     src/config.cpp
     src/types.cpp
+    src/ship_name.cpp
+    src/group_channel.cpp
     src/tools/path.cpp
     src/tools/git_helpers.cpp
     src/tools/web_helpers.cpp
@@ -102,6 +104,7 @@ add_library(cima_core
     src/tools/factories/git.cpp
     src/tools/factories/session_db.cpp
     src/tools/factories/continuation.cpp
+    src/tools/factories/group_channel.cpp
     src/tools/registry.cpp
     src/session_db.cpp
     src/client.cpp
@@ -150,6 +153,9 @@ target_link_libraries(test_chat PRIVATE cima_core Catch2::Catch2WithMain)
 add_executable(test_session_db tests/test_session_db.cpp)
 target_link_libraries(test_session_db PRIVATE cima_core Catch2::Catch2WithMain)
 
+add_executable(test_group_channel tests/test_group_channel.cpp)
+target_link_libraries(test_group_channel PRIVATE cima_core Catch2::Catch2WithMain)
+
 include(CTest)
 include(Catch)
 catch_discover_tests(test_config)
@@ -158,3 +164,4 @@ catch_discover_tests(test_tools)
 catch_discover_tests(test_client)
 catch_discover_tests(test_chat)
 catch_discover_tests(test_session_db)
+catch_discover_tests(test_group_channel)

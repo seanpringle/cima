@@ -107,18 +107,26 @@ int gui_main(Config cfg) {
     int active_tab = 0;
     int focus_tab_id = -1;
 
+    // Shared group channel across all sessions
+    GroupChannel group_channel;
+
     auto add_tab = [&](const std::string& model_name) {
         TabInfo tab;
         tab.id = next_tab_id++;
-        tab.title = model_name;
+        tab.model_name = model_name;
+        // Generate a Culture ship name for the tab title
+        tab.title = generate_culture_ship_name();
         tab.chat_state = std::make_unique<AsyncChatState>();
-        tab.session = std::make_unique<ChatSession>(cfg, tab.chat_state->cancelled);
+        tab.session = std::make_unique<ChatSession>(cfg, &group_channel, tab.chat_state->cancelled);
+        tab.session->set_agent_name(tab.title);
         tab.ui_state.mono_font = mono_font;
         tab.session->set_output_callback(
             [cs = tab.chat_state.get()](const std::string& text, OutputType type) {
                 std::lock_guard<std::mutex> lock(cs->mutex);
                 cs->pending.emplace_back(text, type);
             });
+
+        group_channel.register_agent(tab.id, tab.title);
 
         tabs.push_back(std::move(tab));
     };
@@ -185,11 +193,56 @@ int gui_main(Config cfg) {
                 if (tab.ui_state.models_future.valid()) {
                     tab.ui_state.models_future.wait();
                 }
+                group_channel.unregister_agent(tab.id);
                 tabs.erase(tabs.begin() + active_tab);
                 if (active_tab >= (int)tabs.size())
                     active_tab = (int)tabs.size() - 1;
                 if (active_tab < 0)
                     active_tab = 0;
+            }
+        }
+
+        // Update agent busy status for all tabs
+        for (auto& t : tabs) {
+            group_channel.set_agent_busy(t.id, t.chat_state->running);
+        }
+
+        // ── Poll for group channel notifications and wake idle agents ──
+        for (auto& t : tabs) {
+            if (t.chat_state->running)
+                continue; // agent is busy, notifications will be picked up by inject_usage_notices
+
+            // Check for pending notifications for this agent
+            std::vector<PendingNotification> notes;
+            {
+                notes = group_channel.consume_notifications(t.session->agent_name());
+            }
+
+            for (auto& note : notes) {
+                // Build an actionable user prompt from the notification
+                std::string prompt;
+                if (note.from == "user") {
+                    prompt = "[Group Channel Message from user]: " + note.summary;
+                } else {
+                    prompt = "[Group Channel Message from " + note.from + "]: " + note.summary;
+                }
+
+                // Start the agent responding to this notification
+                if (!t.chat_state->running) {
+                    // Ensure any previous future is consumed
+                    if (t.chat_state->future.valid()) {
+                        try {
+                            t.chat_state->future.get();
+                        } catch (...) {}
+                    }
+                    t.chat_state->running = true;
+                    *t.chat_state->cancelled = false;
+                    t.chat_state->future = std::async(std::launch::async,
+                        [session = t.session.get(), cs = t.chat_state.get(),
+                         prompt = std::move(prompt)]() {
+                            return session->run_once(prompt);
+                        });
+                }
             }
         }
 
@@ -275,6 +328,10 @@ int gui_main(Config cfg) {
                                     render_session_db_view(tab.session->session_db());
                                     EndTabItem();
                                 }
+                                if (BeginTabItem("Group")) {
+                                    render_group_channel(group_channel, mono_font);
+                                    EndTabItem();
+                                }
                                 EndTabBar();
                             }
 
@@ -320,6 +377,7 @@ int gui_main(Config cfg) {
                         if (tab.ui_state.models_future.valid()) {
                             tab.ui_state.models_future.wait();
                         }
+                        group_channel.unregister_agent(tab.id);
                         tabs.erase(tabs.begin() + ti);
                         if (active_tab >= (int)tabs.size())
                             active_tab = (int)tabs.size() - 1;

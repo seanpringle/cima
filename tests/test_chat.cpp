@@ -314,7 +314,7 @@ TEST_CASE("ChatSession cancelled token aborts request", "[chat]") {
     cfg.system_prompt = "test";
     cfg.safe_dir = "/tmp";
 
-    ChatSession session(std::move(cfg), token);
+    ChatSession session(std::move(cfg), nullptr, token);
     auto result = session.run_once("Say hi");
     CHECK_FALSE(result);
     // curl should abort the request because the progress callback sees the

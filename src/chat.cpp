@@ -7,8 +7,9 @@
 #include <thread>
 #include <unordered_map>
 
-ChatSession::ChatSession(Config config, CancellationToken cancelled)
+ChatSession::ChatSession(Config config, GroupChannel* group_channel, CancellationToken cancelled)
     : model_(std::move(config.model)), reasoning_effort_(std::move(config.reasoning_effort)),
+      group_channel_(group_channel),
       safe_dir_(std::make_shared<std::string>(std::move(config.safe_dir))),
       api_base_(config.api_base), api_key_(config.api_key), max_iterations_(config.max_tool_iterations),
       context_limit_(config.context_limit),
@@ -40,6 +41,27 @@ ChatSession::ChatSession(Config config, CancellationToken cancelled)
     cont_slot_.max_steps = config.max_continuation_steps;
     cont_slot_.delay_ms = config.continuation_delay_ms;
     tools_.add(make_schedule_continuation_tool(cont_slot_, cancelled_));
+
+    // ── Group channel tools ──
+    if (group_channel_) {
+        auto channel_tools = make_group_channel_tools(*group_channel_);
+        // Wrap post_message to inject the agent's name
+        for (auto& t : channel_tools) {
+            if (t.name == "post_message") {
+                auto original = t.execute;
+                t.execute = [this, original](const json& args) -> Result<std::string> {
+                    // Override the "from" field by re-posting with the agent name
+                    auto summary = args.value("short_summary", std::string());
+                    auto body = args.value("longer_body", std::string());
+                    if (summary.empty()) return std::unexpected("short_summary is required");
+                    if (body.empty()) return std::unexpected("longer_body is required");
+                    int id = group_channel_->post_message(agent_name_, summary, body);
+                    return json({{"id", id}}).dump();
+                };
+            }
+            tools_.add(std::move(t));
+        }
+    }
 
     // ── Session DB persistence ──
     if (!config.session_db_path.empty()) {
@@ -112,6 +134,15 @@ std::string ChatSession::inject_usage_notices(std::string result) {
         }
     }
 
+    // ── Group channel notifications (busy agent) ──
+    if (group_channel_ && !agent_name_.empty()) {
+        auto notes = group_channel_->consume_notifications(agent_name_);
+        for (const auto& note : notes) {
+            banners += "[group channel message from " + note.from + ": " + note.summary +
+                " — respond to this in the group channel.]\n\n";
+        }
+    }
+
     if (!banners.empty()) {
         result = banners + result;
     }
@@ -141,6 +172,28 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                 context_limit_ = discovered;
             }
             context_limit_discovered_ = true;
+        }
+    }
+
+    // ── Inject pending group channel notifications (idle agent, fallback) ──
+    // Notifications should normally be consumed by the GUI polling loop or
+    // by inject_usage_notices() for busy agents. This fallback catches any
+    // leftover notifications (e.g. ones that arrived during the brief
+    // window after the polling check but before run_once started).
+    if (group_channel_ && !agent_name_.empty()) {
+        auto notes = group_channel_->consume_notifications(agent_name_);
+        for (const auto& note : notes) {
+            std::string user_msg = "[Group Channel Message from " + note.from + "]: " + note.summary;
+            // Escape single quotes for SQL
+            size_t pos = 0;
+            while ((pos = user_msg.find('\'', pos)) != std::string::npos) {
+                user_msg.insert(pos, "'");
+                pos += 2;
+            }
+            auto sql = "INSERT INTO messages (role, content, retention) VALUES ('user', '"
+                + user_msg + "', 'droppable')";
+            auto seq = session_db_.execute(sql);
+            (void)seq;
         }
     }
 

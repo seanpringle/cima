@@ -2,6 +2,7 @@
 
 #include "client.h"
 #include "config.h"
+#include "group_channel.h"
 #include "plan.h"
 #include "session_db.h"
 #include "tools.h"
@@ -24,7 +25,9 @@ using OutputCallback = std::function<void(const std::string& text, OutputType ty
 
 class ChatSession {
   public:
-    explicit ChatSession(Config config, CancellationToken cancelled = nullptr);
+    explicit ChatSession(Config config,
+        GroupChannel* group_channel = nullptr,
+        CancellationToken cancelled = nullptr);
 
     ChatSession(const ChatSession&) = delete;
     ChatSession& operator=(const ChatSession&) = delete;
@@ -63,9 +66,18 @@ class ChatSession {
     /// Deduplication is handled via notice_* flags in the metadata table.
     std::string inject_usage_notices(std::string result);
 
+    /// Set/Get the agent's Culture ship name.
+    void set_agent_name(const std::string& name) { agent_name_ = name; }
+    const std::string& agent_name() const { return agent_name_; }
+
+    /// Return the shared group channel (may be null if not set).
+    GroupChannel* group_channel() const { return group_channel_; }
+
   private:
     std::string model_;
     std::string reasoning_effort_;
+    std::string agent_name_;
+    GroupChannel* group_channel_ = nullptr;
     std::shared_ptr<std::string> safe_dir_;
     ContinuationSlot cont_slot_;
     std::string api_base_;     // API base URL (for creating temp clients)

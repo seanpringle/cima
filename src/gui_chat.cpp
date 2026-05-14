@@ -1,5 +1,6 @@
 #include "gui_chat.h"
 #include "client.h"
+#include "group_channel.h"
 #include "tools.h"
 #include <cassert>
 #include <iostream>
@@ -18,6 +19,7 @@
 #include <md4c.h>
 #include <string>
 #include <thread>
+#include <unordered_map>
 
 using namespace ImGui;
 using std::string;
@@ -476,7 +478,7 @@ void render_chat_controls(TabInfo& tab) {
                     [&current](const std::string& m) { return m == current; });
                 if (!found) {
                     session.set_model(ui.available_models.front());
-                    tab.title = ui.available_models.front();
+                    tab.model_name = ui.available_models.front();
                 }
             }
         }
@@ -499,8 +501,8 @@ void render_chat_controls(TabInfo& tab) {
                     bool is_selected = (m == session.model());
                     if (MenuItem(m.c_str(), nullptr, is_selected)) {
                         session.set_model(m);
-                        // Update the tab title to reflect the new model
-                        tab.title = m;
+                        // Update the model name
+                        tab.model_name = m;
                     }
                 }
             }
@@ -1052,4 +1054,193 @@ void render_session_db_view(SessionDB& db) {
         }
         EndTable();
     }
+}
+
+// ── Group Channel UI ─────────────────────────────────────────────────
+
+struct GroupChannelUIState {
+    int last_seen_id = 0;
+    bool auto_scroll = true;
+    std::vector<char> input_buffer = {0};
+    std::string status_message;
+    float status_timer = 0;
+};
+
+void render_group_channel(GroupChannel& channel, ImFont* mono_font) {
+    // Persistent UI state (one per tab, but the tab is reused — we use a static
+    // keyed on the channel address so it's shared across all tabs viewing the
+    // same channel)
+    static std::unordered_map<GroupChannel*, GroupChannelUIState> g_state;
+    auto& state = g_state[&channel];
+
+    constexpr size_t kInputBufSize = 4096;
+    if (state.input_buffer.size() < kInputBufSize) {
+        state.input_buffer.resize(kInputBufSize, 0);
+    }
+
+    // ── Top area: messages ──
+    float input_height = GetFrameHeightWithSpacing() * 4 + 8;
+    float status_height = (state.status_timer > 0) ? (GetFrameHeightWithSpacing() + 4) : 0;
+    float avail_height = GetContentRegionAvail().y - input_height - status_height - 8;
+
+    PushFont(mono_font);
+
+    if (BeginChild("##group-messages",
+            ImVec2(0, avail_height),
+            false,
+            ImGuiWindowFlags_AlwaysVerticalScrollbar)) {
+        auto msgs = channel.list_all_messages();
+
+        for (const auto& m : msgs) {
+            // Determine if this is a @user mention (has "user" in tags)
+            bool is_user_mention = false;
+            bool is_everyone = false;
+            for (const auto& tag : m.tags) {
+                if (tag == "user") is_user_mention = true;
+                if (tag == "everyone") is_everyone = true;
+            }
+
+            // Background for @user messages
+            if (is_user_mention) {
+                ImVec2 min = GetCursorScreenPos();
+                ImVec2 max = min + ImVec2(GetContentRegionAvail().x, 0);
+                // Calculate the height of this entry
+                float text_height = CalcTextSize(m.summary.c_str()).y + CalcTextSize(m.from.c_str()).y + 8;
+                max.y = min.y + text_height + 8;
+                GetWindowDrawList()->AddRectFilled(min, max,
+                    IM_COL32(60, 40, 20, 180), 4.0f);
+            }
+
+            // ── From (agent name) ──
+            bool is_self = (m.from == "user");
+            if (is_self) {
+                PushStyleColor(ImGuiCol_Text, IM_COL32(100, 180, 255, 255));
+                TextUnformatted("<");
+                SameLine(0, 0);
+                TextUnformatted("You");
+                SameLine(0, 0);
+                TextUnformatted(">");
+                PopStyleColor();
+            } else {
+                PushStyleColor(ImGuiCol_Text, IM_COL32(0, 200, 100, 255));
+                TextUnformatted("<");
+                SameLine(0, 0);
+                TextUnformatted(m.from.c_str());
+                SameLine(0, 0);
+                TextUnformatted(">");
+                PopStyleColor();
+            }
+
+            SameLine();
+            TextUnformatted(" ");
+            SameLine(0, 0);
+
+            // ── Summary ──
+            PushStyleColor(ImGuiCol_Text, IM_COL32(220, 220, 220, 255));
+            TextUnformatted(m.summary.c_str());
+            PopStyleColor();
+
+            // ── Tags ──
+            if (!m.tags.empty()) {
+                SameLine();
+                PushStyleColor(ImGuiCol_Text, IM_COL32(180, 180, 100, 180));
+                TextUnformatted("[");
+                for (size_t ti = 0; ti < m.tags.size(); ti++) {
+                    if (ti > 0) {
+                        SameLine(0, 0);
+                        TextUnformatted(" ");
+                    }
+                    SameLine(0, 0);
+                    TextUnformatted(m.tags[ti].c_str());
+                }
+                SameLine(0, 0);
+                TextUnformatted("]");
+                PopStyleColor();
+            }
+
+            NewLine();
+            Separator();
+        }
+
+        // Auto-scroll
+        float scroll_y = GetScrollY();
+        float scroll_max = GetScrollMaxY();
+        if (scroll_y >= scroll_max - 10.0f)
+            state.auto_scroll = true;
+        else
+            state.auto_scroll = false;
+        if (state.auto_scroll)
+            SetScrollHereY(1.0f);
+    }
+    EndChild();
+
+    PopFont();
+
+    // ── Status message ──
+    if (state.status_timer > 0) {
+        state.status_timer -= ImGui::GetIO().DeltaTime;
+        ImVec2 status_pos = GetCursorPos();
+        PushStyleColor(ImGuiCol_Text, IM_COL32(180, 180, 100, 255));
+        TextUnformatted(state.status_message.c_str());
+        PopStyleColor();
+        SetCursorPos(ImVec2(status_pos.x, status_pos.y + GetFrameHeightWithSpacing() + 4));
+    } else {
+        // Reserve space even when no status
+        SetCursorPosY(GetCursorPosY() + 4);
+    }
+
+    Separator();
+
+    // ── Input area ──
+    PushFont(mono_font);
+
+    // Show connected agents
+    auto agent_names = channel.all_agent_names();
+    if (!agent_names.empty()) {
+        PushStyleColor(ImGuiCol_Text, IM_COL32(100, 180, 100, 180));
+        TextUnformatted("Agents online: ");
+        for (size_t i = 0; i < agent_names.size(); i++) {
+            if (i > 0) {
+                SameLine(0, 0);
+                TextUnformatted(", ");
+            }
+            SameLine(0, 0);
+            PushStyleColor(ImGuiCol_Text, IM_COL32(0, 220, 100, 255));
+            TextUnformatted(agent_names[i].c_str());
+            PopStyleColor();
+        }
+        PopStyleColor();
+        NewLine();
+    }
+
+    SetNextItemWidth(GetContentRegionAvail().x);
+
+    uint32_t inputFlags = ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_WordWrap;
+    ImVec2 inputSize(0, std::max(GetFrameHeightWithSpacing() * 2, GetContentRegionAvail().y - 4));
+
+    auto trimWhite = [](std::string_view cur) -> std::string_view {
+        while (cur.size() && isspace(cur.front())) cur.remove_prefix(1);
+        while (cur.size() && isspace(cur.back())) cur.remove_suffix(1);
+        return cur;
+    };
+
+    if (InputTextMultiline("##group-input",
+            state.input_buffer.data(),
+            state.input_buffer.size(),
+            inputSize,
+            inputFlags)) {
+        std::string input(trimWhite(state.input_buffer.data()));
+        if (!input.empty()) {
+            channel.post_message("user", input, input);
+
+            // Show status
+            state.status_message = "Message posted";
+            state.status_timer = 3.0f;
+
+            state.input_buffer.front() = 0;
+            state.auto_scroll = true;
+        }
+    }
+
+    PopFont();
 }
