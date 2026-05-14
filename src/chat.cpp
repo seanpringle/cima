@@ -7,9 +7,9 @@
 #include <thread>
 #include <unordered_map>
 
-ChatSession::ChatSession(Config config, GroupChannel* group_channel, CancellationToken cancelled)
+ChatSession::ChatSession(Config config, Inbox* inbox, CancellationToken cancelled)
     : model_(std::move(config.model)), reasoning_effort_(std::move(config.reasoning_effort)),
-      group_channel_(group_channel),
+      inbox_(inbox),
       safe_dir_(std::make_shared<std::string>(std::move(config.safe_dir))),
       api_base_(config.api_base), api_key_(config.api_key), max_iterations_(config.max_tool_iterations),
       context_limit_(config.context_limit),
@@ -42,34 +42,29 @@ ChatSession::ChatSession(Config config, GroupChannel* group_channel, Cancellatio
     cont_slot_.delay_ms = config.continuation_delay_ms;
     tools_.add(make_schedule_continuation_tool(cont_slot_, cancelled_));
 
-    // ── Group channel tools ──
-    if (group_channel_) {
-        auto channel_tools = make_group_channel_tools(*group_channel_);
+    // ── Inbox tools ──
+    if (inbox_) {
+        auto inbox_tools = make_inbox_tools(*inbox_);
         // Wrap tools that need the agent's name injected
-        for (auto& t : channel_tools) {
-            if (t.name == "post_message") {
+        for (auto& t : inbox_tools) {
+            if (t.name == "send_message") {
                 auto original = t.execute;
                 t.execute = [this, original](const json& args) -> Result<std::string> {
+                    auto recipient = args.value("recipient", std::string());
                     auto message = args.value("message", std::string());
+                    if (recipient.empty()) return std::unexpected("recipient is required");
                     if (message.empty()) return std::unexpected("message is required");
-                    int id = group_channel_->post_message(agent_name_, message);
-                    return json({{"id", id}}).dump();
+                    return inbox_->send_message(agent_name_, recipient, message);
                 };
-            } else if (t.name == "read_new_messages") {
+            } else if (t.name == "next_message") {
                 auto original = t.execute;
                 t.execute = [this, original](const json& args) -> Result<std::string> {
-                    auto msgs = group_channel_->read_new_messages(agent_name_);
-                    json arr = json::array();
-                    for (const auto& m : msgs) {
-                        json tags = json::array();
-                        for (const auto& tag : m.tags)
-                            tags.push_back(tag);
-                        arr.push_back({{"id", m.id},
-                            {"from", m.from},
-                            {"message", m.message},
-                            {"tags", tags}});
+                    auto msg = inbox_->next_message(agent_name_);
+                    if (!msg.has_value()) {
+                        return std::string("\"no messages\"");
                     }
-                    return arr.dump(2);
+                    json result = {{"sender", msg->from}, {"message", msg->message}};
+                    return result.dump();
                 };
             }
             tools_.add(std::move(t));
@@ -147,12 +142,13 @@ std::string ChatSession::inject_usage_notices(std::string result) {
         }
     }
 
-    // ── Group channel notifications (busy agent) ──
-    if (group_channel_ && !agent_name_.empty()) {
-        auto notes = group_channel_->consume_notifications(agent_name_);
-        for (const auto& note : notes) {
-            banners += "[group channel message from " + note.from + ": " + note.message +
-                " — respond to this in the group channel.]\n\n";
+    // ── Inbox notifications ──
+    if (inbox_ && !agent_name_.empty()) {
+        while (true) {
+            auto msg = inbox_->next_message(agent_name_);
+            if (!msg.has_value()) break;
+            banners += "[Message from " + msg->from + ": " + msg->message +
+                " — use next_message() to read and respond.]\n\n";
         }
     }
 
@@ -188,15 +184,14 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
         }
     }
 
-    // ── Inject pending group channel notifications (idle agent, fallback) ──
-    // Notifications should normally be consumed by the GUI polling loop or
-    // by inject_usage_notices() for busy agents. This fallback catches any
-    // leftover notifications (e.g. ones that arrived during the brief
-    // window after the polling check but before run_once started).
-    if (group_channel_ && !agent_name_.empty()) {
-        auto notes = group_channel_->consume_notifications(agent_name_);
-        for (const auto& note : notes) {
-            std::string user_msg = "[Group Channel Message from " + note.from + "]: " + note.message;
+    // ── Inject pending inbox messages ──
+    // Checks before each turn so a new message that arrived mid-turn will be
+    // picked up at the start of the next turn.
+    if (inbox_ && !agent_name_.empty()) {
+        while (true) {
+            auto msg = inbox_->next_message(agent_name_);
+            if (!msg.has_value()) break;
+            std::string user_msg = "[Message from " + msg->from + "]: " + msg->message;
             // Escape single quotes for SQL
             size_t pos = 0;
             while ((pos = user_msg.find('\'', pos)) != std::string::npos) {

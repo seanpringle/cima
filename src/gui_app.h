@@ -2,7 +2,6 @@
 
 #include "chat.h"
 #include "config.h"
-#include "group_channel.h"
 #include "ship_name.h"
 #include "types.h"
 
