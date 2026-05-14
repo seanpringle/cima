@@ -295,36 +295,6 @@ TEST_CASE("ChatSession multi-chunk tool call args", "[chat]") {
 }
 
 // ===================================================================
-// Clear preserves system prompt
-// ===================================================================
-
-TEST_CASE("ChatSession clear preserves model and system", "[chat]") {
-    MockServer server(
-        [](const std::string&) -> std::string {
-            return make_content_sse("ok");
-        },
-        true);
-
-    Config cfg;
-    cfg.api_base = server.base_url();
-    cfg.api_key = "";
-    cfg.model = "my-model";
-    cfg.system_prompt = "System prompt.";
-    cfg.safe_dir = "/tmp";
-
-    ChatSession session(std::move(cfg));
-    CHECK(session.model() == "my-model");
-
-    session.clear();
-    // clear shouldn't affect model
-    CHECK(session.model() == "my-model");
-
-    auto result = session.run_once("hi");
-    REQUIRE(result);
-    CHECK(result->content == "ok");
-}
-
-// ===================================================================
 // Cancellation token passed to constructor cancels requests
 // ===================================================================
 

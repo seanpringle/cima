@@ -121,23 +121,6 @@ TEST_CASE("SessionDB with tool result", "[session_db]") {
     CHECK(msgs[3]["content"] == "file1.txt\nfile2.txt");
 }
 
-TEST_CASE("SessionDB clear conversation", "[session_db]") {
-    SessionDB db;
-
-    db.add_user("Hello");
-    db.add_assistant("Hi");
-    CHECK(db.message_count() == 2);
-
-    db.clear_conversation();
-    CHECK(db.message_count() == 0);
-
-    // System prompt should still appear in payload
-    json msgs = db.build_openai_payload("System prompt.");
-    REQUIRE(msgs.size() == 1);
-    CHECK(msgs[0]["role"] == "system");
-    CHECK(msgs[0]["content"] == "System prompt.");
-}
-
 TEST_CASE("SessionDB empty content for tool_call message is null", "[session_db]") {
     SessionDB db;
 
@@ -254,69 +237,4 @@ TEST_CASE("SessionDB multiple tool calls in one message", "[session_db]") {
     CHECK(tcs[1]["id"] == "call_2");
     CHECK(tcs[1]["function"]["name"] == "read_file");
     CHECK(tcs[1]["function"]["arguments"] == R"({"path": "/tmp/foo.txt"})");
-}
-
-// ========================================================================
-// Usage notice tracking
-// ========================================================================
-
-TEST_CASE("SessionDB notice tracking not shown initially", "[session_db][notices]") {
-    SessionDB db;
-    CHECK_FALSE(db.is_notice_shown("notice_ctx_warning"));
-    CHECK_FALSE(db.is_notice_shown("notice_ctx_critical"));
-    CHECK_FALSE(db.is_notice_shown("notice_tc_warning"));
-    CHECK_FALSE(db.is_notice_shown("notice_tc_critical"));
-    // Unknown keys are also not shown
-    CHECK_FALSE(db.is_notice_shown("nonexistent_notice"));
-}
-
-TEST_CASE("SessionDB notice tracking mark and check", "[session_db][notices]") {
-    SessionDB db;
-    db.mark_notice_shown("notice_ctx_warning");
-    CHECK(db.is_notice_shown("notice_ctx_warning"));
-    CHECK_FALSE(db.is_notice_shown("notice_ctx_critical"));
-    CHECK_FALSE(db.is_notice_shown("notice_tc_warning"));
-
-    db.mark_notice_shown("notice_tc_critical");
-    CHECK(db.is_notice_shown("notice_tc_critical"));
-    CHECK(db.is_notice_shown("notice_ctx_warning")); // still shown
-}
-
-TEST_CASE("SessionDB notice tracking reset", "[session_db][notices]") {
-    SessionDB db;
-    db.mark_notice_shown("notice_ctx_warning");
-    db.mark_notice_shown("notice_ctx_critical");
-    db.mark_notice_shown("notice_tc_warning");
-    db.mark_notice_shown("notice_tc_critical");
-    CHECK(db.is_notice_shown("notice_ctx_warning"));
-    CHECK(db.is_notice_shown("notice_ctx_critical"));
-    CHECK(db.is_notice_shown("notice_tc_warning"));
-    CHECK(db.is_notice_shown("notice_tc_critical"));
-
-    db.reset_notices();
-    CHECK_FALSE(db.is_notice_shown("notice_ctx_warning"));
-    CHECK_FALSE(db.is_notice_shown("notice_ctx_critical"));
-    CHECK_FALSE(db.is_notice_shown("notice_tc_warning"));
-    CHECK_FALSE(db.is_notice_shown("notice_tc_critical"));
-}
-
-TEST_CASE("SessionDB notice reset via refresh_metadata populates other keys", "[session_db][notices]") {
-    // Verify that resetting notices doesn't clobber other metadata.
-    SessionDB db;
-    // Manually set some metadata directly
-    auto r = db.execute("INSERT OR REPLACE INTO metadata (key, value) VALUES ('model', 'test-model')");
-    REQUIRE(r);
-    db.mark_notice_shown("notice_ctx_warning");
-
-    // Reset notices
-    db.reset_notices();
-    CHECK_FALSE(db.is_notice_shown("notice_ctx_warning"));
-
-    // Other metadata should still exist
-    auto res = db.execute("SELECT value FROM metadata WHERE key = 'model'");
-    REQUIRE(res);
-    auto arr = json::parse(*res, nullptr, false);
-    REQUIRE(arr.is_array());
-    REQUIRE(arr.size() == 1);
-    CHECK(arr[0]["value"] == "test-model");
 }

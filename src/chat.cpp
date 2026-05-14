@@ -54,15 +54,7 @@ ChatSession::ChatSession(Config config, CancellationToken cancelled)
     }
 }
 
-void ChatSession::clear() {
-    session_db_.clear_conversation();
-    session_db_.reset_notices();
-}
 
-void ChatSession::compact() {
-    session_db_.prune_droppable();
-    session_db_.reset_notices();
-}
 
 std::string ChatSession::inject_usage_notices(std::string result) {
     // Read current metadata values.
@@ -95,16 +87,14 @@ std::string ChatSession::inject_usage_notices(std::string result) {
             tok_info = " (" + std::to_string(*est_tok) + "/" + std::to_string(*ctx_lim) + " tokens)";
         }
 
-        if (pct >= 90 && !session_db_.is_notice_shown("notice_ctx_critical")) {
+        if (pct >= 90) {
             banners += "[context critical: ~" + std::to_string(pct) +
                 "% of context window used" + tok_info +
                 "! Archive, prune or summarise session messages before continuing.]\n\n";
-            session_db_.mark_notice_shown("notice_ctx_critical");
-        } else if (pct >= 60 && !session_db_.is_notice_shown("notice_ctx_warning")) {
+        } else if (pct >= 60) {
             banners += "[context warning: ~" + std::to_string(pct) +
                 "% of context window used" + tok_info +
                 ". Consider compacting or pruning droppable messages.]\n\n";
-            session_db_.mark_notice_shown("notice_ctx_warning");
         }
     }
 
@@ -113,16 +103,14 @@ std::string ChatSession::inject_usage_notices(std::string result) {
         int pct = *tc_used * 100 / *tc_max;
         std::string tc_info = " (" + std::to_string(*tc_used) + "/" + std::to_string(*tc_max) + ")";
 
-        if (pct >= 90 && !session_db_.is_notice_shown("notice_tc_critical")) {
+        if (pct >= 90) {
             banners += "[usage critical: ~" + std::to_string(pct) +
                 "% of tool call budget used" + tc_info +
                 "! Are you stuck in a loop? Check context usage and prepare a continuation.]\n\n";
-            session_db_.mark_notice_shown("notice_tc_critical");
-        } else if (pct >= 60 && !session_db_.is_notice_shown("notice_tc_warning")) {
+        } else if (pct >= 60) {
             banners += "[usage warning: ~" + std::to_string(pct) +
                 "% of tool call budget used" + tc_info +
                 ". Consider whether tools are being used efficiently or schedule a continuation.]\n\n";
-            session_db_.mark_notice_shown("notice_tc_warning");
         }
     }
 

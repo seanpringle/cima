@@ -845,14 +845,7 @@ void render_chat_ui(TabInfo& tab, bool& done) {
 
     if (InputTextMultiline("##input", buffer.data(), buffer.size(), inputSize, inputFlags) && !chat.running) {
         string input(trimWhite(buffer.data()));
-        if (input == "/clear") {
-            session.clear();
-            ui.entries.clear();
-        } else if (input == "/compact") {
-            session.compact();
-            ui.entries.push_back(
-                {EntryType::Content, "[\u2302 compaction]", false, ui.next_seq++});
-        } else if (input.size()) {
+        if (input.size()) {
             ui.entries.push_back({EntryType::UserText, input, false, ui.next_seq++});
             start_chat(chat, session, input);
             for (auto it = history.begin(); it != history.end();
