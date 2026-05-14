@@ -6,10 +6,9 @@
 
 GroupMessage make_msg(int id,
     const std::string& from,
-    std::string summary,
-    std::string body,
+    std::string message,
     std::vector<std::string> tags) {
-    return GroupMessage{id, from, std::move(summary), std::move(body), std::move(tags)};
+    return GroupMessage{id, from, std::move(message), std::move(tags)};
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -44,11 +43,10 @@ static std::vector<std::string> find_mentions(const std::string& text) {
 // ── GroupChannel ─────────────────────────────────────────────────────
 
 int GroupChannel::post_message(const std::string& from,
-    const std::string& summary,
-    const std::string& body) {
+    const std::string& message) {
     std::lock_guard<std::mutex> lock(mutex_);
 
-    auto tags = scan_tags(summary, body, from);
+    auto tags = scan_tags(message, from);
 
     int id = next_id_++;
 
@@ -126,7 +124,7 @@ int GroupChannel::post_message(const std::string& from,
     }
 
     // Now store the message with expanded tags
-    messages_.push_back(make_msg(id, from, summary, body, tags));
+    messages_.push_back(make_msg(id, from, message, tags));
 
     // Deliver notifications to all matched agents (include sender info)
     for (const auto& name : notify_names) {
@@ -134,8 +132,7 @@ int GroupChannel::post_message(const std::string& from,
             if (agent.name == name) {
                 PendingNotification note;
                 note.from = from;
-                note.summary = summary;
-                note.body = body;
+                note.message = message;
                 agent.notifications.push_back(std::move(note));
                 break;
             }
@@ -163,13 +160,24 @@ std::vector<GroupMessage> GroupChannel::list_messages_since(int since) const {
     return result;
 }
 
-std::optional<GroupMessage> GroupChannel::read_message_body(int id) const {
+std::vector<GroupMessage> GroupChannel::read_new_messages(const std::string& agent_name) {
     std::lock_guard<std::mutex> lock(mutex_);
+
+    // Get the current cursor (defaults to 0 on first call)
+    int last_id = last_read_[agent_name];
+
+    std::vector<GroupMessage> result;
     for (const auto& m : messages_) {
-        if (m.id == id)
-            return m;
+        if (m.id > last_id)
+            result.push_back(m);
     }
-    return std::nullopt;
+
+    // Advance cursor to the latest message id
+    if (!messages_.empty()) {
+        last_read_[agent_name] = messages_.back().id;
+    }
+
+    return result;
 }
 
 void GroupChannel::register_agent(int tab_id, const std::string& name) {
@@ -180,6 +188,9 @@ void GroupChannel::register_agent(int tab_id, const std::string& name) {
             [tab_id](const AgentInfo& a) { return a.tab_id == tab_id; }),
         agents_.end());
     agents_.push_back({tab_id, name, false, {}});
+
+    // Initialize cursor at 0 (will return all existing messages on first read)
+    last_read_[name];  // default-constructs to 0
 }
 
 void GroupChannel::unregister_agent(int tab_id) {
@@ -244,8 +255,7 @@ std::vector<PendingNotification> GroupChannel::consume_notifications(const std::
     return {};
 }
 
-std::vector<std::string> GroupChannel::scan_tags(const std::string& summary,
-    const std::string& body,
+std::vector<std::string> GroupChannel::scan_tags(const std::string& body,
     const std::string& from) const {
     std::vector<std::string> tags;
 
@@ -258,12 +268,11 @@ std::vector<std::string> GroupChannel::scan_tags(const std::string& summary,
         }
     };
 
-    add_tags(summary);
     add_tags(body);
 
     // Also scan for agent names that appear without @ prefix
     // (but don't auto-tag the sender)
-    std::string combined = summary + " " + body;
+    std::string combined = body;
     std::vector<std::string> agent_names;
     for (const auto& a : agents_) {
         if (a.name != from)

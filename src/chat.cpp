@@ -45,18 +45,31 @@ ChatSession::ChatSession(Config config, GroupChannel* group_channel, Cancellatio
     // ── Group channel tools ──
     if (group_channel_) {
         auto channel_tools = make_group_channel_tools(*group_channel_);
-        // Wrap post_message to inject the agent's name
+        // Wrap tools that need the agent's name injected
         for (auto& t : channel_tools) {
             if (t.name == "post_message") {
                 auto original = t.execute;
                 t.execute = [this, original](const json& args) -> Result<std::string> {
-                    // Override the "from" field by re-posting with the agent name
-                    auto summary = args.value("short_summary", std::string());
-                    auto body = args.value("longer_body", std::string());
-                    if (summary.empty()) return std::unexpected("short_summary is required");
-                    if (body.empty()) return std::unexpected("longer_body is required");
-                    int id = group_channel_->post_message(agent_name_, summary, body);
+                    auto message = args.value("message", std::string());
+                    if (message.empty()) return std::unexpected("message is required");
+                    int id = group_channel_->post_message(agent_name_, message);
                     return json({{"id", id}}).dump();
+                };
+            } else if (t.name == "read_new_messages") {
+                auto original = t.execute;
+                t.execute = [this, original](const json& args) -> Result<std::string> {
+                    auto msgs = group_channel_->read_new_messages(agent_name_);
+                    json arr = json::array();
+                    for (const auto& m : msgs) {
+                        json tags = json::array();
+                        for (const auto& tag : m.tags)
+                            tags.push_back(tag);
+                        arr.push_back({{"id", m.id},
+                            {"from", m.from},
+                            {"message", m.message},
+                            {"tags", tags}});
+                    }
+                    return arr.dump(2);
                 };
             }
             tools_.add(std::move(t));
@@ -138,7 +151,7 @@ std::string ChatSession::inject_usage_notices(std::string result) {
     if (group_channel_ && !agent_name_.empty()) {
         auto notes = group_channel_->consume_notifications(agent_name_);
         for (const auto& note : notes) {
-            banners += "[group channel message from " + note.from + ": " + note.summary +
+            banners += "[group channel message from " + note.from + ": " + note.message +
                 " — respond to this in the group channel.]\n\n";
         }
     }
@@ -183,7 +196,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
     if (group_channel_ && !agent_name_.empty()) {
         auto notes = group_channel_->consume_notifications(agent_name_);
         for (const auto& note : notes) {
-            std::string user_msg = "[Group Channel Message from " + note.from + "]: " + note.summary;
+            std::string user_msg = "[Group Channel Message from " + note.from + "]: " + note.message;
             // Escape single quotes for SQL
             size_t pos = 0;
             while ((pos = user_msg.find('\'', pos)) != std::string::npos) {

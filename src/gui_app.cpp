@@ -115,7 +115,7 @@ int gui_main(Config cfg) {
         tab.id = next_tab_id++;
         tab.model_name = model_name;
         // Generate a Culture ship name for the tab title
-        tab.title = generate_culture_ship_name();
+        tab.title = generate_lotr_name();
         tab.chat_state = std::make_unique<AsyncChatState>();
         tab.session = std::make_unique<ChatSession>(cfg, &group_channel, tab.chat_state->cancelled);
         tab.session->set_agent_name(tab.title);
@@ -193,6 +193,7 @@ int gui_main(Config cfg) {
                 if (tab.ui_state.models_future.valid()) {
                     tab.ui_state.models_future.wait();
                 }
+                free_lotr_name(tab.title);
                 group_channel.unregister_agent(tab.id);
                 tabs.erase(tabs.begin() + active_tab);
                 if (active_tab >= (int)tabs.size())
@@ -222,9 +223,9 @@ int gui_main(Config cfg) {
                 // Build an actionable user prompt from the notification
                 std::string prompt;
                 if (note.from == "user") {
-                    prompt = "[Group Channel Message from user]: " + note.summary;
+                    prompt = "[Group Channel Message from user]: " + note.message;
                 } else {
-                    prompt = "[Group Channel Message from " + note.from + "]: " + note.summary;
+                    prompt = "[Group Channel Message from " + note.from + "]: " + note.message;
                 }
 
                 // Start the agent responding to this notification
@@ -373,6 +374,7 @@ int gui_main(Config cfg) {
                         if (tab.ui_state.models_future.valid()) {
                             tab.ui_state.models_future.wait();
                         }
+                        free_lotr_name(tab.title);
                         group_channel.unregister_agent(tab.id);
                         tabs.erase(tabs.begin() + ti);
                         if (active_tab >= (int)tabs.size())

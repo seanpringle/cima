@@ -1064,6 +1064,7 @@ struct GroupChannelUIState {
     std::vector<char> input_buffer = {0};
     std::string status_message;
     float status_timer = 0;
+    bool focus_input = false;  // set true to focus the input next frame
 };
 
 void render_group_channel(GroupChannel& channel, ImFont* mono_font) {
@@ -1092,26 +1093,21 @@ void render_group_channel(GroupChannel& channel, ImFont* mono_font) {
         auto msgs = channel.list_all_messages();
 
         for (const auto& m : msgs) {
-            // Determine if this is a @user mention (has "user" in tags)
+            // Highlight @user mentions with a background
             bool is_user_mention = false;
-            bool is_everyone = false;
             for (const auto& tag : m.tags) {
-                if (tag == "user") is_user_mention = true;
-                if (tag == "everyone") is_everyone = true;
+                if (tag == "user") { is_user_mention = true; break; }
             }
 
-            // Background for @user messages
             if (is_user_mention) {
                 ImVec2 min = GetCursorScreenPos();
-                ImVec2 max = min + ImVec2(GetContentRegionAvail().x, 0);
-                // Calculate the height of this entry
-                float text_height = CalcTextSize(m.summary.c_str()).y + CalcTextSize(m.from.c_str()).y + 8;
-                max.y = min.y + text_height + 8;
+                float approx_height = CalcTextSize(m.message.c_str()).y + CalcTextSize(m.from.c_str()).y + 30;
+                ImVec2 max = min + ImVec2(GetContentRegionAvail().x, approx_height);
                 GetWindowDrawList()->AddRectFilled(min, max,
                     IM_COL32(60, 40, 20, 180), 4.0f);
             }
 
-            // ── From (agent name) ──
+            // ── From (sender name) ──
             bool is_self = (m.from == "user");
             if (is_self) {
                 PushStyleColor(ImGuiCol_Text, IM_COL32(100, 180, 255, 255));
@@ -1132,31 +1128,14 @@ void render_group_channel(GroupChannel& channel, ImFont* mono_font) {
             }
 
             SameLine();
-            TextUnformatted(" ");
-            SameLine(0, 0);
+            NewLine();
 
-            // ── Summary ──
+            // ── Message body rendered as markdown ──
             PushStyleColor(ImGuiCol_Text, IM_COL32(220, 220, 220, 255));
-            TextUnformatted(m.summary.c_str());
+            PushTextWrapPos(0);
+            render_content(m.message);
+            PopTextWrapPos();
             PopStyleColor();
-
-            // ── Tags ──
-            if (!m.tags.empty()) {
-                SameLine();
-                PushStyleColor(ImGuiCol_Text, IM_COL32(180, 180, 100, 180));
-                TextUnformatted("[");
-                for (size_t ti = 0; ti < m.tags.size(); ti++) {
-                    if (ti > 0) {
-                        SameLine(0, 0);
-                        TextUnformatted(" ");
-                    }
-                    SameLine(0, 0);
-                    TextUnformatted(m.tags[ti].c_str());
-                }
-                SameLine(0, 0);
-                TextUnformatted("]");
-                PopStyleColor();
-            }
 
             NewLine();
             Separator();
@@ -1194,23 +1173,43 @@ void render_group_channel(GroupChannel& channel, ImFont* mono_font) {
     // ── Input area ──
     PushFont(mono_font);
 
-    // Show connected agents
+    // Show connected agents as clickable buttons
     auto agent_names = channel.all_agent_names();
     if (!agent_names.empty()) {
         PushStyleColor(ImGuiCol_Text, IM_COL32(100, 180, 100, 180));
-        TextUnformatted("Agents online: ");
-        for (size_t i = 0; i < agent_names.size(); i++) {
-            if (i > 0) {
-                SameLine(0, 0);
-                TextUnformatted(", ");
-            }
-            SameLine(0, 0);
-            PushStyleColor(ImGuiCol_Text, IM_COL32(0, 220, 100, 255));
-            TextUnformatted(agent_names[i].c_str());
-            PopStyleColor();
-        }
+        TextUnformatted("Agents:");
         PopStyleColor();
+        SameLine(0, 6);
+        for (size_t i = 0; i < agent_names.size(); i++) {
+            if (i > 0)
+                SameLine(0, 4);
+            PushID(static_cast<int>(i));
+            if (SmallButton(agent_names[i].c_str())) {
+                // Append @agent-name to the input buffer
+                size_t len = strnlen(state.input_buffer.data(), state.input_buffer.size() - 1);
+                size_t needed = len + 2 + agent_names[i].size() + 1; // space + @ + name + space + null
+                if (needed < state.input_buffer.size()) {
+                    if (len > 0 && state.input_buffer[len - 1] != ' ') {
+                        state.input_buffer[len++] = ' ';
+                    }
+                    state.input_buffer[len++] = '@';
+                    for (char c : agent_names[i]) {
+                        state.input_buffer[len++] = c;
+                    }
+                    state.input_buffer[len++] = ' ';
+                    state.input_buffer[len] = '\0';
+                }
+                state.focus_input = true;
+            }
+            PopID();
+        }
         NewLine();
+    }
+
+    // Refocus the input after a button click appended a mention
+    if (state.focus_input) {
+        state.focus_input = false;
+        SetKeyboardFocusHere();
     }
 
     SetNextItemWidth(GetContentRegionAvail().x);
@@ -1231,7 +1230,7 @@ void render_group_channel(GroupChannel& channel, ImFont* mono_font) {
             inputFlags)) {
         std::string input(trimWhite(state.input_buffer.data()));
         if (!input.empty()) {
-            channel.post_message("user", input, input);
+            channel.post_message("user", input);
 
             // Show status
             state.status_message = "Message posted";

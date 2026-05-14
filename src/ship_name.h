@@ -2,10 +2,13 @@
 
 #include <string>
 
-/// Generate a random Culture-series-style ship name.
-/// Examples: "Very-Little-Gravitas-Indeed", "No-More-Mr-Nice-Guy",
-///           "Just-Another-Victim-Of-The-Ambient-Morality"
-std::string generate_culture_ship_name();
+/// Generate a Lord of the Rings character name not currently in use.
+/// Maintains an internal pool with a shuffled circular queue.
+/// Call free_lotr_name() when the name is released.
+std::string generate_lotr_name();
 
-/// Return all registered ship name part lists (useful for the UI if needed).
-int culture_ship_name_count();
+/// Return a name to the pool so it can be reused by another session.
+void free_lotr_name(const std::string& name);
+
+/// Number of available LOTR names in the pool.
+int lotr_name_count();

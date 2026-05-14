@@ -4,21 +4,20 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 struct GroupMessage {
     int id = 0;
     std::string from;      // sender name (agent name or "user")
-    std::string summary;   // short markdown
-    std::string body;      // long detailed markdown
+    std::string message;   // markdown body
     std::vector<std::string> tags;  // @mentioned entities
 };
 
 /// Pending notification for an agent who was @mentioned.
 struct PendingNotification {
     std::string from;     // who sent the message
-    std::string summary;  // what was said (short summary)
-    std::string body;     // the full message body
+    std::string message;  // the full message body
 };
 
 /// Shared group channel across all sessions.
@@ -29,11 +28,10 @@ class GroupChannel {
 
     // ── Message API ──
 
-    /// Post a message to the channel. Scans summary+body for @mentions
+    /// Post a message to the channel. Scans the body for @mentions
     /// and records tags automatically. Returns the new message id.
     int post_message(const std::string& from,
-        const std::string& summary,
-        const std::string& body);
+        const std::string& message);
 
     /// Return all messages (truncated to last 200).
     std::vector<GroupMessage> list_all_messages() const;
@@ -41,8 +39,10 @@ class GroupChannel {
     /// Return messages with id > since (ordered by id).
     std::vector<GroupMessage> list_messages_since(int since) const;
 
-    /// Read the full body of a specific message.
-    std::optional<GroupMessage> read_message_body(int id) const;
+    /// Return messages that the named agent has not yet read, and advance
+    /// the agent's cursor to the latest message.  On first call for an
+    /// agent, returns all messages (cursor starts at 0).
+    std::vector<GroupMessage> read_new_messages(const std::string& agent_name);
 
     // ── Agent lifecycle ──
 
@@ -86,8 +86,10 @@ class GroupChannel {
     };
     std::vector<AgentInfo> agents_;
 
+    // Per-agent cursor tracking the last message id each agent has read.
+    mutable std::unordered_map<std::string, int> last_read_;
+
     // Scan text for @mentions and return matched tags.
-    std::vector<std::string> scan_tags(const std::string& summary,
-        const std::string& body,
+    std::vector<std::string> scan_tags(const std::string& body,
         const std::string& from) const;
 };
