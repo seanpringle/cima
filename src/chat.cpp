@@ -71,15 +71,6 @@ ChatSession::ChatSession(Config config, Inbox* inbox, CancellationToken cancelle
         }
     }
 
-    // ── Wiki tools ──
-    if (wiki_) {
-        tools_.add(make_list_wiki_pages_tool(*wiki_));
-        tools_.add(make_read_wiki_page_tool(*wiki_));
-        tools_.add(make_write_wiki_page_tool(*wiki_));
-        tools_.add(make_edit_wiki_page_tool(*wiki_));
-        tools_.add(make_delete_wiki_page_tool(*wiki_));
-    }
-
     // ── Session DB persistence ──
     if (!config.session_db_path.empty()) {
         auto load_result = session_db_.load_from_file(config.session_db_path);
@@ -91,7 +82,16 @@ ChatSession::ChatSession(Config config, Inbox* inbox, CancellationToken cancelle
     }
 }
 
-
+void ChatSession::set_wiki(Wiki* wiki) {
+    wiki_ = wiki;
+    if (wiki_) {
+        tools_.add(make_list_wiki_pages_tool(*wiki_));
+        tools_.add(make_read_wiki_page_tool(*wiki_));
+        tools_.add(make_write_wiki_page_tool(*wiki_));
+        tools_.add(make_edit_wiki_page_tool(*wiki_));
+        tools_.add(make_delete_wiki_page_tool(*wiki_));
+    }
+}
 
 std::string ChatSession::build_notices() {
     // Read current metadata values.

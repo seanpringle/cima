@@ -72,8 +72,8 @@ class ChatSession {
     void set_agent_name(const std::string& name) { agent_name_ = name; }
     const std::string& agent_name() const { return agent_name_; }
 
-    /// Set/get the shared wiki (may be null if not set).
-    void set_wiki(Wiki* wiki) { wiki_ = wiki; }
+    /// Set the shared wiki and register wiki tools (may be null to disable).
+    void set_wiki(Wiki* wiki);
     Wiki* wiki() const { return wiki_; }
 
     /// Return the shared inbox (may be null if not set).
