@@ -93,6 +93,22 @@ class SessionDB {
     /// assistant tool-call messages (same logic as old Conversation::compact).
     void prune_droppable();
 
+    // ── Usage notice tracking ──────────────────────────────────────────
+    // These methods manage flags that prevent the same threshold notice
+    // from being shown on every single tool result in a session.
+
+    /// Check whether a threshold notice has already been shown.
+    /// Key is one of: notice_ctx_warning, notice_ctx_critical,
+    /// notice_tc_warning, notice_tc_critical.
+    bool is_notice_shown(const std::string& key);
+
+    /// Mark a threshold notice as having been shown.
+    void mark_notice_shown(const std::string& key);
+
+    /// Reset all notice flags (e.g. after compact/clear, or when
+    /// usage drops below the threshold).
+    void reset_notices();
+
     // ── Persistence ────────────────────────────────────────────────────
 
     /// Save the in-memory database to a file on disk (full backup).

@@ -55,6 +55,10 @@ void SessionDB::init_conversation_tables() {
         );
         CREATE INDEX IF NOT EXISTS idx_messages_seq ON messages(seq);
         CREATE INDEX IF NOT EXISTS idx_tool_calls_msg ON tool_calls(message_id);
+        CREATE TABLE IF NOT EXISTS metadata (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        );
     )";
     char* err = nullptr;
     int rc = sqlite3_exec(db_, sql, nullptr, nullptr, &err);
@@ -391,11 +395,56 @@ void SessionDB::refresh_metadata(const std::string& model,
     // Computed percentage (integer, e.g. "35" for 35%)
     if (context_limit > 0) {
         int pct = static_cast<int>(estimated_tok * 100 / context_limit);
-        upsert("usage_percent", std::to_string(pct));
+        upsert("context_usage_percent", std::to_string(pct));
     } else {
-        upsert("usage_percent", "0");
+        upsert("context_usage_percent", "0");
     }
 
+    sqlite3_finalize(stmt);
+}
+
+// ── Usage notice tracking ───────────────────────────────────────────────
+
+bool SessionDB::is_notice_shown(const std::string& key) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql = "SELECT value FROM metadata WHERE key = ?";
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        sqlite3_finalize(stmt);
+        return false;
+    }
+    sqlite3_bind_text(stmt, 1, key.c_str(), static_cast<int>(key.size()), SQLITE_TRANSIENT);
+    bool shown = false;
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
+        const char* val = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        shown = (val && strcmp(val, "1") == 0);
+    }
+    sqlite3_finalize(stmt);
+    return shown;
+}
+
+void SessionDB::mark_notice_shown(const std::string& key) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql = "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, '1')";
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        sqlite3_finalize(stmt);
+        return;
+    }
+    sqlite3_bind_text(stmt, 1, key.c_str(), static_cast<int>(key.size()), SQLITE_TRANSIENT);
+    sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+}
+
+void SessionDB::reset_notices() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql = "DELETE FROM metadata WHERE key LIKE 'notice_%'";
+    if (sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        sqlite3_finalize(stmt);
+        return;
+    }
+    sqlite3_step(stmt);
     sqlite3_finalize(stmt);
 }
 

@@ -65,6 +65,12 @@ class ChatSession {
     // Access the continuation slot (used by GUI to display state).
     const ContinuationSlot& continuation_slot() const { return cont_slot_; }
 
+    /// Check metadata thresholds and prepend usage notices to a tool
+    /// result string if appropriate (e.g. context >60%, tool-call budget
+    /// >90%).  Returns the (potentially modified) result string.
+    /// Deduplication is handled via notice_* flags in the metadata table.
+    std::string inject_usage_notices(std::string result);
+
   private:
     std::string model_;
     std::string reasoning_effort_;

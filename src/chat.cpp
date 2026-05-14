@@ -54,9 +54,83 @@ ChatSession::ChatSession(Config config, CancellationToken cancelled)
     }
 }
 
-void ChatSession::clear() { session_db_.clear_conversation(); }
+void ChatSession::clear() {
+    session_db_.clear_conversation();
+    session_db_.reset_notices();
+}
 
-void ChatSession::compact() { session_db_.prune_droppable(); }
+void ChatSession::compact() {
+    session_db_.prune_droppable();
+    session_db_.reset_notices();
+}
+
+std::string ChatSession::inject_usage_notices(std::string result) {
+    // Read current metadata values.
+    // Returns empty string for any value that can't be read.
+    auto read_int = [&](const std::string& key) -> std::optional<int> {
+        auto res = session_db_.execute("SELECT value FROM metadata WHERE key = '" + key + "'");
+        if (!res) return std::nullopt;
+        auto arr = json::parse(*res, nullptr, false);
+        if (!arr.is_array() || arr.empty()) return std::nullopt;
+        auto v = arr[0]["value"];
+        if (v.is_null() || !v.is_string()) return std::nullopt;
+        try { return std::stoi(v.get<std::string>()); }
+        catch (...) { return std::nullopt; }
+    };
+
+    auto ctx_pct = read_int("context_usage_percent");
+    auto tc_used = read_int("tool_calls_used");
+    auto tc_max  = read_int("max_tool_iterations");
+    auto est_tok = read_int("estimated_tokens");
+    auto ctx_lim = read_int("context_limit");
+
+    // Collect banners to prepend (order: critical before warning, ctx before tc).
+    std::string banners;
+
+    // ── Context usage ──
+    if (ctx_pct.has_value()) {
+        int pct = *ctx_pct;
+        std::string tok_info;
+        if (est_tok.has_value() && ctx_lim.has_value() && *ctx_lim > 0) {
+            tok_info = " (" + std::to_string(*est_tok) + "/" + std::to_string(*ctx_lim) + " tokens)";
+        }
+
+        if (pct >= 90 && !session_db_.is_notice_shown("notice_ctx_critical")) {
+            banners += "[context critical: ~" + std::to_string(pct) +
+                "% of context window used" + tok_info +
+                "! Archive, prune or summarise session messages before continuing.]\n\n";
+            session_db_.mark_notice_shown("notice_ctx_critical");
+        } else if (pct >= 60 && !session_db_.is_notice_shown("notice_ctx_warning")) {
+            banners += "[context warning: ~" + std::to_string(pct) +
+                "% of context window used" + tok_info +
+                ". Consider compacting or pruning droppable messages.]\n\n";
+            session_db_.mark_notice_shown("notice_ctx_warning");
+        }
+    }
+
+    // ── Tool call usage ──
+    if (tc_used.has_value() && tc_max.has_value() && *tc_max > 0) {
+        int pct = *tc_used * 100 / *tc_max;
+        std::string tc_info = " (" + std::to_string(*tc_used) + "/" + std::to_string(*tc_max) + ")";
+
+        if (pct >= 90 && !session_db_.is_notice_shown("notice_tc_critical")) {
+            banners += "[usage critical: ~" + std::to_string(pct) +
+                "% of tool call budget used" + tc_info +
+                "! Are you stuck in a loop? Check context usage and prepare a continuation.]\n\n";
+            session_db_.mark_notice_shown("notice_tc_critical");
+        } else if (pct >= 60 && !session_db_.is_notice_shown("notice_tc_warning")) {
+            banners += "[usage warning: ~" + std::to_string(pct) +
+                "% of tool call budget used" + tc_info +
+                ". Consider whether tools are being used efficiently or schedule a continuation.]\n\n";
+            session_db_.mark_notice_shown("notice_tc_warning");
+        }
+    }
+
+    if (!banners.empty()) {
+        result = banners + result;
+    }
+    return result;
+}
 
 Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
     // ── Discover context limit (once per model/endpoint) ──
@@ -237,7 +311,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                             }
                             auto tr = tools_.execute(call.name, call.arguments);
                             auto result = tr ? *tr : tr.error();
-                            session_db_.add_tool(call.id, result);
+                            session_db_.add_tool(call.id, inject_usage_notices(result));
                         }
                     } else {
                         // Parallel execution for read-only tools
@@ -263,7 +337,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                             }
                             auto tr = futures[i].get();
                             auto result = tr ? *tr : tr.error();
-                            session_db_.add_tool(calls[i].id, result);
+                            session_db_.add_tool(calls[i].id, inject_usage_notices(result));
                         }
                     }
                 } else {
@@ -279,7 +353,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                         }
                         auto tr = tools_.execute(call.name, call.arguments);
                         auto result = tr ? *tr : tr.error();
-                        session_db_.add_tool(call.id, result);
+                        session_db_.add_tool(call.id, inject_usage_notices(result));
                     }
                 }
                 continue;
@@ -352,7 +426,15 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
 // ===================================================================
 
 static Result<std::string> clean_title_response(const json& j) {
-    auto title = j["choices"][0]["message"]["content"].get<std::string>();
+    // Some reasoning models put the entire output in reasoning_content
+    // and leave content empty. Fall back to reasoning_content if needed.
+    const auto& msg = j["choices"][0]["message"];
+    std::string title;
+    if (auto it = msg.find("content"); it != msg.end() && it->is_string() && !it->get<std::string>().empty()) {
+        title = it->get<std::string>();
+    } else if (auto it2 = msg.find("reasoning_content"); it2 != msg.end() && it2->is_string() && !it2->get<std::string>().empty()) {
+        title = it2->get<std::string>();
+    }
 
     // Clean up the title: lowercase, replace non-alphanumeric with hyphens
     std::string clean;
@@ -412,7 +494,7 @@ Result<std::string> generate_session_title(const std::string& api_base,
 
     json payload = {{"model", model},
         {"messages", msgs},
-        {"max_tokens", 150},
+        {"max_tokens", 500},
         {"stream", false}};
 
     ChatClient temp_client(api_base, api_key);
