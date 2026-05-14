@@ -93,6 +93,29 @@ int64_t SessionDB::add_user(const std::string& content) {
     return sqlite3_last_insert_rowid(db_);
 }
 
+int64_t SessionDB::add_system(const std::string& content,
+    const std::string& retention) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    int64_t seq = claim_seq();
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql =
+        "INSERT INTO messages (seq, role, content, retention) VALUES (?, 'system', ?, ?)";
+    int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        sqlite3_finalize(stmt);
+        return -1;
+    }
+    sqlite3_bind_int64(stmt, 1, seq);
+    sqlite3_bind_text(stmt, 2, content.c_str(), static_cast<int>(content.size()), SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 3, retention.c_str(), static_cast<int>(retention.size()), SQLITE_TRANSIENT);
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    if (rc != SQLITE_DONE) {
+        return -1;
+    }
+    return sqlite3_last_insert_rowid(db_);
+}
+
 int64_t SessionDB::add_assistant(const std::string& content,
     const std::string& reasoning,
     const std::vector<ToolCall>& tool_calls) {
@@ -168,6 +191,9 @@ int64_t SessionDB::add_assistant(const std::string& content,
 }
 
 int64_t SessionDB::add_tool(const std::string& tool_call_id, const std::string& content) {
+    // Sanitize tool results to prevent invalid UTF-8 from reaching JSON serialization
+    auto sanitized = sanitize_utf8(content);
+
     std::lock_guard<std::mutex> lock(mutex_);
     int64_t seq = claim_seq();
     sqlite3_stmt* stmt = nullptr;
@@ -180,7 +206,7 @@ int64_t SessionDB::add_tool(const std::string& tool_call_id, const std::string& 
         return -1;
     }
     sqlite3_bind_int64(stmt, 1, seq);
-    sqlite3_bind_text(stmt, 2, content.c_str(), static_cast<int>(content.size()), SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, sanitized.c_str(), static_cast<int>(sanitized.size()), SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt, 3, tool_call_id.c_str(), static_cast<int>(tool_call_id.size()), SQLITE_TRANSIENT);
     rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
@@ -256,7 +282,7 @@ json SessionDB::build_openai_payload(const std::string& system_prompt) const {
                 j["reasoning_content"] = sanitize_utf8(reasoning);
             }
         } else {
-            // user or tool
+            // user, tool, or system
             j["content"] = content ? sanitize_utf8(content) : "";
         }
 
@@ -599,7 +625,7 @@ Result<std::string> SessionDB::execute(const std::string& sql) {
                         const char* text =
                             reinterpret_cast<const char*>(sqlite3_column_text(stmt, i));
                         int len = sqlite3_column_bytes(stmt, i);
-                        row[key] = std::string(text, static_cast<size_t>(len));
+                        row[key] = sanitize_utf8(std::string(text, static_cast<size_t>(len)));
                         break;
                     }
                     case SQLITE_BLOB: {

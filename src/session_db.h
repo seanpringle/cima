@@ -50,6 +50,10 @@ class SessionDB {
     /// Add a user message. Returns the new message id.
     int64_t add_user(const std::string& content);
 
+    /// Add a system message (e.g. usage notices). Returns the new message id.
+    int64_t add_system(const std::string& content,
+        const std::string& retention = "droppable");
+
     /// Add an assistant message. If tool_calls is non-empty, the message
     /// content is set to NULL and tool_calls are inserted into the
     /// tool_calls table.  Returns the new message id.

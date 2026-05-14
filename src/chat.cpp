@@ -84,9 +84,8 @@ ChatSession::ChatSession(Config config, Inbox* inbox, CancellationToken cancelle
 
 
 
-std::string ChatSession::inject_usage_notices(std::string result) {
+std::string ChatSession::build_notices() {
     // Read current metadata values.
-    // Returns empty string for any value that can't be read.
     auto read_int = [&](const std::string& key) -> std::optional<int> {
         auto res = session_db_.execute("SELECT value FROM metadata WHERE key = '" + key + "'");
         if (!res) return std::nullopt;
@@ -104,8 +103,8 @@ std::string ChatSession::inject_usage_notices(std::string result) {
     auto est_tok = read_int("estimated_tokens");
     auto ctx_lim = read_int("context_limit");
 
-    // Collect banners to prepend (order: critical before warning, ctx before tc).
-    std::string banners;
+    // Collect notices (order: critical before warning, ctx before tc).
+    std::string notices;
 
     // ── Context usage ──
     if (ctx_pct.has_value()) {
@@ -116,13 +115,13 @@ std::string ChatSession::inject_usage_notices(std::string result) {
         }
 
         if (pct >= 90) {
-            banners += "[context critical: ~" + std::to_string(pct) +
+            notices += "[context critical: ~" + std::to_string(pct) +
                 "% of context window used" + tok_info +
-                "! Archive, prune or summarise session messages before continuing.]\n\n";
+                "! Archive, prune or summarise session messages before continuing.]\n";
         } else if (pct >= 60) {
-            banners += "[context warning: ~" + std::to_string(pct) +
+            notices += "[context warning: ~" + std::to_string(pct) +
                 "% of context window used" + tok_info +
-                ". Consider compacting or pruning droppable messages.]\n\n";
+                ". Consider compacting or pruning droppable messages.]\n";
         }
     }
 
@@ -132,13 +131,13 @@ std::string ChatSession::inject_usage_notices(std::string result) {
         std::string tc_info = " (" + std::to_string(*tc_used) + "/" + std::to_string(*tc_max) + ")";
 
         if (pct >= 90) {
-            banners += "[usage critical: ~" + std::to_string(pct) +
+            notices += "[usage critical: ~" + std::to_string(pct) +
                 "% of tool call budget used" + tc_info +
-                "! Are you stuck in a loop? Check context usage and prepare a continuation.]\n\n";
+                "! Are you stuck in a loop? Check context usage and prepare a continuation.]\n";
         } else if (pct >= 60) {
-            banners += "[usage warning: ~" + std::to_string(pct) +
+            notices += "[usage warning: ~" + std::to_string(pct) +
                 "% of tool call budget used" + tc_info +
-                ". Consider whether tools are being used efficiently or schedule a continuation.]\n\n";
+                ". Consider whether tools are being used efficiently or schedule a continuation.]\n";
         }
     }
 
@@ -148,17 +147,18 @@ std::string ChatSession::inject_usage_notices(std::string result) {
     if (inbox_ && !agent_name_.empty()) {
         int count = inbox_->pending_count(agent_name_);
         if (count > 0) {
-            banners += "[you have " + std::to_string(count)
+            notices += "[you have " + std::to_string(count)
                 + (count == 1 ? " message" : " messages")
                 + " in your inbox — use next_message() to read "
-                + (count == 1 ? "it" : "them") + ".]\n\n";
+                + (count == 1 ? "it" : "them") + ".]\n";
         }
     }
 
-    if (!banners.empty()) {
-        result = banners + result;
+    // Strip trailing newline, if any
+    if (!notices.empty() && notices.back() == '\n') {
+        notices.pop_back();
     }
-    return result;
+    return notices;
 }
 
 Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
@@ -359,7 +359,14 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                             }
                             auto tr = tools_.execute(call.name, call.arguments);
                             auto result = tr ? *tr : tr.error();
-                            session_db_.add_tool(call.id, inject_usage_notices(result));
+                            session_db_.add_tool(call.id, result);
+                        }
+                        // Inject usage notices as a system message (once per iteration)
+                        {
+                            auto notice = build_notices();
+                            if (!notice.empty()) {
+                                session_db_.add_system(notice);
+                            }
                         }
                     } else {
                         // Parallel execution for read-only tools
@@ -385,7 +392,14 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                             }
                             auto tr = futures[i].get();
                             auto result = tr ? *tr : tr.error();
-                            session_db_.add_tool(calls[i].id, inject_usage_notices(result));
+                            session_db_.add_tool(calls[i].id, result);
+                        }
+                        // Inject usage notices as a system message (once per iteration)
+                        {
+                            auto notice = build_notices();
+                            if (!notice.empty()) {
+                                session_db_.add_system(notice);
+                            }
                         }
                     }
                 } else {
@@ -401,7 +415,14 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                         }
                         auto tr = tools_.execute(call.name, call.arguments);
                         auto result = tr ? *tr : tr.error();
-                        session_db_.add_tool(call.id, inject_usage_notices(result));
+                        session_db_.add_tool(call.id, result);
+                    }
+                    // Inject usage notices as a system message (once per iteration)
+                    {
+                        auto notice = build_notices();
+                        if (!notice.empty()) {
+                            session_db_.add_system(notice);
+                        }
                     }
                 }
                 continue;

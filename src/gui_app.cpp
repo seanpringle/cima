@@ -206,7 +206,7 @@ int gui_main(Config cfg) {
         // ── Poll inbox for pending messages (idle agents) ──
         // Only a count is injected — agents must call next_message() to
         // retrieve the actual content.  Busy agents get this via
-        // inject_usage_notices() instead.
+        // build_notices() instead.
         for (auto& t : tabs) {
             if (t.chat_state->running)
                 continue;
