@@ -107,8 +107,8 @@ int gui_main(Config cfg) {
     int active_tab = 0;
     int focus_tab_id = -1;
 
-    // Shared group channel across all sessions
-    GroupChannel group_channel;
+    // Shared inbox across all sessions
+    Inbox inbox;
 
     auto add_tab = [&](const std::string& model_name) {
         TabInfo tab;
@@ -117,7 +117,7 @@ int gui_main(Config cfg) {
         // Generate a Culture ship name for the tab title
         tab.title = generate_lotr_name();
         tab.chat_state = std::make_unique<AsyncChatState>();
-        tab.session = std::make_unique<ChatSession>(cfg, &group_channel, tab.chat_state->cancelled);
+        tab.session = std::make_unique<ChatSession>(cfg, &inbox, tab.chat_state->cancelled);
         tab.session->set_agent_name(tab.title);
         tab.ui_state.mono_font = mono_font;
         tab.session->set_output_callback(
@@ -126,7 +126,7 @@ int gui_main(Config cfg) {
                 cs->pending.emplace_back(text, type);
             });
 
-        group_channel.register_agent(tab.id, tab.title);
+        inbox.register_agent(tab.title);
 
         tabs.push_back(std::move(tab));
     };
@@ -194,7 +194,7 @@ int gui_main(Config cfg) {
                     tab.ui_state.models_future.wait();
                 }
                 free_lotr_name(tab.title);
-                group_channel.unregister_agent(tab.id);
+                inbox.unregister_agent(tab.title);
                 tabs.erase(tabs.begin() + active_tab);
                 if (active_tab >= (int)tabs.size())
                     active_tab = (int)tabs.size() - 1;
@@ -203,48 +203,31 @@ int gui_main(Config cfg) {
             }
         }
 
-        // Update agent busy status for all tabs
-        for (auto& t : tabs) {
-            group_channel.set_agent_busy(t.id, t.chat_state->running);
-        }
-
-        // ── Poll for group channel notifications and wake idle agents ──
+        // ── Poll inbox for pending messages (idle agents) ──
+        // Busy agents will have messages picked up by inject_usage_notices().
         for (auto& t : tabs) {
             if (t.chat_state->running)
-                continue; // agent is busy, notifications will be picked up by inject_usage_notices
+                continue;
 
-            // Check for pending notifications for this agent
-            std::vector<PendingNotification> notes;
-            {
-                notes = group_channel.consume_notifications(t.session->agent_name());
+            auto msg = inbox.next_message(t.session->agent_name());
+            if (!msg.has_value())
+                continue;
+
+            std::string prompt = "[Message from " + msg->from + "]: " + msg->message;
+
+            // Ensure any previous future is consumed
+            if (t.chat_state->future.valid()) {
+                try {
+                    t.chat_state->future.get();
+                } catch (...) {}
             }
-
-            for (auto& note : notes) {
-                // Build an actionable user prompt from the notification
-                std::string prompt;
-                if (note.from == "user") {
-                    prompt = "[Group Channel Message from user]: " + note.message;
-                } else {
-                    prompt = "[Group Channel Message from " + note.from + "]: " + note.message;
-                }
-
-                // Start the agent responding to this notification
-                if (!t.chat_state->running) {
-                    // Ensure any previous future is consumed
-                    if (t.chat_state->future.valid()) {
-                        try {
-                            t.chat_state->future.get();
-                        } catch (...) {}
-                    }
-                    t.chat_state->running = true;
-                    *t.chat_state->cancelled = false;
-                    t.chat_state->future = std::async(std::launch::async,
-                        [session = t.session.get(), cs = t.chat_state.get(),
-                         prompt = std::move(prompt)]() {
-                            return session->run_once(prompt);
-                        });
-                }
-            }
+            t.chat_state->running = true;
+            *t.chat_state->cancelled = false;
+            t.chat_state->future = std::async(std::launch::async,
+                [session = t.session.get(), cs = t.chat_state.get(),
+                 prompt = std::move(prompt)]() {
+                    return session->run_once(prompt);
+                });
         }
 
         // ── Full-width tabs, each with 40% Plan + 60% Chat split inside ──
@@ -253,14 +236,9 @@ int gui_main(Config cfg) {
             if (BeginTabBar("##chat_tabs", ImGuiTabBarFlags_NoTooltip)) {
                 for (int ti = 0; ti < (int)tabs.size();) {
                     TabInfo& tab = tabs[ti];
-                    bool is_open = true;
 
                     // Use model name as tab title, or fallback to "Chat"
                     std::string tab_label = tab.title.empty() ? "Chat" : tab.title;
-
-                    // Allow closing via default ImGui tab close button,
-                    // but ensure at least one tab remains
-                    bool can_close = tabs.size() > 1;
 
                     PushID(tab.id);
                     ImGuiTabItemFlags tab_flags = ImGuiTabItemFlags_None;
@@ -270,7 +248,7 @@ int gui_main(Config cfg) {
                     }
 
                     if (BeginTabItem((tab_label + "##tab-" + std::to_string(ti)).c_str(),
-                            can_close ? &is_open : nullptr,
+                            nullptr,
                             tab_flags)) {
                         active_tab = ti;
 
@@ -356,41 +334,10 @@ int gui_main(Config cfg) {
                     }
                     PopID();
 
-                    if (!is_open && can_close) {
-                        // Tab was closed via the close button
-                        if (tab.chat_state->running) {
-                            *tab.chat_state->cancelled = true;
-                            if (tab.chat_state->future.valid()) {
-                                tab.chat_state->future.wait();
-                                try {
-                                    tab.chat_state->future.get();
-                                } catch (...) {
-                                }
-                            }
-                            tab.chat_state->running = false;
-                        }
-                        // Wait for any outstanding model-fetch to complete before
-                        // destroying the tab's ChatUIState / ChatSession
-                        if (tab.ui_state.models_future.valid()) {
-                            tab.ui_state.models_future.wait();
-                        }
-                        free_lotr_name(tab.title);
-                        group_channel.unregister_agent(tab.id);
-                        tabs.erase(tabs.begin() + ti);
-                        if (active_tab >= (int)tabs.size())
-                            active_tab = (int)tabs.size() - 1;
-                        if (active_tab < 0)
-                            active_tab = 0;
-                        continue; // Don't increment ti — we just erased
-                    }
                     ti++;
                 }
 
-                // Top-level Group tab (shared across all agents)
-                if (BeginTabItem("Group")) {
-                    render_group_channel(group_channel, mono_font);
-                    EndTabItem();
-                }
+                // (No global group tab — agents communicate via inbox tools)
 
                 EndTabBar();
             }
