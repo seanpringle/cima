@@ -1,15 +1,23 @@
 #pragma once
 
 #include "config.h"
+#include "types.h"
 
 #include <mutex>
 #include <string>
+#include <vector>
 
 struct sqlite3;
 
 /// Per-session in-memory SQLite database.
 /// Each ChatSession owns one SessionDB instance. Agents can create tables,
 /// insert data, and query results across tool calls within the same session.
+///
+/// The conversation history is stored in two tables:
+///   messages  — one row per message (user, assistant, tool)
+///   tool_calls — one row per tool_call within an assistant message
+/// Agents can read/write these tables directly via the query_session tool
+/// to manage their own context (summarize, prune, reorganize).
 class SessionDB {
   public:
     SessionDB();
@@ -31,7 +39,54 @@ class SessionDB {
     /// Direct access to the raw handle (for potential future extensions).
     sqlite3* handle() { return db_; }
 
+    // ── Conversation management ──────────────────────────────────────────
+    // These methods are used by ChatSession to persist the conversation.
+    // The same data is also accessible via SQL through query_session.
+
+    /// Initialize conversation tables (messages, tool_calls).
+    /// Safe to call multiple times (CREATE TABLE IF NOT EXISTS).
+    void init_conversation_tables();
+
+    /// Add a user message. Returns the new message id.
+    int64_t add_user(const std::string& content);
+
+    /// Add an assistant message. If tool_calls is non-empty, the message
+    /// content is set to NULL and tool_calls are inserted into the
+    /// tool_calls table.  Returns the new message id.
+    int64_t add_assistant(const std::string& content,
+        const std::string& reasoning = {},
+        const std::vector<ToolCall>& tool_calls = {});
+
+    /// Add a tool result message. Returns the new message id.
+    int64_t add_tool(const std::string& tool_call_id, const std::string& content);
+
+    /// Build the OpenAI-compatible messages array from the DB contents.
+    /// Prepends the system prompt as the first message.
+    json build_openai_payload(const std::string& system_prompt) const;
+
+    /// Estimate total tokens for all messages currently in the DB.
+    size_t estimate_total_tokens() const;
+
+    /// Clear all conversation messages (keeps the tables).
+    void clear_conversation();
+
+    /// Return the number of messages in the conversation.
+    size_t message_count() const;
+
+    /// Truncate conversation to at most N messages (for rollback on error).
+    void truncate_conversation(size_t n);
+
+    /// Delete all messages tagged 'droppable' and clean up orphaned
+    /// assistant tool-call messages (same logic as old Conversation::compact).
+    void prune_droppable();
+
   private:
     sqlite3* db_ = nullptr;
-    std::mutex mutex_; // guard execute() — may be called from parallel tool paths
+    mutable std::mutex mutex_; // guard execute() — may be called from parallel tool paths
+
+    // Next sequence number for messages
+    int64_t next_seq_ = 0;
+
+    // Internal helper: get the next seq and increment
+    int64_t claim_seq();
 };

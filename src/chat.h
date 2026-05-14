@@ -59,19 +59,13 @@ class ChatSession {
     std::shared_ptr<std::string> safe_dir_;
     std::string api_key_;      // API key for authentication
     int max_iterations_ = 100; // overridden by config.max_tool_iterations
-    size_t context_limit_;
-    size_t compact_threshold_;
+    std::string system_prompt_;
     PlanBoard plan_;
     SessionDB session_db_;
-    Conversation conversation_;
     ChatClient client_;
     CancellationToken cancelled_;
     ToolRegistry tools_;
     OutputCallback output_cb_;
     Usage last_usage_;
     bool context_limit_discovered_ = false;
-
-    // Summarization callback for conversation compaction
-    std::optional<std::string> summarize_messages_(
-        const std::vector<Message>& msgs, size_t max_tokens);
 };

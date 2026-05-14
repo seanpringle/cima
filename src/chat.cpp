@@ -9,9 +9,7 @@ ChatSession::ChatSession(Config config, CancellationToken cancelled)
     : model_(std::move(config.model)), reasoning_effort_(std::move(config.reasoning_effort)),
       safe_dir_(std::make_shared<std::string>(std::move(config.safe_dir))),
       api_key_(config.api_key), max_iterations_(config.max_tool_iterations),
-      context_limit_(static_cast<size_t>(config.context_limit)),
-      compact_threshold_(static_cast<size_t>(config.compact_threshold)),
-      conversation_(config.system_prompt),
+      system_prompt_(std::move(config.system_prompt)),
       client_(std::move(config.api_base), std::move(config.api_key)),
       cancelled_(cancelled ? std::move(cancelled) : make_cancellation_token()) {
     // Share the cancellation token with tools and client
@@ -31,18 +29,15 @@ ChatSession::ChatSession(Config config, CancellationToken cancelled)
     tools_.add(make_read_plan_tool(plan_));
     tools_.add(make_comment_plan_tool(plan_));
 
-    // Each session gets an in-memory SQLite database tool
+    // Each session gets an in-memory SQLite database tool.
+    // The conversation lives in 'messages' and 'tool_calls' tables
+    // within this DB, so the agent can read/write its own context.
     tools_.add(make_query_session_tool(session_db_));
-
-    // Wire up the summary callback for compaction
-    conversation_.set_summary_callback([this](const std::vector<Message>& msgs, size_t max_tokens) {
-        return summarize_messages_(msgs, max_tokens);
-    });
 }
 
-void ChatSession::clear() { conversation_.clear(); }
+void ChatSession::clear() { session_db_.clear_conversation(); }
 
-void ChatSession::compact() { conversation_.compact(); }
+void ChatSession::compact() { session_db_.prune_droppable(); }
 
 Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
     // ── Discover context limit (once per model/endpoint) ──
@@ -55,15 +50,11 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
             std::lock_guard<std::mutex> lock(cache_mutex);
             auto it = cache.find(cache_key);
             if (it != cache.end()) {
-                context_limit_ = static_cast<size_t>(it->second);
                 context_limit_discovered_ = true;
             }
         }
         if (!context_limit_discovered_) {
             int discovered = client_.fetch_model_context_limit(model_);
-            if (discovered > 0) {
-                context_limit_ = static_cast<size_t>(discovered);
-            }
             std::lock_guard<std::mutex> lock(cache_mutex);
             if (discovered > 0)
                 cache[cache_key] = discovered;
@@ -71,21 +62,16 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
         }
     }
 
-    auto snapshot = conversation_.size();
-    conversation_.add_user(user_input);
+    auto snapshot = session_db_.message_count();
+    session_db_.add_user(user_input);
 
     for (int iter = 0; iter < max_iterations_; iter++) {
-        // ── Compact if needed before building the API payload ──
-        if (conversation_.needs_compaction(context_limit_, compact_threshold_)) {
-            conversation_.compact();
-            if (output_cb_) {
-                output_cb_("[\u2302 compaction]", OutputType::ToolInvocation);
-            }
-        }
-
+        // Build payload from the session DB (messages + tool_calls tables).
+        // The agent may have modified these tables via query_session during
+        // previous tool execution to manage its own context.
         json payload = {{"model", model_},
             {"reasoning_effort", reasoning_effort_},
-            {"messages", conversation_.to_openai_messages()},
+            {"messages", session_db_.build_openai_payload(system_prompt_)},
             {"tools", tools_.to_openai_tools()},
             {"stream", true}};
         payload["stream_options"] = {{"include_usage", true}};
@@ -145,7 +131,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
         auto stream_result = client_.stream_chat(payload, callbacks);
 
         if (!stream_result) {
-            conversation_.truncate(snapshot);
+            session_db_.truncate_conversation(snapshot);
             auto msg = stream_result.error();
             auto raw = client_.last_raw_response();
             if (!raw.empty()) {
@@ -155,16 +141,16 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
         }
 
         if (stream_errored && content.empty()) {
-            conversation_.truncate(snapshot);
+            session_db_.truncate_conversation(snapshot);
             return std::unexpected(stream_error);
         }
 
         auto calls = tool_acc.finalize();
         if (!calls.empty()) {
-            conversation_.add_assistant("", reasoning, calls);
+            session_db_.add_assistant("", reasoning, calls);
 
             if (*cancelled_) {
-                conversation_.truncate(snapshot);
+                session_db_.truncate_conversation(snapshot);
                 return std::unexpected("Interrupted during tool execution");
             }
 
@@ -186,7 +172,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                     // Serial execution for write tools
                     for (const auto& call : calls) {
                         if (*cancelled_) {
-                            conversation_.truncate(snapshot);
+                            session_db_.truncate_conversation(snapshot);
                             return std::unexpected("Interrupted during tool execution");
                         }
                         if (output_cb_) {
@@ -194,7 +180,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                                 OutputType::ToolInvocation);
                         }
                         auto tr = tools_.execute(call.name, call.arguments);
-                        conversation_.add_tool(call.id, tr ? *tr : tr.error());
+                        session_db_.add_tool(call.id, tr ? *tr : tr.error());
                     }
                 } else {
                     // Parallel execution for read-only tools
@@ -206,7 +192,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                     }
                     for (size_t i = 0; i < calls.size(); i++) {
                         if (*cancelled_) {
-                            conversation_.truncate(snapshot);
+                            session_db_.truncate_conversation(snapshot);
                             return std::unexpected("Interrupted during tool execution");
                         }
                         if (output_cb_) {
@@ -215,13 +201,13 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                                 OutputType::ToolInvocation);
                         }
                         auto tr = futures[i].get();
-                        conversation_.add_tool(calls[i].id, tr ? *tr : tr.error());
+                        session_db_.add_tool(calls[i].id, tr ? *tr : tr.error());
                     }
                 }
             } else {
                 for (const auto& call : calls) {
                     if (*cancelled_) {
-                        conversation_.truncate(snapshot);
+                        session_db_.truncate_conversation(snapshot);
                         return std::unexpected("Interrupted during tool execution");
                     }
                     if (output_cb_) {
@@ -229,67 +215,17 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                             OutputType::ToolInvocation);
                     }
                     auto tr = tools_.execute(call.name, call.arguments);
-                    conversation_.add_tool(call.id, tr ? *tr : tr.error());
+                    session_db_.add_tool(call.id, tr ? *tr : tr.error());
                 }
             }
             continue;
         }
 
-        conversation_.add_assistant(content, reasoning);
+        session_db_.add_assistant(content, reasoning);
         return ChatResult{std::move(content), std::move(reasoning)};
     }
 
-    conversation_.truncate(snapshot);
+    session_db_.truncate_conversation(snapshot);
     return std::unexpected("Maximum tool call iterations (" + std::to_string(max_iterations_) +
         ") reached. Increase via LLM_MAX_TOOL_ITERATIONS env var.");
-}
-
-std::optional<std::string> ChatSession::summarize_messages_(
-    const std::vector<Message>& msgs, size_t max_tokens) {
-    // Build a compact conversation asking the LLM to summarize old exchanges.
-    Conversation summary_conv("Summarize the following conversation exchanges concisely. "
-                              "Preserve the user's intent, key decisions, and any information "
-                              "that will be needed to continue the task. "
-                              "Output only the summary, no preamble.");
-
-    for (const auto& msg : msgs) {
-        if (msg.role == "user" && msg.content) {
-            summary_conv.add_user(*msg.content);
-        } else if (msg.role == "assistant" && msg.content) {
-            summary_conv.add_assistant(*msg.content);
-        } else if (msg.role == "assistant" && !msg.tool_calls.empty()) {
-            // Tool-call-only assistant messages: just note what was called
-            std::string summary;
-            for (const auto& tc : msg.tool_calls) {
-                if (!summary.empty())
-                    summary += ", ";
-                summary += tc.name + "(" + tc.arguments + ")";
-            }
-            summary_conv.add_assistant("[called tools: " + summary + "]");
-        } else if (msg.role == "tool" && msg.content) {
-            // Tool results: just note the size — the content is waste now
-            summary_conv.add_tool(msg.tool_call_id,
-                "[tool result: " + std::to_string(msg.content->size()) + " bytes]");
-        }
-    }
-
-    json payload = {
-        {"model", model_},
-        {"reasoning_effort", reasoning_effort_},
-        {"messages", summary_conv.to_openai_messages()},
-        {"stream", false},
-        {"max_tokens", static_cast<int>(std::min(max_tokens, size_t(1024)))},
-    };
-
-    auto result = client_.chat(payload);
-    if (!result) {
-        return std::nullopt;
-    }
-
-    try {
-        auto content = (*result)["choices"][0]["message"]["content"];
-        return content.get<std::string>();
-    } catch (...) {
-        return std::nullopt;
-    }
 }

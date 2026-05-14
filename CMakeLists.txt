@@ -147,6 +147,9 @@ target_link_libraries(test_client PRIVATE cima_core Catch2::Catch2WithMain)
 add_executable(test_chat tests/test_chat.cpp)
 target_link_libraries(test_chat PRIVATE cima_core Catch2::Catch2WithMain)
 
+add_executable(test_session_db tests/test_session_db.cpp)
+target_link_libraries(test_session_db PRIVATE cima_core Catch2::Catch2WithMain)
+
 include(CTest)
 include(Catch)
 catch_discover_tests(test_config)
