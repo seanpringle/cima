@@ -204,16 +204,21 @@ int gui_main(Config cfg) {
         }
 
         // ── Poll inbox for pending messages (idle agents) ──
-        // Busy agents will have messages picked up by inject_usage_notices().
+        // Only a count is injected — agents must call next_message() to
+        // retrieve the actual content.  Busy agents get this via
+        // inject_usage_notices() instead.
         for (auto& t : tabs) {
             if (t.chat_state->running)
                 continue;
 
-            auto msg = inbox.next_message(t.session->agent_name());
-            if (!msg.has_value())
+            int count = inbox.pending_count(t.session->agent_name());
+            if (count == 0)
                 continue;
 
-            std::string prompt = "[Message from " + msg->from + "]: " + msg->message;
+            std::string prompt = "[you have " + std::to_string(count)
+                + (count == 1 ? " message" : " messages")
+                + " in your inbox — use next_message() to read "
+                + (count == 1 ? "it" : "them") + ".]";
 
             // Ensure any previous future is consumed
             if (t.chat_state->future.valid()) {
