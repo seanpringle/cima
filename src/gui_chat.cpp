@@ -416,6 +416,11 @@ void drain_pending(ChatUIState& ui, AsyncChatState& chat) {
                 ui.entries.back().is_streaming = false;
             }
             push_entry(ui, EntryType::ToolCall, pending_text, false);
+        } else if (type == OutputType::Continuation) {
+            if (!ui.entries.empty() && ui.entries.back().is_streaming) {
+                ui.entries.back().is_streaming = false;
+            }
+            push_entry(ui, EntryType::Continuation, pending_text, false);
         } else {
             auto entry_type =
                 (type == OutputType::Reasoning) ? EntryType::Reasoning : EntryType::Content;
@@ -614,6 +619,9 @@ void render_chat_ui(TabInfo& tab, bool& done) {
             case EntryType::ToolCall:
                 prefix = "[Tool] ";
                 break;
+            case EntryType::Continuation:
+                prefix = "[Continuing] ";
+                break;
             }
             PushTextWrapPos(0);
             ss << prefix << entry.text;
@@ -649,6 +657,15 @@ void render_chat_ui(TabInfo& tab, bool& done) {
                     i++) {
                     text_unformatted_ellipsis(ui.entries[i + 1].text);
                 }
+                NewLine();
+                PopTextWrapPos();
+                PopStyleColor();
+                break;
+            case EntryType::Continuation:
+                PushStyleColor(ImGuiCol_Text, IM_COL32(100, 255, 100, 255));
+                PushTextWrapPos(0);
+                ss << entry.text;
+                TextUnformatted(ss.str().c_str());
                 NewLine();
                 PopTextWrapPos();
                 PopStyleColor();

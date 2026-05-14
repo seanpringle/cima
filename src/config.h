@@ -30,6 +30,8 @@ struct Config {
     std::string worktree_base = "/tmp/cima";
     std::vector<std::string> read_only_paths;
     int max_tool_iterations = 100;
+    int max_continuation_steps = 10;
+    int continuation_delay_ms = 250;
     int context_limit = 300000; // model context window (tokens)
     int compact_threshold = 90; // % that triggers compaction
 

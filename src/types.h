@@ -27,7 +27,7 @@ void from_json(const json& j, Usage& u);
 // ---------------------------------------------------------------------------
 // Display types for the chat UI
 // ---------------------------------------------------------------------------
-enum class EntryType { UserText, Reasoning, Content, ToolCall };
+enum class EntryType { UserText, Reasoning, Content, ToolCall, Continuation };
 
 struct DisplayEntry {
     EntryType type;

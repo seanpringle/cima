@@ -18,7 +18,7 @@ struct ChatResult {
     std::string reasoning;
 };
 
-enum class OutputType { Reasoning, Content, ToolInvocation };
+enum class OutputType { Reasoning, Content, ToolInvocation, Continuation };
 
 using OutputCallback = std::function<void(const std::string& text, OutputType type)>;
 
@@ -53,10 +53,14 @@ class ChatSession {
     // This can change over time (e.g. via worktree tools).
     const std::string& safe_dir() const { return *safe_dir_; }
 
+    // Access the continuation slot (used by GUI to display state).
+    const ContinuationSlot& continuation_slot() const { return cont_slot_; }
+
   private:
     std::string model_;
     std::string reasoning_effort_;
     std::shared_ptr<std::string> safe_dir_;
+    ContinuationSlot cont_slot_;
     std::string api_key_;      // API key for authentication
     int max_iterations_ = 100; // overridden by config.max_tool_iterations
     std::string system_prompt_;

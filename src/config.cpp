@@ -33,6 +33,24 @@ Config Config::from_env() {
     }
 
     {
+        const char* val = std::getenv("LLM_MAX_CONTINUATION_STEPS");
+        if (val && val[0]) {
+            int n = std::atoi(val);
+            if (n >= 0)
+                cfg.max_continuation_steps = n;
+        }
+    }
+
+    {
+        const char* val = std::getenv("LLM_CONTINUATION_DELAY_MS");
+        if (val && val[0]) {
+            int n = std::atoi(val);
+            if (n >= 0)
+                cfg.continuation_delay_ms = n;
+        }
+    }
+
+    {
         const char* val = std::getenv("LLM_CONTEXT_LIMIT");
         if (val && val[0]) {
             int n = std::atoi(val);

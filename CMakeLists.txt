@@ -102,6 +102,7 @@ add_library(cima_core
     src/tools/factories/web.cpp
     src/tools/factories/git.cpp
     src/tools/factories/session_db.cpp
+    src/tools/factories/continuation.cpp
     src/tools/registry.cpp
     src/session_db.cpp
     src/client.cpp

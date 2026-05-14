@@ -1,8 +1,10 @@
 #include "chat.h"
 #include "plan.h"
 
+#include <chrono>
 #include <future>
 #include <mutex>
+#include <thread>
 #include <unordered_map>
 
 ChatSession::ChatSession(Config config, CancellationToken cancelled)
@@ -33,6 +35,11 @@ ChatSession::ChatSession(Config config, CancellationToken cancelled)
     // The conversation lives in 'messages' and 'tool_calls' tables
     // within this DB, so the agent can read/write its own context.
     tools_.add(make_query_session_tool(session_db_));
+
+    // Continuation tool — allows the agent to schedule its own next turn
+    cont_slot_.max_steps = config.max_continuation_steps;
+    cont_slot_.delay_ms = config.continuation_delay_ms;
+    tools_.add(make_schedule_continuation_tool(cont_slot_, cancelled_));
 }
 
 void ChatSession::clear() { session_db_.clear_conversation(); }
@@ -62,117 +69,181 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
         }
     }
 
-    auto snapshot = session_db_.message_count();
+    // ── Continuation loop ──
+    // Each iteration of this loop processes one "turn" (initial user input
+    // or a scheduled continuation).  Per-turn snapshots allow errors in one
+    // turn to roll back only that turn's messages, preserving prior work.
+    std::string last_content;
+    std::string last_reasoning;
+
+    // Add initial user input and snapshot so errors roll it back
     session_db_.add_user(user_input);
+    auto initial_msg_count = session_db_.message_count();
 
-    for (int iter = 0; iter < max_iterations_; iter++) {
-        // Build payload from the session DB (messages + tool_calls tables).
-        // The agent may have modified these tables via query_session during
-        // previous tool execution to manage its own context.
-        json payload = {{"model", model_},
-            {"reasoning_effort", reasoning_effort_},
-            {"messages", session_db_.build_openai_payload(system_prompt_)},
-            {"tools", tools_.to_openai_tools()},
-            {"stream", true}};
-        payload["stream_options"] = {{"include_usage", true}};
-        std::string content;
-        std::string reasoning;
-        ToolAccumulator tool_acc;
-        bool stream_errored = false;
-        std::string stream_error;
+    while (true) {
+        // Snapshot at the start of this turn — this is AFTER any user/continuation
+        // message has been added, so errors roll back the entire turn including
+        // its initiating prompt.
+        auto turn_snapshot = session_db_.message_count();
 
-        auto on_data = [&](const json& data) {
-            // Capture token usage if present (may appear in the final chunk).
-            auto usage_it = data.find("usage");
-            if (usage_it != data.end() && usage_it->is_object()) {
-                try {
-                    last_usage_ = usage_it->get<Usage>();
-                } catch (...) {
-                    // Ignore malformed usage data.
-                }
-            }
+        bool produced_content = false;
 
-            if (!data.contains("choices") || data["choices"].empty())
-                return;
-            const auto& delta = data["choices"][0]["delta"];
+        for (int iter = 0; iter < max_iterations_; iter++) {
+            // Build payload from the session DB (messages + tool_calls tables).
+            // The agent may have modified these tables via query_session during
+            // previous tool execution to manage its own context.
+            json payload = {{"model", model_},
+                {"reasoning_effort", reasoning_effort_},
+                {"messages", session_db_.build_openai_payload(system_prompt_)},
+                {"tools", tools_.to_openai_tools()},
+                {"stream", true}};
+            payload["stream_options"] = {{"include_usage", true}};
+            std::string content;
+            std::string reasoning;
+            ToolAccumulator tool_acc;
+            bool stream_errored = false;
+            std::string stream_error;
 
-            auto rc_it = delta.find("reasoning_content");
-            if (rc_it != delta.end() && rc_it->is_string()) {
-                auto text = rc_it->get<std::string>();
-                reasoning += text;
-                if (output_cb_)
-                    output_cb_(text, OutputType::Reasoning);
-            }
-
-            auto tc_it = delta.find("tool_calls");
-            if (tc_it != delta.end() && tc_it->is_array()) {
-                tool_acc.apply(delta);
-            }
-
-            auto c_it = delta.find("content");
-            if (c_it != delta.end() && c_it->is_string()) {
-                auto text = c_it->get<std::string>();
-                content += text;
-                if (output_cb_)
-                    output_cb_(text, OutputType::Content);
-            }
-        };
-
-        SSEParser::Callbacks callbacks({
-            .on_data = on_data,
-            .on_done = []() {},
-            .on_error =
-                [&](const std::string& err) {
-                    stream_errored = true;
-                    stream_error = err;
-                },
-        });
-
-        auto stream_result = client_.stream_chat(payload, callbacks);
-
-        if (!stream_result) {
-            session_db_.truncate_conversation(snapshot);
-            auto msg = stream_result.error();
-            auto raw = client_.last_raw_response();
-            if (!raw.empty()) {
-                msg += " | raw: " + raw.substr(0, 500);
-            }
-            return std::unexpected(std::move(msg));
-        }
-
-        if (stream_errored && content.empty()) {
-            session_db_.truncate_conversation(snapshot);
-            return std::unexpected(stream_error);
-        }
-
-        auto calls = tool_acc.finalize();
-        if (!calls.empty()) {
-            session_db_.add_assistant("", reasoning, calls);
-
-            if (*cancelled_) {
-                session_db_.truncate_conversation(snapshot);
-                return std::unexpected("Interrupted during tool execution");
-            }
-
-            if (calls.size() > 1) {
-                // If any tool in the batch has Write permission, serialize
-                // the batch to avoid race conditions on shared resources
-                // (e.g. .git/index.lock) that the per-tool mutex can't
-                // fully protect (e.g. git_add + git_commit with all:true).
-                auto write_tools = tools_.tool_names_by_permission(ToolPermission::Write);
-                bool has_write = false;
-                for (const auto& call : calls) {
-                    if (write_tools.count(call.name)) {
-                        has_write = true;
-                        break;
+            auto on_data = [&](const json& data) {
+                // Capture token usage if present (may appear in the final chunk).
+                auto usage_it = data.find("usage");
+                if (usage_it != data.end() && usage_it->is_object()) {
+                    try {
+                        last_usage_ = usage_it->get<Usage>();
+                    } catch (...) {
+                        // Ignore malformed usage data.
                     }
                 }
 
-                if (has_write) {
-                    // Serial execution for write tools
+                if (!data.contains("choices") || data["choices"].empty())
+                    return;
+                const auto& delta = data["choices"][0]["delta"];
+
+                auto rc_it = delta.find("reasoning_content");
+                if (rc_it != delta.end() && rc_it->is_string()) {
+                    auto text = rc_it->get<std::string>();
+                    reasoning += text;
+                    if (output_cb_)
+                        output_cb_(text, OutputType::Reasoning);
+                }
+
+                auto tc_it = delta.find("tool_calls");
+                if (tc_it != delta.end() && tc_it->is_array()) {
+                    tool_acc.apply(delta);
+                }
+
+                auto c_it = delta.find("content");
+                if (c_it != delta.end() && c_it->is_string()) {
+                    auto text = c_it->get<std::string>();
+                    content += text;
+                    if (output_cb_)
+                        output_cb_(text, OutputType::Content);
+                }
+            };
+
+            SSEParser::Callbacks callbacks({
+                .on_data = on_data,
+                .on_done = []() {},
+                .on_error =
+                    [&](const std::string& err) {
+                        stream_errored = true;
+                        stream_error = err;
+                    },
+            });
+
+            auto stream_result = client_.stream_chat(payload, callbacks);
+
+            if (!stream_result) {
+                // Stream transport error — roll back only this turn
+                session_db_.truncate_conversation(turn_snapshot);
+                cont_slot_.prompt.reset();
+                auto msg = stream_result.error();
+                auto raw = client_.last_raw_response();
+                if (!raw.empty()) {
+                    msg += " | raw: " + raw.substr(0, 500);
+                }
+                return std::unexpected(std::move(msg));
+            }
+
+            if (stream_errored && content.empty()) {
+                // Stream error with no content — roll back only this turn
+                session_db_.truncate_conversation(turn_snapshot);
+                cont_slot_.prompt.reset();
+                return std::unexpected(stream_error);
+            }
+
+            auto calls = tool_acc.finalize();
+            if (!calls.empty()) {
+                session_db_.add_assistant("", reasoning, calls);
+
+                if (*cancelled_) {
+                    // User cancelled — roll back only this turn
+                    session_db_.truncate_conversation(turn_snapshot);
+                    cont_slot_.prompt.reset();
+                    return std::unexpected("Interrupted during tool execution");
+                }
+
+                if (calls.size() > 1) {
+                    // If any tool in the batch has Write permission, serialize
+                    // the batch to avoid race conditions on shared resources
+                    // (e.g. .git/index.lock) that the per-tool mutex can't
+                    // fully protect (e.g. git_add + git_commit with all:true).
+                    auto write_tools = tools_.tool_names_by_permission(ToolPermission::Write);
+                    bool has_write = false;
+                    for (const auto& call : calls) {
+                        if (write_tools.count(call.name)) {
+                            has_write = true;
+                            break;
+                        }
+                    }
+
+                    if (has_write) {
+                        // Serial execution for write tools
+                        for (const auto& call : calls) {
+                            if (*cancelled_) {
+                                session_db_.truncate_conversation(turn_snapshot);
+                                cont_slot_.prompt.reset();
+                                return std::unexpected("Interrupted during tool execution");
+                            }
+                            if (output_cb_) {
+                                output_cb_(
+                                    "\xE2\x86\x92 " + call.name + "(" + call.arguments + ")",
+                                    OutputType::ToolInvocation);
+                            }
+                            auto tr = tools_.execute(call.name, call.arguments);
+                            session_db_.add_tool(call.id, tr ? *tr : tr.error());
+                        }
+                    } else {
+                        // Parallel execution for read-only tools
+                        std::vector<std::future<Result<std::string>>> futures;
+                        futures.reserve(calls.size());
+                        for (size_t i = 0; i < calls.size(); i++) {
+                            futures.push_back(std::async(std::launch::async,
+                                [&, i] {
+                                    return tools_.execute(calls[i].name, calls[i].arguments);
+                                }));
+                        }
+                        for (size_t i = 0; i < calls.size(); i++) {
+                            if (*cancelled_) {
+                                session_db_.truncate_conversation(turn_snapshot);
+                                cont_slot_.prompt.reset();
+                                return std::unexpected("Interrupted during tool execution");
+                            }
+                            if (output_cb_) {
+                                output_cb_(
+                                    "\xE2\x86\x92 " + calls[i].name + "(" + calls[i].arguments +
+                                        ")",
+                                    OutputType::ToolInvocation);
+                            }
+                            auto tr = futures[i].get();
+                            session_db_.add_tool(calls[i].id, tr ? *tr : tr.error());
+                        }
+                    }
+                } else {
                     for (const auto& call : calls) {
                         if (*cancelled_) {
-                            session_db_.truncate_conversation(snapshot);
+                            session_db_.truncate_conversation(turn_snapshot);
+                            cont_slot_.prompt.reset();
                             return std::unexpected("Interrupted during tool execution");
                         }
                         if (output_cb_) {
@@ -182,50 +253,64 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                         auto tr = tools_.execute(call.name, call.arguments);
                         session_db_.add_tool(call.id, tr ? *tr : tr.error());
                     }
-                } else {
-                    // Parallel execution for read-only tools
-                    std::vector<std::future<Result<std::string>>> futures;
-                    futures.reserve(calls.size());
-                    for (size_t i = 0; i < calls.size(); i++) {
-                        futures.push_back(std::async(std::launch::async,
-                            [&, i] { return tools_.execute(calls[i].name, calls[i].arguments); }));
-                    }
-                    for (size_t i = 0; i < calls.size(); i++) {
-                        if (*cancelled_) {
-                            session_db_.truncate_conversation(snapshot);
-                            return std::unexpected("Interrupted during tool execution");
-                        }
-                        if (output_cb_) {
-                            output_cb_(
-                                "\xE2\x86\x92 " + calls[i].name + "(" + calls[i].arguments + ")",
-                                OutputType::ToolInvocation);
-                        }
-                        auto tr = futures[i].get();
-                        session_db_.add_tool(calls[i].id, tr ? *tr : tr.error());
-                    }
                 }
-            } else {
-                for (const auto& call : calls) {
-                    if (*cancelled_) {
-                        session_db_.truncate_conversation(snapshot);
-                        return std::unexpected("Interrupted during tool execution");
-                    }
-                    if (output_cb_) {
-                        output_cb_("\xE2\x86\x92 " + call.name + "(" + call.arguments + ")",
-                            OutputType::ToolInvocation);
-                    }
-                    auto tr = tools_.execute(call.name, call.arguments);
-                    session_db_.add_tool(call.id, tr ? *tr : tr.error());
-                }
+                continue;
             }
-            continue;
+
+            // No tool calls — content response.  Remember it but don't return
+            // yet — we may have a continuation pending.
+            session_db_.add_assistant(content, reasoning);
+            last_content = content;
+            last_reasoning = reasoning;
+            produced_content = true;
+            break;
         }
 
-        session_db_.add_assistant(content, reasoning);
-        return ChatResult{std::move(content), std::move(reasoning)};
+        if (!produced_content) {
+            // The for-loop exhausted max_iterations_ without producing content
+            session_db_.truncate_conversation(turn_snapshot);
+            cont_slot_.prompt.reset();
+            return std::unexpected("Maximum tool call iterations (" +
+                std::to_string(max_iterations_) +
+                ") reached. Increase via LLM_MAX_TOOL_ITERATIONS env var.");
+        }
+
+        // ── Check for scheduled continuation ──
+        if (!cont_slot_.prompt.has_value())
+            break; // normal end — no continuation
+
+        // Guard rails
+        if (*cancelled_) {
+            cont_slot_.prompt.reset();
+            break;
+        }
+        if (cont_slot_.max_steps > 0 && cont_slot_.step_count >= cont_slot_.max_steps) {
+            cont_slot_.prompt.reset();
+            break;
+        }
+
+        // Inject the continuation prompt as a new user message
+        {
+            auto prompt = std::move(*cont_slot_.prompt);
+            cont_slot_.prompt.reset();
+
+            session_db_.add_user(prompt);
+
+            // Notify the UI via the output callback
+            if (output_cb_)
+                output_cb_("Continuing: " + prompt, OutputType::Continuation);
+
+            cont_slot_.step_count++;
+
+            // Anti-DoS delay
+            if (cont_slot_.delay_ms > 0) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(cont_slot_.delay_ms));
+            }
+        }
+
+        // Continue the outer loop to process the new turn
+        continue;
     }
 
-    session_db_.truncate_conversation(snapshot);
-    return std::unexpected("Maximum tool call iterations (" + std::to_string(max_iterations_) +
-        ") reached. Increase via LLM_MAX_TOOL_ITERATIONS env var.");
+    return ChatResult{std::move(last_content), std::move(last_reasoning)};
 }
