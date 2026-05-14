@@ -186,9 +186,6 @@ Tool make_rename_file_tool(std::shared_ptr<std::string> safe_dir_ptr);
 class SessionDB;
 Tool make_query_session_tool(SessionDB& db);
 
-class Inbox;
-std::vector<Tool> make_inbox_tools(Inbox& inbox);
-
 class Wiki;
 
 // ── Wiki tools ──

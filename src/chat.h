@@ -2,7 +2,6 @@
 
 #include "client.h"
 #include "config.h"
-#include "inbox.h"
 #include "plan.h"
 #include "session_db.h"
 #include "tools.h"
@@ -27,7 +26,6 @@ using OutputCallback = std::function<void(const std::string& text, OutputType ty
 class ChatSession {
   public:
     explicit ChatSession(Config config,
-        Inbox* inbox = nullptr,
         CancellationToken cancelled = nullptr);
 
     ChatSession(const ChatSession&) = delete;
@@ -76,14 +74,10 @@ class ChatSession {
     void set_wiki(Wiki* wiki);
     Wiki* wiki() const { return wiki_; }
 
-    /// Return the shared inbox (may be null if not set).
-    Inbox* inbox() const { return inbox_; }
-
   private:
     std::string model_;
     std::string reasoning_effort_;
     std::string agent_name_;
-    Inbox* inbox_ = nullptr;
     Wiki* wiki_ = nullptr;
     std::shared_ptr<std::string> safe_dir_;
     ContinuationSlot cont_slot_;

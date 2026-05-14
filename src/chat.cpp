@@ -7,9 +7,8 @@
 #include <thread>
 #include <unordered_map>
 
-ChatSession::ChatSession(Config config, Inbox* inbox, CancellationToken cancelled)
+ChatSession::ChatSession(Config config, CancellationToken cancelled)
     : model_(std::move(config.model)), reasoning_effort_(std::move(config.reasoning_effort)),
-      inbox_(inbox),
       safe_dir_(std::make_shared<std::string>(std::move(config.safe_dir))),
       api_base_(config.api_base), api_key_(config.api_key), max_iterations_(config.max_tool_iterations),
       context_limit_(config.context_limit),
@@ -41,35 +40,6 @@ ChatSession::ChatSession(Config config, Inbox* inbox, CancellationToken cancelle
     cont_slot_.max_steps = config.max_continuation_steps;
     cont_slot_.delay_ms = config.continuation_delay_ms;
     tools_.add(make_schedule_continuation_tool(cont_slot_, cancelled_));
-
-    // ── Inbox tools ──
-    if (inbox_) {
-        auto inbox_tools = make_inbox_tools(*inbox_);
-        // Wrap tools that need the agent's name injected
-        for (auto& t : inbox_tools) {
-            if (t.name == "send_message") {
-                auto original = t.execute;
-                t.execute = [this, original](const json& args) -> Result<std::string> {
-                    auto recipient = args.value("recipient", std::string());
-                    auto message = args.value("message", std::string());
-                    if (recipient.empty()) return std::unexpected("recipient is required");
-                    if (message.empty()) return std::unexpected("message is required");
-                    return inbox_->send_message(agent_name_, recipient, message);
-                };
-            } else if (t.name == "next_message") {
-                auto original = t.execute;
-                t.execute = [this, original](const json& args) -> Result<std::string> {
-                    auto msg = inbox_->next_message(agent_name_);
-                    if (!msg.has_value()) {
-                        return std::string("\"no messages\"");
-                    }
-                    json result = {{"sender", msg->from}, {"message", msg->message}};
-                    return result.dump();
-                };
-            }
-            tools_.add(std::move(t));
-        }
-    }
 
     // ── Session DB persistence ──
     if (!config.session_db_path.empty()) {
@@ -150,19 +120,6 @@ std::string ChatSession::build_notices() {
         }
     }
 
-    // ── Inbox notifications ──
-    // Only a generic notification with count — don't dequeue;
-    // the agent must call next_message() to retrieve the content.
-    if (inbox_ && !agent_name_.empty()) {
-        int count = inbox_->pending_count(agent_name_);
-        if (count > 0) {
-            notices += "[you have " + std::to_string(count)
-                + (count == 1 ? " message" : " messages")
-                + " in your inbox — use next_message() to read "
-                + (count == 1 ? "it" : "them") + ".]\n";
-        }
-    }
-
     // Strip trailing newline, if any
     if (!notices.empty() && notices.back() == '\n') {
         notices.pop_back();
@@ -193,24 +150,6 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                 context_limit_ = discovered;
             }
             context_limit_discovered_ = true;
-        }
-    }
-
-    // ── Inject pending inbox notifications ──
-    // Checks before each turn so a new message that arrived mid-turn will be
-    // picked up at the start of the next turn.
-    // Only a generic notification is injected — the agent must call
-    // next_message() to retrieve the actual content.
-    if (inbox_ && !agent_name_.empty()) {
-        int count = inbox_->pending_count(agent_name_);
-        if (count > 0) {
-            std::string notice = "[you have " + std::to_string(count)
-                + (count == 1 ? " message" : " messages")
-                + " in your inbox]";
-            auto sql = "INSERT INTO messages (role, content, retention) VALUES ('user', '"
-                + notice + "', 'droppable')";
-            auto seq = session_db_.execute(sql);
-            (void)seq;
         }
     }
 

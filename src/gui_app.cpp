@@ -109,9 +109,6 @@ int gui_main(Config cfg) {
     int active_tab = 0;
     int focus_tab_id = -1;
 
-    // Shared inbox across all sessions
-    Inbox inbox;
-
     // Shared wiki across all sessions (in-memory until app persistence is sorted out)
     Wiki wiki(":memory:");
 
@@ -122,7 +119,7 @@ int gui_main(Config cfg) {
         // Generate a Culture ship name for the tab title
         tab.title = generate_lotr_name();
         tab.chat_state = std::make_unique<AsyncChatState>();
-        tab.session = std::make_unique<ChatSession>(cfg, &inbox, tab.chat_state->cancelled);
+        tab.session = std::make_unique<ChatSession>(cfg, tab.chat_state->cancelled);
         tab.session->set_agent_name(tab.title);
         tab.ui_state.mono_font = mono_font;
         tab.session->set_output_callback(
@@ -131,7 +128,6 @@ int gui_main(Config cfg) {
                 cs->pending.emplace_back(text, type);
             });
 
-        inbox.register_agent(tab.title);
         tab.session->set_wiki(&wiki);
 
         tabs.push_back(std::move(tab));
@@ -202,45 +198,12 @@ int gui_main(Config cfg) {
                     tab.ui_state.models_future.wait();
                 }
                 free_lotr_name(tab.title);
-                inbox.unregister_agent(tab.title);
                 tabs.erase(tabs.begin() + active_tab);
                 if (active_tab >= (int)tabs.size())
                     active_tab = (int)tabs.size() - 1;
                 if (active_tab < 0)
                     active_tab = 0;
             }
-        }
-
-        // ── Poll inbox for pending messages (idle agents) ──
-        // Only a count is injected — agents must call next_message() to
-        // retrieve the actual content.  Busy agents get this via
-        // build_notices() instead.
-        for (auto& t : tabs) {
-            if (t.chat_state->running)
-                continue;
-
-            int count = inbox.pending_count(t.session->agent_name());
-            if (count == 0)
-                continue;
-
-            std::string prompt = "[you have " + std::to_string(count)
-                + (count == 1 ? " message" : " messages")
-                + " in your inbox — use next_message() to read "
-                + (count == 1 ? "it" : "them") + ".]";
-
-            // Ensure any previous future is consumed
-            if (t.chat_state->future.valid()) {
-                try {
-                    t.chat_state->future.get();
-                } catch (...) {}
-            }
-            t.chat_state->running = true;
-            *t.chat_state->cancelled = false;
-            t.chat_state->future = std::async(std::launch::async,
-                [session = t.session.get(), cs = t.chat_state.get(),
-                 prompt = std::move(prompt)]() {
-                    return session->run_once(prompt);
-                });
         }
 
         // ── Full-width tabs, each with 40% Plan + 60% Chat split inside ──
@@ -369,7 +332,7 @@ int gui_main(Config cfg) {
                     ti++;
                 }
 
-                // (No global group tab — agents communicate via inbox tools)
+                // (No global group tab)
 
                 EndTabBar();
             }
