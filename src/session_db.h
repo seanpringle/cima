@@ -76,6 +76,19 @@ class SessionDB {
     /// Truncate conversation to at most N messages (for rollback on error).
     void truncate_conversation(size_t n);
 
+    /// Estimate tokens for messages with retention='droppable'.
+    size_t estimate_droppable_tokens() const;
+
+    /// Populate/refresh the metadata table with current session state.
+    /// Creates the table if it doesn't exist.
+    void refresh_metadata(const std::string& model,
+        int context_limit,
+        const Usage& last_usage,
+        int max_iterations,
+        int tool_calls_used,
+        int continuation_steps_used,
+        int continuation_max_steps);
+
     /// Delete all messages tagged 'droppable' and clean up orphaned
     /// assistant tool-call messages (same logic as old Conversation::compact).
     void prune_droppable();

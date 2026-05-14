@@ -304,6 +304,97 @@ size_t SessionDB::estimate_total_tokens() const {
     return total;
 }
 
+size_t SessionDB::estimate_droppable_tokens() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    size_t total = 0;
+
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql = "SELECT content, tool_call_id FROM messages WHERE retention = 'droppable'";
+    int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        sqlite3_finalize(stmt);
+        return total;
+    }
+
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+        const char* content = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        const char* tool_call_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+
+        if (content) total += estimate_tokens(content);
+        if (tool_call_id) total += estimate_tokens(tool_call_id);
+        total += 20; // framing overhead
+    }
+    sqlite3_finalize(stmt);
+
+    return total;
+}
+
+void SessionDB::refresh_metadata(const std::string& model,
+    int context_limit,
+    const Usage& last_usage,
+    int max_iterations,
+    int tool_calls_used,
+    int continuation_steps_used,
+    int continuation_max_steps) {
+    // Compute estimates outside the upsert lock — each method locks internally.
+    size_t estimated_tok = estimate_total_tokens();
+    size_t droppable_tok = estimate_droppable_tokens();
+    size_t msg_count = message_count();
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    // Ensure the metadata table exists
+    sqlite3_exec(db_,
+        "CREATE TABLE IF NOT EXISTS metadata ("
+        "key TEXT PRIMARY KEY,"
+        "value TEXT"
+        ")",
+        nullptr, nullptr, nullptr);
+
+    // Prepare upsert statement
+    sqlite3_stmt* stmt = nullptr;
+    const char* upsert_sql =
+        "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)";
+    if (sqlite3_prepare_v2(db_, upsert_sql, -1, &stmt, nullptr) != SQLITE_OK) {
+        sqlite3_finalize(stmt);
+        return;
+    }
+
+    auto upsert = [&](const std::string& key, const std::string& value) {
+        sqlite3_bind_text(stmt, 1, key.c_str(), static_cast<int>(key.size()), SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 2, value.c_str(), static_cast<int>(value.size()), SQLITE_TRANSIENT);
+        sqlite3_step(stmt);
+        sqlite3_reset(stmt);
+    };
+
+    upsert("model", model);
+    upsert("context_limit", std::to_string(context_limit));
+    upsert("estimated_tokens", std::to_string(estimated_tok));
+    upsert("droppable_tokens", std::to_string(droppable_tok));
+    upsert("message_count", std::to_string(msg_count));
+
+    // Usage from last API response
+    upsert("last_prompt_tokens", std::to_string(last_usage.prompt_tokens));
+    upsert("last_completion_tokens", std::to_string(last_usage.completion_tokens));
+    upsert("last_total_tokens", std::to_string(last_usage.total_tokens));
+
+    // Budgets
+    upsert("max_tool_iterations", std::to_string(max_iterations));
+    upsert("tool_calls_used", std::to_string(tool_calls_used));
+    upsert("max_continuation_steps", std::to_string(continuation_max_steps));
+    upsert("continuation_steps_used", std::to_string(continuation_steps_used));
+
+    // Computed percentage (integer, e.g. "35" for 35%)
+    if (context_limit > 0) {
+        int pct = static_cast<int>(estimated_tok * 100 / context_limit);
+        upsert("usage_percent", std::to_string(pct));
+    } else {
+        upsert("usage_percent", "0");
+    }
+
+    sqlite3_finalize(stmt);
+}
+
 void SessionDB::clear_conversation() {
     std::lock_guard<std::mutex> lock(mutex_);
     sqlite3_exec(db_, "DELETE FROM tool_calls", nullptr, nullptr, nullptr);

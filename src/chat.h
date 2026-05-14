@@ -70,5 +70,6 @@ class ChatSession {
     ToolRegistry tools_;
     OutputCallback output_cb_;
     Usage last_usage_;
+    int context_limit_ = 300000;           // discovered from API, falls back to Config
     bool context_limit_discovered_ = false;
 };

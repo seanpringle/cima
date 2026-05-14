@@ -11,6 +11,7 @@ ChatSession::ChatSession(Config config, CancellationToken cancelled)
     : model_(std::move(config.model)), reasoning_effort_(std::move(config.reasoning_effort)),
       safe_dir_(std::make_shared<std::string>(std::move(config.safe_dir))),
       api_key_(config.api_key), max_iterations_(config.max_tool_iterations),
+      context_limit_(config.context_limit),
       system_prompt_(std::move(config.system_prompt)),
       client_(std::move(config.api_base), std::move(config.api_key)),
       cancelled_(cancelled ? std::move(cancelled) : make_cancellation_token()) {
@@ -56,14 +57,17 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
             std::lock_guard<std::mutex> lock(cache_mutex);
             auto it = cache.find(cache_key);
             if (it != cache.end()) {
+                context_limit_ = it->second;
                 context_limit_discovered_ = true;
             }
         }
         if (!context_limit_discovered_) {
             int discovered = client_.fetch_model_context_limit(model_);
             std::lock_guard<std::mutex> lock(cache_mutex);
-            if (discovered > 0)
+            if (discovered > 0) {
                 cache[cache_key] = discovered;
+                context_limit_ = discovered;
+            }
             context_limit_discovered_ = true;
         }
     }
@@ -88,6 +92,11 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
         bool produced_content = false;
 
         for (int iter = 0; iter < max_iterations_; iter++) {
+            // Refresh session metadata so the agent can see current context usage
+            // via SELECT * FROM metadata.
+            session_db_.refresh_metadata(model_, context_limit_, last_usage_,
+                max_iterations_, iter, cont_slot_.step_count, cont_slot_.max_steps);
+
             // Build payload from the session DB (messages + tool_calls tables).
             // The agent may have modified these tables via query_session during
             // previous tool execution to manage its own context.
@@ -213,9 +222,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                             }
                             auto tr = tools_.execute(call.name, call.arguments);
                             auto result = tr ? *tr : tr.error();
-                            session_db_.add_tool(call.id,
-                                "── Remaining tool call budget: " + std::to_string(remaining) +
-                                    "/" + std::to_string(max_iterations_) + " ──\n\n" + result);
+                            session_db_.add_tool(call.id, result);
                         }
                     } else {
                         // Parallel execution for read-only tools
@@ -241,9 +248,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                             }
                             auto tr = futures[i].get();
                             auto result = tr ? *tr : tr.error();
-                            session_db_.add_tool(calls[i].id,
-                                "── Remaining tool call budget: " + std::to_string(remaining) +
-                                    "/" + std::to_string(max_iterations_) + " ──\n\n" + result);
+                            session_db_.add_tool(calls[i].id, result);
                         }
                     }
                 } else {
@@ -259,9 +264,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                         }
                         auto tr = tools_.execute(call.name, call.arguments);
                         auto result = tr ? *tr : tr.error();
-                        session_db_.add_tool(call.id,
-                            "── Remaining tool call budget: " + std::to_string(remaining) +
-                                "/" + std::to_string(max_iterations_) + " ──\n\n" + result);
+                        session_db_.add_tool(call.id, result);
                     }
                 }
                 continue;

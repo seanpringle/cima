@@ -171,8 +171,8 @@ TEST_CASE("ChatSession max tool iterations", "[chat]") {
 
     ChatSession session(std::move(cfg));
     auto result = session.run_once("List files forever");
-    CHECK_FALSE(result);
-    CHECK(result.error().find("Maximum tool call iterations") !=
+    CHECK(result);
+    CHECK(result->content.find("Tool call budget exhausted") !=
           std::string::npos);
     // One extra call for model discovery (GET /v1/models), then 10 tool iterations
     CHECK(call_count == 11);
