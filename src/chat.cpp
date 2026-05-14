@@ -31,6 +31,9 @@ ChatSession::ChatSession(Config config, CancellationToken cancelled)
     tools_.add(make_read_plan_tool(plan_));
     tools_.add(make_comment_plan_tool(plan_));
 
+    // Each session gets an in-memory SQLite database tool
+    tools_.add(make_query_session_tool(session_db_));
+
     // Wire up the summary callback for compaction
     conversation_.set_summary_callback([this](const std::vector<Message>& msgs, size_t max_tokens) {
         return summarize_messages_(msgs, max_tokens);

@@ -2548,3 +2548,284 @@ TEST_CASE("run_bash chdir failure is caught", "[tools][run_bash][sandbox]") {
         CHECK(result->find("chdir()") != std::string::npos);
     }
 }
+
+// ===================================================================
+// SessionDB — in-memory SQLite database
+// ===================================================================
+
+#include "session_db.h"
+
+TEST_CASE("SessionDB create table and insert", "[session_db]") {
+    SessionDB db;
+
+    auto r1 = db.execute("CREATE TABLE test (id INTEGER PRIMARY KEY, name TEXT)");
+    REQUIRE(r1);
+    CHECK(r1->find("rows_affected") != std::string::npos);
+    CHECK(r1->find("0") != std::string::npos); // DDL reports 0 rows affected
+
+    auto r2 = db.execute("INSERT INTO test (name) VALUES ('hello')");
+    REQUIRE(r2);
+    CHECK(r2->find("rows_affected") != std::string::npos);
+    CHECK(r2->find("1") != std::string::npos);
+
+    auto r3 = db.execute("INSERT INTO test (name) VALUES ('world')");
+    REQUIRE(r3);
+    auto parsed3 = json::parse(*r3);
+    REQUIRE(parsed3.is_object());
+    CHECK(parsed3["rows_affected"] == 1);
+}
+
+TEST_CASE("SessionDB select returns rows", "[session_db]") {
+    SessionDB db;
+
+    auto r1 = db.execute("CREATE TABLE t (a INTEGER, b TEXT)");
+    REQUIRE(r1);
+
+    db.execute("INSERT INTO t VALUES (1, 'one')");
+    db.execute("INSERT INTO t VALUES (2, 'two')");
+    db.execute("INSERT INTO t VALUES (3, 'three')");
+
+    auto r2 = db.execute("SELECT * FROM t ORDER BY a");
+    REQUIRE(r2);
+
+    auto parsed = json::parse(*r2);
+    REQUIRE(parsed.is_array());
+    REQUIRE(parsed.size() == 3);
+    CHECK(parsed[0]["a"] == 1);
+    CHECK(parsed[0]["b"] == "one");
+    CHECK(parsed[1]["a"] == 2);
+    CHECK(parsed[1]["b"] == "two");
+    CHECK(parsed[2]["a"] == 3);
+    CHECK(parsed[2]["b"] == "three");
+}
+
+TEST_CASE("SessionDB select empty result set", "[session_db]") {
+    SessionDB db;
+
+    db.execute("CREATE TABLE t (a INTEGER)");
+    auto r = db.execute("SELECT * FROM t");
+    REQUIRE(r);
+    auto parsed = json::parse(*r);
+    REQUIRE(parsed.is_array());
+    CHECK(parsed.empty());
+}
+
+TEST_CASE("SessionDB NULL handling", "[session_db]") {
+    SessionDB db;
+
+    db.execute("CREATE TABLE t (a INTEGER, b TEXT)");
+    db.execute("INSERT INTO t (a, b) VALUES (NULL, NULL)");
+
+    auto r = db.execute("SELECT * FROM t");
+    REQUIRE(r);
+    auto parsed = json::parse(*r);
+    REQUIRE(parsed.is_array());
+    REQUIRE(parsed.size() == 1);
+    CHECK(parsed[0]["a"].is_null());
+    CHECK(parsed[0]["b"].is_null());
+}
+
+TEST_CASE("SessionDB integer and float types", "[session_db]") {
+    SessionDB db;
+
+    db.execute("CREATE TABLE t (i INTEGER, f REAL)");
+    db.execute("INSERT INTO t VALUES (42, 3.14)");
+
+    auto r = db.execute("SELECT * FROM t");
+    REQUIRE(r);
+    auto parsed = json::parse(*r);
+    REQUIRE(parsed.is_array());
+    REQUIRE(parsed.size() == 1);
+    CHECK(parsed[0]["i"] == 42);
+    CHECK(parsed[0]["f"] == 3.14);
+}
+
+TEST_CASE("SessionDB invalid SQL returns error", "[session_db]") {
+    SessionDB db;
+
+    auto r = db.execute("CREATE TABLE t (a INTEGER)");
+    REQUIRE(r);
+
+    auto r2 = db.execute("SELECT * FROM nonexistent");
+    CHECK_FALSE(r2);
+    CHECK(r2.error().find("no such table") != std::string::npos);
+}
+
+TEST_CASE("SessionDB DDL returns ok", "[session_db]") {
+    SessionDB db;
+
+    auto r = db.execute("CREATE TABLE t (a INTEGER)");
+    REQUIRE(r);
+    auto parsed = json::parse(*r);
+    CHECK(parsed["rows_affected"] == 0);
+}
+
+TEST_CASE("SessionDB UPDATE returns affected rows", "[session_db]") {
+    SessionDB db;
+
+    db.execute("CREATE TABLE t (a INTEGER)");
+    db.execute("INSERT INTO t VALUES (1)");
+    db.execute("INSERT INTO t VALUES (2)");
+    db.execute("INSERT INTO t VALUES (3)");
+
+    auto r = db.execute("UPDATE t SET a = a + 10 WHERE a >= 2");
+    REQUIRE(r);
+    auto parsed = json::parse(*r);
+    CHECK(parsed["rows_affected"] == 2);
+}
+
+TEST_CASE("SessionDB DELETE returns affected rows", "[session_db]") {
+    SessionDB db;
+
+    db.execute("CREATE TABLE t (a INTEGER)");
+    db.execute("INSERT INTO t VALUES (1)");
+    db.execute("INSERT INTO t VALUES (2)");
+
+    auto r = db.execute("DELETE FROM t WHERE a = 1");
+    REQUIRE(r);
+    auto parsed = json::parse(*r);
+    CHECK(parsed["rows_affected"] == 1);
+
+    auto r2 = db.execute("SELECT COUNT(*) AS cnt FROM t");
+    REQUIRE(r2);
+    auto parsed2 = json::parse(*r2);
+    REQUIRE(parsed2.is_array());
+    REQUIRE(parsed2.size() == 1);
+    CHECK(parsed2[0]["cnt"] == 1);
+}
+
+TEST_CASE("SessionDB multiple statements not allowed (single statement only)",
+    "[session_db]") {
+    SessionDB db;
+
+    // sqlite3_prepare_v2 only compiles one statement; remaining input is in
+    // tail, which we ignore — so the second statement is silently dropped.
+    auto r = db.execute("CREATE TABLE t (a INTEGER); INSERT INTO t VALUES (1)");
+    REQUIRE(r);
+    // Only CREATE TABLE was executed (rows_affected: 0 for DDL)
+    // The INSERT was not executed because tail is ignored.
+    auto r2 = db.execute("SELECT COUNT(*) AS cnt FROM t");
+    REQUIRE(r2);
+    auto parsed = json::parse(*r2);
+    REQUIRE(parsed.is_array());
+    CHECK(parsed[0]["cnt"] == 0); // INSERT was not executed
+}
+
+TEST_CASE("SessionDB empty SQL returns ok", "[session_db]") {
+    SessionDB db;
+
+    auto r = db.execute("");
+    REQUIRE(r);
+    CHECK(*r == R"({"ok": true})");
+
+    auto r2 = db.execute("   ");
+    REQUIRE(r2);
+    CHECK(*r2 == R"({"ok": true})");
+}
+
+// ===================================================================
+// query_session tool
+// ===================================================================
+
+TEST_CASE("query_session tool basic CRUD", "[tools][query_session]") {
+    SessionDB db;
+    ToolRegistry reg;
+    reg.add(make_query_session_tool(db));
+
+    auto r1 = reg.execute("query_session",
+        R"sql({"query": "CREATE TABLE items (id INTEGER PRIMARY KEY, value TEXT)"})sql");
+    REQUIRE(r1);
+
+    auto r2 = reg.execute("query_session",
+        R"sql({"query": "INSERT INTO items (value) VALUES ('alpha')"})sql");
+    REQUIRE(r2);
+    auto parsed2 = json::parse(*r2);
+    CHECK(parsed2["rows_affected"] == 1);
+
+    auto r3 = reg.execute("query_session",
+        R"sql({"query": "INSERT INTO items (value) VALUES ('beta')"})sql");
+    REQUIRE(r3);
+
+    auto r4 = reg.execute("query_session",
+        R"sql({"query": "SELECT * FROM items ORDER BY id"})sql");
+    REQUIRE(r4);
+    auto parsed4 = json::parse(*r4);
+    REQUIRE(parsed4.is_array());
+    REQUIRE(parsed4.size() == 2);
+    CHECK(parsed4[0]["value"] == "alpha");
+    CHECK(parsed4[1]["value"] == "beta");
+}
+
+TEST_CASE("query_session tool empty query rejected", "[tools][query_session]") {
+    SessionDB db;
+    ToolRegistry reg;
+    reg.add(make_query_session_tool(db));
+
+    auto r = reg.execute("query_session", R"sql({"query": ""})sql");
+    CHECK_FALSE(r);
+    CHECK(r.error() == "query is required");
+}
+
+TEST_CASE("query_session tool invalid SQL returns error", "[tools][query_session]") {
+    SessionDB db;
+    ToolRegistry reg;
+    reg.add(make_query_session_tool(db));
+
+    auto r = reg.execute("query_session",
+        R"sql({"query": "SELECT * FROM nonexistent"})sql");
+    CHECK_FALSE(r);
+    CHECK(r.error().find("no such table") != std::string::npos);
+}
+
+TEST_CASE("query_session tool persists data across calls", "[tools][query_session]") {
+    SessionDB db;
+    ToolRegistry reg;
+    reg.add(make_query_session_tool(db));
+
+    reg.execute("query_session",
+        R"sql({"query": "CREATE TABLE events (ts TEXT, msg TEXT)"})sql");
+    reg.execute("query_session",
+        R"sql({"query": "INSERT INTO events VALUES ('2024-01-01', 'start')"})sql");
+    reg.execute("query_session",
+        R"sql({"query": "INSERT INTO events VALUES ('2024-01-02', 'middle')"})sql");
+    reg.execute("query_session",
+        R"sql({"query": "INSERT INTO events VALUES ('2024-01-03', 'end')"})sql");
+
+    auto r = reg.execute("query_session",
+        R"sql({"query": "SELECT msg FROM events ORDER BY ts"})sql");
+    REQUIRE(r);
+    auto parsed = json::parse(*r);
+    REQUIRE(parsed.is_array());
+    REQUIRE(parsed.size() == 3);
+    CHECK(parsed[0]["msg"] == "start");
+    CHECK(parsed[1]["msg"] == "middle");
+    CHECK(parsed[2]["msg"] == "end");
+}
+
+TEST_CASE("query_session tool null values round-trip", "[tools][query_session]") {
+    SessionDB db;
+    ToolRegistry reg;
+    reg.add(make_query_session_tool(db));
+
+    reg.execute("query_session",
+        R"sql({"query": "CREATE TABLE t (a INTEGER, b TEXT)"})sql");
+    reg.execute("query_session",
+        R"sql({"query": "INSERT INTO t (a, b) VALUES (NULL, 'text')"})sql");
+    reg.execute("query_session",
+        R"sql({"query": "INSERT INTO t (a, b) VALUES (42, NULL)"})sql");
+
+    auto r = reg.execute("query_session",
+        R"sql({"query": "SELECT * FROM t ORDER BY a"})sql");
+    REQUIRE(r);
+    auto parsed = json::parse(*r);
+    REQUIRE(parsed.is_array());
+    REQUIRE(parsed.size() == 2);
+
+    // Row 1: a=NULL, b='text'
+    CHECK(parsed[0]["a"].is_null());
+    CHECK(parsed[0]["b"] == "text");
+
+    // Row 2: a=42, b=NULL
+    CHECK(parsed[1]["a"] == 42);
+    CHECK(parsed[1]["b"].is_null());
+}

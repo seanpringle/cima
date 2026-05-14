@@ -202,3 +202,6 @@ Tool make_project_tree_tool(std::shared_ptr<std::string> safe_dir_ptr,
 Tool make_delete_file_tool(std::shared_ptr<std::string> safe_dir_ptr);
 Tool make_move_file_tool(std::shared_ptr<std::string> safe_dir_ptr);
 Tool make_rename_file_tool(std::shared_ptr<std::string> safe_dir_ptr);
+
+class SessionDB;
+Tool make_query_session_tool(SessionDB& db);

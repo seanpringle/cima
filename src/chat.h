@@ -3,6 +3,7 @@
 #include "client.h"
 #include "config.h"
 #include "plan.h"
+#include "session_db.h"
 #include "tools.h"
 #include "types.h"
 
@@ -42,6 +43,9 @@ class ChatSession {
     PlanBoard& plan() { return plan_; }
     const PlanBoard& plan() const { return plan_; }
 
+    // Each session has its own in-memory SQLite database.
+    SessionDB& session_db() { return session_db_; }
+
     // Expose the underlying client so the GUI can call fetch_models() etc.
     ChatClient& client_for_models() { return client_; }
 
@@ -58,6 +62,7 @@ class ChatSession {
     size_t context_limit_;
     size_t compact_threshold_;
     PlanBoard plan_;
+    SessionDB session_db_;
     Conversation conversation_;
     ChatClient client_;
     CancellationToken cancelled_;

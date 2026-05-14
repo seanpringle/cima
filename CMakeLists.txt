@@ -22,6 +22,7 @@ FetchContent_MakeAvailable(imgui)
 find_package(CURL REQUIRED)
 find_package(SDL3 REQUIRED)
 find_package(Catch2 REQUIRED)
+find_package(SQLite3 REQUIRED)
 
 # ── md4c (Markdown parser) ──
 find_package(PkgConfig QUIET)
@@ -100,7 +101,9 @@ add_library(cima_core
     src/tools/factories/bash.cpp
     src/tools/factories/web.cpp
     src/tools/factories/git.cpp
+    src/tools/factories/session_db.cpp
     src/tools/registry.cpp
+    src/session_db.cpp
     src/client.cpp
     src/chat.cpp
     src/plan.cpp
@@ -110,6 +113,7 @@ target_link_libraries(cima_core PUBLIC
     nlohmann_json::nlohmann_json
     CURL::libcurl
     cima_git2
+    SQLite::SQLite3
 )
 
 add_executable(cima
