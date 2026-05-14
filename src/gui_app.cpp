@@ -237,7 +237,7 @@ int gui_main(Config cfg) {
 
                         Separator();
 
-                        // Inside each tab: 40% Plan (left) + 60% Chat (right)
+                        // Inside each tab: 40% session tabs (left) + 60% Chat (right)
                         {
                             auto canvas = GetContentRegionAvail();
                             auto tl = GetCursorPos();
@@ -252,21 +252,32 @@ int gui_main(Config cfg) {
                                 ImVec2(winPos.x + tl.x + planWidth + (gap / 2), winPos.y + tl.y);
                             auto sepPosB = ImVec2(sepPosA.x, winPos.y + tl.y + canvas.y);
 
-                            // Left panel: Plan document
+                            // Left panel: session tabs
                             SetCursorPos(planPos);
-                            BeginChild("##tab_plan",
+                            BeginChild("##left-session-tabs",
                                 planSize,
                                 ImGuiChildFlags_None,
                                 ImGuiWindowFlags_None);
 
-                            auto plan_result = tab.session->plan().read_plan();
-                            if (plan_result) {
-                                PushFont(mono_font);
-                                render_content(*plan_result);
-                                PopFont();
-                            } else {
-                                TextDisabled("(empty plan)");
+                            if (BeginTabBar("##session-tabs")) {
+                                if (BeginTabItem("Plan")) {
+                                    auto plan_result = tab.session->plan().read_plan();
+                                    if (plan_result) {
+                                        PushFont(mono_font);
+                                        render_content(*plan_result);
+                                        PopFont();
+                                    } else {
+                                        TextDisabled("(empty plan)");
+                                    }
+                                    EndTabItem();
+                                }
+                                if (BeginTabItem("Database")) {
+                                    // todo session db view
+                                    EndTabItem();
+                                }
+                                EndTabBar();
                             }
+
                             EndChild();
 
                             GetWindowDrawList()->AddLine(sepPosA,
