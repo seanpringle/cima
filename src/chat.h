@@ -7,6 +7,7 @@
 #include "session_db.h"
 #include "tools.h"
 #include "types.h"
+#include "wiki.h"
 
 #include <nlohmann/json.hpp>
 
@@ -71,6 +72,10 @@ class ChatSession {
     void set_agent_name(const std::string& name) { agent_name_ = name; }
     const std::string& agent_name() const { return agent_name_; }
 
+    /// Set/get the shared wiki (may be null if not set).
+    void set_wiki(Wiki* wiki) { wiki_ = wiki; }
+    Wiki* wiki() const { return wiki_; }
+
     /// Return the shared inbox (may be null if not set).
     Inbox* inbox() const { return inbox_; }
 
@@ -79,6 +84,7 @@ class ChatSession {
     std::string reasoning_effort_;
     std::string agent_name_;
     Inbox* inbox_ = nullptr;
+    Wiki* wiki_ = nullptr;
     std::shared_ptr<std::string> safe_dir_;
     ContinuationSlot cont_slot_;
     std::string api_base_;     // API base URL (for creating temp clients)

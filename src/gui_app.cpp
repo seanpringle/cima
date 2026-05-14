@@ -1,6 +1,8 @@
 #include "gui_app.h"
 #include "gui_chat.h"
+#include "gui_wiki.h"
 #include "plan.h"
+#include "wiki.h"
 
 #include "imgui.h"
 #include "backends/imgui_impl_sdl3.h"
@@ -110,6 +112,9 @@ int gui_main(Config cfg) {
     // Shared inbox across all sessions
     Inbox inbox;
 
+    // Shared wiki across all sessions (in-memory until app persistence is sorted out)
+    Wiki wiki(":memory:");
+
     auto add_tab = [&](const std::string& model_name) {
         TabInfo tab;
         tab.id = next_tab_id++;
@@ -127,12 +132,15 @@ int gui_main(Config cfg) {
             });
 
         inbox.register_agent(tab.title);
+        tab.session->set_wiki(&wiki);
 
         tabs.push_back(std::move(tab));
     };
 
     // Start with one default tab
     add_tab(cfg.model);
+    // Focus the first chat tab instead of the left-most Wiki tab
+    focus_tab_id = tabs.back().id;
 
     bool done = false;
     while (!done) {
@@ -239,6 +247,25 @@ int gui_main(Config cfg) {
         {
             // ── Tab bar ──
             if (BeginTabBar("##chat_tabs", ImGuiTabBarFlags_NoTooltip)) {
+                // ── Wiki tab (read-only, first in the tab bar) ──
+                if (BeginTabItem("Wiki")) {
+                    auto padding = GetStyle().WindowPadding;
+                    auto space = GetContentRegionAvail();
+
+                    SetCursorPos(ImVec2(GetCursorPosX() - padding.x,
+                        GetCursorPosY() - GetStyle().ItemSpacing.y));
+                    BeginChild("##wiki_view",
+                        ImVec2(space.x + padding.x * 2,
+                            space.y + padding.y * 2 + GetStyle().ItemSpacing.y),
+                        ImGuiChildFlags_None,
+                        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
+                    render_wiki_tab(wiki, mono_font);
+
+                    EndChild();
+                    EndTabItem();
+                }
+
                 for (int ti = 0; ti < (int)tabs.size();) {
                     TabInfo& tab = tabs[ti];
 

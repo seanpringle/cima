@@ -189,6 +189,15 @@ Tool make_query_session_tool(SessionDB& db);
 class Inbox;
 std::vector<Tool> make_inbox_tools(Inbox& inbox);
 
+class Wiki;
+
+// ── Wiki tools ──
+Tool make_list_wiki_pages_tool(Wiki& wiki);
+Tool make_read_wiki_page_tool(Wiki& wiki);
+Tool make_write_wiki_page_tool(Wiki& wiki);
+Tool make_edit_wiki_page_tool(Wiki& wiki);
+Tool make_delete_wiki_page_tool(Wiki& wiki);
+
 // ---------------------------------------------------------------------------
 // Continuation slot — shared state between the tool and ChatSession::run_once
 // ---------------------------------------------------------------------------

@@ -110,6 +110,8 @@ add_library(cima_core
     src/client.cpp
     src/chat.cpp
     src/plan.cpp
+    src/wiki.cpp
+    src/tools/factories/wiki.cpp
 )
 target_include_directories(cima_core PUBLIC src)
 target_link_libraries(cima_core PUBLIC
@@ -123,6 +125,7 @@ add_executable(cima
     src/main.cpp
     src/gui_app.cpp
     src/gui_chat.cpp
+    src/gui_wiki.cpp
     ${imgui_SOURCE_DIR}/imgui.cpp
     ${imgui_SOURCE_DIR}/imgui_draw.cpp
     ${imgui_SOURCE_DIR}/imgui_tables.cpp
@@ -156,6 +159,9 @@ target_link_libraries(test_session_db PRIVATE cima_core Catch2::Catch2WithMain)
 add_executable(test_inbox tests/test_inbox.cpp)
 target_link_libraries(test_inbox PRIVATE cima_core Catch2::Catch2WithMain)
 
+add_executable(test_wiki tests/test_wiki.cpp)
+target_link_libraries(test_wiki PRIVATE cima_core Catch2::Catch2WithMain)
+
 include(CTest)
 include(Catch)
 catch_discover_tests(test_config)
@@ -165,3 +171,4 @@ catch_discover_tests(test_client)
 catch_discover_tests(test_chat)
 catch_discover_tests(test_session_db)
 catch_discover_tests(test_inbox)
+catch_discover_tests(test_wiki)
