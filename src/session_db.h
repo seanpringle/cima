@@ -84,7 +84,8 @@ class SessionDB {
         int max_iterations,
         int tool_calls_used,
         int continuation_steps_used,
-        int continuation_max_steps);
+        int continuation_max_steps,
+        const std::string& assistant_name = {});
 
     /// Delete all messages tagged 'droppable' and clean up orphaned
     /// assistant tool-call messages (same logic as old Conversation::compact).

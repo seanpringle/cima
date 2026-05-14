@@ -328,10 +328,6 @@ int gui_main(Config cfg) {
                                     render_session_db_view(tab.session->session_db());
                                     EndTabItem();
                                 }
-                                if (BeginTabItem("Group")) {
-                                    render_group_channel(group_channel, mono_font);
-                                    EndTabItem();
-                                }
                                 EndTabBar();
                             }
 
@@ -386,6 +382,12 @@ int gui_main(Config cfg) {
                         continue; // Don't increment ti — we just erased
                     }
                     ti++;
+                }
+
+                // Top-level Group tab (shared across all agents)
+                if (BeginTabItem("Group")) {
+                    render_group_channel(group_channel, mono_font);
+                    EndTabItem();
                 }
 
                 EndTabBar();

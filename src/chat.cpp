@@ -223,7 +223,8 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
             // Refresh session metadata so the agent can see current context usage
             // via SELECT * FROM metadata.
             session_db_.refresh_metadata(model_, context_limit_, last_usage_,
-                max_iterations_, iter, cont_slot_.step_count, cont_slot_.max_steps);
+                max_iterations_, iter, cont_slot_.step_count, cont_slot_.max_steps,
+                agent_name_);
 
             // Build payload from the session DB (messages + tool_calls tables).
             // The agent may have modified these tables via query_session during

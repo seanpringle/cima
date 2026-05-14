@@ -343,7 +343,8 @@ void SessionDB::refresh_metadata(const std::string& model,
     int max_iterations,
     int tool_calls_used,
     int continuation_steps_used,
-    int continuation_max_steps) {
+    int continuation_max_steps,
+    const std::string& assistant_name) {
     // Compute estimates outside the upsert lock — each method locks internally.
     size_t estimated_tok = estimate_total_tokens();
     size_t droppable_tok = estimate_droppable_tokens();
@@ -376,6 +377,7 @@ void SessionDB::refresh_metadata(const std::string& model,
     };
 
     upsert("model", model);
+    upsert("assistant_name", assistant_name);
     upsert("context_limit", std::to_string(context_limit));
     upsert("estimated_tokens", std::to_string(estimated_tok));
     upsert("droppable_tokens", std::to_string(droppable_tok));
