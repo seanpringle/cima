@@ -16,7 +16,7 @@ struct sqlite3;
 /// The conversation history is stored in the `messages` table:
 ///   messages — one row per message (user or assistant)
 ///     Tool calls and results are stored as a JSON array in `tool_data`
-///     on the assistant message.  No separate `tool_calls` table.
+///     on the assistant message.
 /// Agents can read/write this table directly via the query_session tool
 /// to manage their own context (summarize, prune, reorganize).
 class SessionDB {

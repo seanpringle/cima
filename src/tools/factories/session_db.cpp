@@ -14,7 +14,7 @@ Tool make_query_session_tool(SessionDB& db) {
         "             suggested_retention\n"
         "    Assistant messages with tool calls store them in `tool_data`\n"
         "    (a JSON array — see format below). Tool results are filled into\n"
-        "    the same array as `result` fields. No separate `tool_calls` table.\n\n"
+        "    the same array as `result` fields.\n\n"
         "  `tool_data` JSON format:\n"
         "    [{\"id\":\"call_A\", \"type\":\"function\",\n"
         "      \"function\":{\"name\":\"list_files\", \"arguments\":\"{\\\"path\\\":\\\".\\\"}\"},\n"

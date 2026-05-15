@@ -33,7 +33,7 @@ ChatSession::ChatSession(Config config, CancellationToken cancelled)
     tools_.add(make_comment_plan_tool(plan_));
 
     // Each session gets an in-memory SQLite database tool.
-    // The conversation lives in 'messages' and 'tool_calls' tables
+    // The conversation lives in 'messages' and 'metadata' tables
     // within this DB, so the agent can read/write its own context.
     tools_.add(make_query_session_tool(session_db_));
 
@@ -278,7 +278,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                 max_iterations_, iter, cont_slot_.step_count, cont_slot_.max_steps,
                 agent_name_);
 
-            // Build payload from the session DB (messages + tool_calls tables).
+            // Build payload from the session DB (messages table).
             // The agent may have modified these tables via query_session during
             // previous tool execution to manage its own context.
             json payload = {{"model", model_},
