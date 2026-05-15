@@ -61,6 +61,11 @@ class SessionDB {
         const std::string& reasoning = {},
         const std::vector<ToolCall>& tool_calls = {});
 
+    /// Add a notice message (user role, droppable retention).
+    /// Used for context/tool usage warnings so they appear as direct
+    /// user input rather than ambient system messages.
+    int64_t add_notice(const std::string& content);
+
     /// Add a tool result message. Returns the new message id.
     int64_t add_tool(const std::string& tool_call_id, const std::string& content);
 

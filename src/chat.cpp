@@ -106,9 +106,9 @@ std::string ChatSession::build_notices() {
                 "% of context window used                    \u2551\n"
                 "\u2551                                              "
                 " \u2551\n"
-                "\u2551  Archive, prune or summarise session messages   "
+                "\u2551  Use schedule_continuation to compact and         "
                 " \u2551\n"
-                "\u2551  before continuing.                              "
+                "\u2551  continue with a summary of the work so far.      "
                 "\u2551\n"
                 "\u255A\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
                 "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
@@ -127,9 +127,9 @@ std::string ChatSession::build_notices() {
                 "% of context window used                    \u2551\n"
                 "\u2551                                              "
                 " \u2551\n"
-                "\u2551  Consider compacting or pruning droppable          "
+                "\u2551  Consider compacting via schedule_continuation    "
                 " \u2551\n"
-                "\u2551  messages.                                        "
+                "\u2551  to free up context before continuing.            "
                 "\u2551\n"
                 "\u255A\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
                 "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
@@ -414,7 +414,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                         {
                             auto notice = build_notices();
                             if (!notice.empty()) {
-                                session_db_.add_system(notice);
+                                session_db_.add_notice(notice);
                             }
                         }
                     } else {
@@ -452,7 +452,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                         {
                             auto notice = build_notices();
                             if (!notice.empty()) {
-                                session_db_.add_system(notice);
+                                session_db_.add_notice(notice);
                             }
                         }
                     }
@@ -480,7 +480,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                     {
                         auto notice = build_notices();
                         if (!notice.empty()) {
-                            session_db_.add_system(notice);
+                            session_db_.add_notice(notice);
                         }
                     }
                 }

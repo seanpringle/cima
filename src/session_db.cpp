@@ -93,6 +93,27 @@ int64_t SessionDB::add_user(const std::string& content) {
     return sqlite3_last_insert_rowid(db_);
 }
 
+int64_t SessionDB::add_notice(const std::string& content) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    int64_t seq = claim_seq();
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql =
+        "INSERT INTO messages (seq, role, content, retention) VALUES (?, 'user', ?, 'droppable')";
+    int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        sqlite3_finalize(stmt);
+        return -1;
+    }
+    sqlite3_bind_int64(stmt, 1, seq);
+    sqlite3_bind_text(stmt, 2, content.c_str(), static_cast<int>(content.size()), SQLITE_TRANSIENT);
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    if (rc != SQLITE_DONE) {
+        return -1;
+    }
+    return sqlite3_last_insert_rowid(db_);
+}
+
 int64_t SessionDB::add_system(const std::string& content,
     const std::string& retention) {
     std::lock_guard<std::mutex> lock(mutex_);

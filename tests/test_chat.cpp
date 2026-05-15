@@ -373,7 +373,7 @@ TEST_CASE("ChatSession context warning injected at low context_limit", "[chat][n
 
     bool found_notice = false;
     for (const auto& msg : msgs) {
-        if (msg["role"] == "system") {
+        if (msg["role"] == "user") {
             std::string content = msg["content"].get<std::string>();
             if (content.find("\u26A0 CONTEXT WARNING") != std::string::npos) {
                 found_notice = true;
@@ -421,7 +421,7 @@ TEST_CASE("ChatSession context critical injected at extreme context_limit", "[ch
 
     bool found_critical = false;
     for (const auto& msg : msgs) {
-        if (msg["role"] == "system") {
+        if (msg["role"] == "user") {
             std::string content = msg["content"].get<std::string>();
             if (content.find("\u26A0 CONTEXT CRITICAL") != std::string::npos) {
                 found_critical = true;
@@ -483,7 +483,7 @@ TEST_CASE("ChatSession tool call warning at high iteration budget usage", "[chat
         auto msgs = body["messages"];
         if (!msgs.is_array()) continue;
         for (const auto& msg : msgs) {
-            if (msg["role"] == "system") {
+            if (msg["role"] == "user") {
                 std::string content = msg["content"].get<std::string>();
                 if (content.find("\u26A0 USAGE WARNING") != std::string::npos) {
                     found_warning = true;
@@ -542,8 +542,8 @@ TEST_CASE("ChatSession notice not injected when below thresholds", "[chat][notic
                 break;
             }
         }
-        // System messages should not contain notices either (thresholds too low)
-        if (msg["role"] == "system") {
+        // System / user messages should not contain notices (thresholds too low)
+        if (msg["role"] == "system" || msg["role"] == "user") {
             std::string content = msg["content"].get<std::string>();
             if (content.find("\u26A0") != std::string::npos) {
                 has_notice = true;
