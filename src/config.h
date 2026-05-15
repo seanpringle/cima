@@ -7,6 +7,10 @@
 #include <string>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
+using json = nlohmann::json;
+
 // Per-tab cancellation token: a shared pointer to an atomic bool.
 // Each tab gets its own token; when cancelled, the bool is set to true.
 // Worker threads hold a copy of the shared_ptr and periodically check *token.
@@ -23,7 +27,6 @@ struct Config {
     std::string api_key;
     std::string model = "deepseek-v4-flash";
     std::string reasoning_effort = "high";
-    std::string safe_dir;
     std::string search_api_key;
     std::string search_engine_id;
     std::string search_endpoint;
@@ -32,11 +35,6 @@ struct Config {
     int max_continuation_steps = 10;
     int continuation_delay_ms = 250;
     int context_limit = 300000; // model context window (tokens)
-    int compact_threshold = 90; // % that triggers compaction
-
-    // If non-empty, the session DB is loaded from this path at session
-    // start and saved to it on session close (and periodically).
-    std::string session_db_path;
 
     std::string system_prompt =
         "You are an AI coding assistant.\n"
@@ -91,5 +89,13 @@ struct Config {
         "you start implementation.\n"
         "\n";
 
-    static Config from_env();
+    /// Load config from ~/.config/cima/cima.json, applying defaults for
+    /// any missing fields.  Creates the file with defaults if it doesn't exist.
+    static Config load();
+
+    /// Path to the config file (~/.config/cima/cima.json).
+    static std::filesystem::path config_file_path();
+
+    /// Serialise the JSON-persisted fields (excludes system_prompt etc.).
+    json to_json() const;
 };

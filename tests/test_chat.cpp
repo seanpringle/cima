@@ -74,7 +74,6 @@ TEST_CASE("ChatSession simple Q&A", "[chat]") {
     cfg.api_key = "";
     cfg.model = "test-model";
     cfg.system_prompt = "You are helpful.";
-    cfg.safe_dir = "/tmp";
 
     ChatSession session(std::move(cfg));
     auto result = session.run_once("Say hi");
@@ -103,7 +102,6 @@ TEST_CASE("ChatSession payload includes reasoning_effort", "[chat]") {
     cfg.reasoning_effort = "high";
     cfg.context_limit = 1000;  // avoid model discovery request
     cfg.system_prompt = "You are helpful.";
-    cfg.safe_dir = "/tmp";
 
     ChatSession session(std::move(cfg));
     auto result = session.run_once("Say hi");
@@ -138,7 +136,6 @@ TEST_CASE("ChatSession tool call then content", "[chat]") {
     cfg.api_key = "";
     cfg.model = "test";
     cfg.system_prompt = "You are helpful.";
-    cfg.safe_dir = "/tmp";
 
     ChatSession session(std::move(cfg));
     auto result = session.run_once("List files");
@@ -166,7 +163,6 @@ TEST_CASE("ChatSession max tool iterations", "[chat]") {
     cfg.api_key = "";
     cfg.model = "test";
     cfg.system_prompt = "You are helpful.";
-    cfg.safe_dir = "/tmp";
     cfg.max_tool_iterations = 10;
 
     ChatSession session(std::move(cfg));
@@ -195,7 +191,6 @@ TEST_CASE("ChatSession reasoning content preserved", "[chat]") {
     cfg.api_key = "";
     cfg.model = "test";
     cfg.system_prompt = "You are helpful.";
-    cfg.safe_dir = "/tmp";
 
     ChatSession session(std::move(cfg));
     auto result = session.run_once("What is 6*7?");
@@ -239,7 +234,6 @@ TEST_CASE("ChatSession reasoning with tool calls", "[chat]") {
     cfg.api_key = "";
     cfg.model = "test";
     cfg.system_prompt = "You are helpful.";
-    cfg.safe_dir = "/tmp";
 
     ChatSession session(std::move(cfg));
     auto result = session.run_once("Check files");
@@ -285,7 +279,6 @@ TEST_CASE("ChatSession multi-chunk tool call args", "[chat]") {
     cfg.api_key = "";
     cfg.model = "test";
     cfg.system_prompt = "test";
-    cfg.safe_dir = "/tmp";
 
     ChatSession session(std::move(cfg));
     auto result = session.run_once("Read file");
@@ -312,7 +305,6 @@ TEST_CASE("ChatSession cancelled token aborts request", "[chat]") {
     cfg.api_base = server.base_url();
     cfg.model = "test";
     cfg.system_prompt = "test";
-    cfg.safe_dir = "/tmp";
 
     ChatSession session(std::move(cfg), token);
     auto result = session.run_once("Say hi");
@@ -356,7 +348,6 @@ TEST_CASE("ChatSession context warning injected at low context_limit", "[chat][n
     // Tiny context so even a short conversation exceeds 60%
     cfg.system_prompt = "test";
     cfg.context_limit = 30;
-    cfg.safe_dir = "/tmp";
 
     ChatSession session(std::move(cfg));
     auto result = session.run_once("List files");
@@ -406,7 +397,6 @@ TEST_CASE("ChatSession context critical injected at extreme context_limit", "[ch
     cfg.model = "test";
     cfg.system_prompt = "test";
     cfg.context_limit = 10;  // extremely small -> >90% usage
-    cfg.safe_dir = "/tmp";
 
     ChatSession session(std::move(cfg));
     auto result = session.run_once("List files");
@@ -457,7 +447,6 @@ TEST_CASE("ChatSession tool call warning at high iteration budget usage", "[chat
     cfg.system_prompt = "test";
     cfg.context_limit = 300000;  // high enough to avoid context notices
     cfg.max_tool_iterations = 5;
-    cfg.safe_dir = "/tmp";
 
     ChatSession session(std::move(cfg));
     auto result = session.run_once("List files");
@@ -517,7 +506,6 @@ TEST_CASE("ChatSession notice not injected when below thresholds", "[chat][notic
     cfg.model = "test";
     cfg.system_prompt = "test";
     cfg.context_limit = 300000;  // very high -> <1% usage
-    cfg.safe_dir = "/tmp";
 
     ChatSession session(std::move(cfg));
     auto result = session.run_once("List files");

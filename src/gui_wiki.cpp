@@ -62,8 +62,6 @@ void render_wiki_tab(Wiki& wiki, ImFont* mono_font) {
         EndTabBar();
     }
 
-    Separator();
-
     // ── Fetch data ──
     static std::string selected_page;
     static std::string selected_snippet;

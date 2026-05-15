@@ -3,6 +3,7 @@
 
 #include <chrono>
 #include <exception>
+#include <filesystem>
 #include <future>
 #include <mutex>
 #include <thread>
@@ -10,7 +11,8 @@
 
 ChatSession::ChatSession(Config config, CancellationToken cancelled)
     : model_(std::move(config.model)), reasoning_effort_(std::move(config.reasoning_effort)),
-      safe_dir_(std::make_shared<std::string>(std::move(config.safe_dir))),
+      safe_dir_(std::make_shared<std::string>(
+          std::filesystem::current_path().string())),
       api_base_(config.api_base), api_key_(config.api_key), max_iterations_(config.max_tool_iterations),
       context_limit_(config.context_limit),
       system_prompt_(std::move(config.system_prompt)),
@@ -41,16 +43,6 @@ ChatSession::ChatSession(Config config, CancellationToken cancelled)
     cont_slot_.max_steps = config.max_continuation_steps;
     cont_slot_.delay_ms = config.continuation_delay_ms;
     tools_.add(make_schedule_continuation_tool(cont_slot_, cancelled_));
-
-    // ── Session DB persistence ──
-    if (!config.session_db_path.empty()) {
-        auto load_result = session_db_.load_from_file(config.session_db_path);
-        if (!load_result) {
-            // If load fails (e.g. first run, file doesn't exist), that's OK —
-            // we'll start with a fresh DB and save on close.
-        }
-        session_db_.set_auto_save_path(config.session_db_path);
-    }
 }
 
 void ChatSession::set_wiki(Wiki* wiki) {

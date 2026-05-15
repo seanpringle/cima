@@ -2,7 +2,6 @@
 #include "gui_app.h"
 
 #include <curl/curl.h>
-#include <cstdlib>
 #include <iostream>
 #include <string>
 
@@ -17,19 +16,10 @@ static void print_usage() {
         << "  --api-base <url>    API endpoint (default: http://127.0.0.1:11000/v1)\n"
         << "  --force             Skip session integrity checks (warn + continue)\n"
         << "  -h, --help          Print this help\n\n"
-        << "Environment variables:\n"
-        << "  LLM_API / API_BASE   API endpoint (default: http://127.0.0.1:11000/v1)\n"
-        << "  LLM_KEY / API_KEY   API key (optional)\n"
-        << "  MODEL               Model name\n"
-        << "  LLM_SYSTEM_PROMPT / SYSTEM_PROMPT  System prompt for chat sessions (default: "
-           "built-in prompt)\n"
-        << "  SAFE_DIR            Tool sandbox directory\n"
-        << "  SEARCH_API_KEY      Google Custom Search API key (for web_search)\n"
-        << "  SEARCH_ENGINE_ID    Google Custom Search engine ID\n"
-        << "  SEARCH_ENDPOINT     Custom search endpoint with {query} placeholder\n"
-        << "                     (default: Wikipedia opensearch, no key needed)\n"
-        << "  READ_ONLY_PATHS     Colon-separated extra paths for read-only tools\n"
-        << "                     (default: /usr/include:/usr/share/doc)\n"
+        << "Configuration file: ~/.config/cima/cima.json\n"
+        << "  Created automatically on first run with default values.\n"
+        << "  Edit it to persist settings across sessions.\n"
+        << "  CLI flags override file values.\n"
         << std::flush;
 }
 
@@ -40,6 +30,9 @@ int main(int argc, char* argv[]) {
     std::string session_name;
     bool force = false;
 
+    // Load config from file first
+    auto cfg = Config::load();
+
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
         if (arg == "--help" || arg == "-h") {
@@ -47,9 +40,9 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         if (arg == "--model" && i + 1 < argc) {
-            setenv("MODEL", argv[++i], 1);
+            cfg.model = argv[++i];
         } else if (arg == "--api-base" && i + 1 < argc) {
-            setenv("LLM_API", argv[++i], 1);
+            cfg.api_base = argv[++i];
         } else if (arg == "--force") {
             force = true;
         } else if (arg[0] == '-') {
@@ -74,7 +67,6 @@ int main(int argc, char* argv[]) {
 
     int exit_code = 0;
     try {
-        auto cfg = Config::from_env();
         exit_code = gui_main(std::move(cfg), session_name, force);
     } catch (const std::exception& e) {
         std::cerr << "fatal: " << e.what() << std::endl;

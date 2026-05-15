@@ -1,136 +1,114 @@
 #include "config.h"
 
-#include <cstdlib>
+#include <fstream>
 #include <string>
-#include <unistd.h>
 
 // ---------------------------------------------------------------------------
-// Environment variable loading
+// Config file path
 // ---------------------------------------------------------------------------
 
-Config Config::from_env() {
+std::filesystem::path Config::config_file_path() {
+    const char* home = std::getenv("HOME");
+    if (!home || !home[0]) {
+        home = std::getenv("USERPROFILE");
+    }
+    if (!home || !home[0]) {
+        throw std::runtime_error("Cannot determine home directory (HOME not set)");
+    }
+    return std::filesystem::path(home) / ".config" / "cima" / "cima.json";
+}
+
+// ---------------------------------------------------------------------------
+// Serialise JSON-persisted fields (excludes system_prompt)
+// ---------------------------------------------------------------------------
+
+json Config::to_json() const {
+    json j;
+    j["api_base"] = api_base;
+    j["api_key"] = api_key;
+    j["model"] = model;
+    j["reasoning_effort"] = reasoning_effort;
+    j["search_api_key"] = search_api_key;
+    j["search_engine_id"] = search_engine_id;
+    j["search_endpoint"] = search_endpoint;
+    j["read_only_paths"] = read_only_paths;
+    j["max_tool_iterations"] = max_tool_iterations;
+    j["max_continuation_steps"] = max_continuation_steps;
+    j["continuation_delay_ms"] = continuation_delay_ms;
+    j["context_limit"] = context_limit;
+    return j;
+}
+
+// ---------------------------------------------------------------------------
+// Load config from file
+// ---------------------------------------------------------------------------
+
+Config Config::load() {
     Config cfg;
 
-    auto get_env = [](const char* name, const std::string& fallback) {
-        const char* val = std::getenv(name);
-        return val ? std::string(val) : fallback;
-    };
-
-    cfg.api_base = get_env("LLM_API", get_env("API_BASE", cfg.api_base));
-    cfg.api_key = get_env("LLM_KEY", get_env("API_KEY", cfg.api_key));
-    cfg.model = get_env("MODEL", cfg.model);
-    cfg.reasoning_effort =
-        get_env("LLM_REASONING_EFFORT", get_env("REASONING_EFFORT", cfg.reasoning_effort));
-    cfg.system_prompt = get_env("LLM_SYSTEM_PROMPT", get_env("SYSTEM_PROMPT", cfg.system_prompt));
-
-    {
-        const char* val = std::getenv("LLM_MAX_TOOL_ITERATIONS");
-        if (val && val[0]) {
-            int n = std::atoi(val);
-            if (n > 0)
-                cfg.max_tool_iterations = n;
+    auto path = config_file_path();
+    std::ifstream file(path);
+    if (file.is_open()) {
+        json j;
+        try {
+            file >> j;
+        } catch (...) {
+            // Corrupt file — proceed with defaults
         }
-    }
 
-    {
-        const char* val = std::getenv("LLM_MAX_CONTINUATION_STEPS");
-        if (val && val[0]) {
-            int n = std::atoi(val);
-            if (n >= 0)
-                cfg.max_continuation_steps = n;
+        if (j.contains("api_base"))         cfg.api_base = j["api_base"].get<std::string>();
+        if (j.contains("api_key"))          cfg.api_key = j["api_key"].get<std::string>();
+        if (j.contains("model"))            cfg.model = j["model"].get<std::string>();
+        if (j.contains("reasoning_effort")) cfg.reasoning_effort = j["reasoning_effort"].get<std::string>();
+        if (j.contains("search_api_key"))   cfg.search_api_key = j["search_api_key"].get<std::string>();
+        if (j.contains("search_engine_id")) cfg.search_engine_id = j["search_engine_id"].get<std::string>();
+        if (j.contains("search_endpoint"))  cfg.search_endpoint = j["search_endpoint"].get<std::string>();
+
+        if (j.contains("max_tool_iterations") && j["max_tool_iterations"].is_number_integer()) {
+            int n = j["max_tool_iterations"].get<int>();
+            if (n > 0) cfg.max_tool_iterations = n;
         }
-    }
-
-    {
-        const char* val = std::getenv("LLM_CONTINUATION_DELAY_MS");
-        if (val && val[0]) {
-            int n = std::atoi(val);
-            if (n >= 0)
-                cfg.continuation_delay_ms = n;
+        if (j.contains("max_continuation_steps") && j["max_continuation_steps"].is_number_integer()) {
+            int n = j["max_continuation_steps"].get<int>();
+            if (n >= 0) cfg.max_continuation_steps = n;
         }
-    }
-
-    {
-        const char* val = std::getenv("LLM_CONTEXT_LIMIT");
-        if (val && val[0]) {
-            int n = std::atoi(val);
-            if (n > 0)
-                cfg.context_limit = n;
+        if (j.contains("continuation_delay_ms") && j["continuation_delay_ms"].is_number_integer()) {
+            int n = j["continuation_delay_ms"].get<int>();
+            if (n >= 0) cfg.continuation_delay_ms = n;
         }
-    }
-
-    {
-        const char* val = std::getenv("LLM_COMPACT_THRESHOLD");
-        if (val && val[0]) {
-            int n = std::atoi(val);
-            if (n > 0 && n <= 100)
-                cfg.compact_threshold = n;
+        if (j.contains("context_limit") && j["context_limit"].is_number_integer()) {
+            int n = j["context_limit"].get<int>();
+            if (n > 0) cfg.context_limit = n;
         }
-    }
 
-    cfg.search_api_key = get_env("SEARCH_API_KEY", "");
-    cfg.search_engine_id = get_env("SEARCH_ENGINE_ID", "");
-    cfg.search_endpoint = get_env("SEARCH_ENDPOINT", "");
-
-    {
-        const char* safe = std::getenv("SAFE_DIR");
-        if (safe && safe[0]) {
-            cfg.safe_dir = safe;
-        }
-    }
-
-    // resolve safe_dir to canonical form
-    if (cfg.safe_dir.empty()) {
-        cfg.safe_dir = std::filesystem::current_path().string();
-    }
-    std::error_code ec;
-    auto canonical = std::filesystem::weakly_canonical(std::filesystem::path(cfg.safe_dir), ec);
-    if (!ec) {
-        cfg.safe_dir = canonical.string();
-    }
-
-    // ---- session DB persistence ----
-    {
-        const char* val = std::getenv("LLM_SESSION_DB_PATH");
-        if (val && val[0]) {
-            cfg.session_db_path = val;
-        }
-    }
-
-    // ---- read-only paths whitelist ----
-    // Default paths always included
-    cfg.read_only_paths = {"/usr/include", "/usr/share/doc"};
-
-    // READ_ONLY_PATHS env var (colon-separated) adds extra paths
-    {
-        const char* rop = std::getenv("READ_ONLY_PATHS");
-        if (rop && rop[0]) {
-            std::string s(rop);
-            size_t start = 0;
-            while (start < s.size()) {
-                auto colon = s.find(':', start);
-                std::string p =
-                    (colon == std::string::npos) ? s.substr(start) : s.substr(start, colon - start);
-                // Trim leading whitespace
-                while (!p.empty() && (p.front() == ' ' || p.front() == '\t'))
-                    p.erase(0, 1);
-                // Trim trailing whitespace
-                while (!p.empty() && (p.back() == ' ' || p.back() == '\t'))
-                    p.pop_back();
-                if (!p.empty()) {
-                    std::error_code ec2;
-                    auto canonical2 =
-                        std::filesystem::weakly_canonical(std::filesystem::path(p), ec2);
-                    if (!ec2) {
-                        cfg.read_only_paths.push_back(canonical2.string());
-                    } else {
-                        cfg.read_only_paths.push_back(p);
-                    }
+        if (j.contains("read_only_paths") && j["read_only_paths"].is_array()) {
+            cfg.read_only_paths.clear();
+            for (const auto& p : j["read_only_paths"]) {
+                if (p.is_string()) {
+                    cfg.read_only_paths.push_back(p.get<std::string>());
                 }
-                start = (colon == std::string::npos) ? s.size() : colon + 1;
+            }
+        }
+    } else {
+        // File doesn't exist — create directory and write defaults
+        std::error_code ec;
+        std::filesystem::create_directories(path.parent_path(), ec);
+        if (!ec) {
+            std::ofstream out(path);
+            if (out.is_open()) {
+                out << cfg.to_json().dump(2) << std::endl;
             }
         }
     }
+
+    // Default read-only paths — ensure they're present even if JSON omitted them
+    bool has_usr_include = false, has_usr_doc = false;
+    for (const auto& p : cfg.read_only_paths) {
+        if (p == "/usr/include")   has_usr_include = true;
+        if (p == "/usr/share/doc") has_usr_doc = true;
+    }
+    if (!has_usr_include) cfg.read_only_paths.insert(cfg.read_only_paths.begin(), "/usr/include");
+    if (!has_usr_doc)     cfg.read_only_paths.insert(cfg.read_only_paths.begin(), "/usr/share/doc");
 
     return cfg;
 }

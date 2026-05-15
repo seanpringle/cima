@@ -869,12 +869,6 @@ void render_chat_ui(TabInfo& tab, bool& done) {
 
     PushFont(ui.mono_font);
 
-    uint32_t inputFlags = ImGuiInputTextFlags_CtrlEnterForNewLine |
-        ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_WordWrap |
-        ImGuiInputTextFlags_CallbackAlways;
-
-    ImVec2 inputSize(0, std::max(GetFrameHeightWithSpacing() * 3, GetContentRegionAvail().y - 4));
-
     auto trimWhite = [](string_view cur) -> string_view {
         while (cur.size() && isspace(cur.front())) cur.remove_prefix(1);
         while (cur.size() && isspace(cur.back())) cur.remove_suffix(1);
@@ -920,6 +914,12 @@ void render_chat_ui(TabInfo& tab, bool& done) {
     if (!chat.running && IsWindowAppearing()) {
         SetKeyboardFocusHere();
     }
+
+    uint32_t inputFlags = ImGuiInputTextFlags_CtrlEnterForNewLine |
+        ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_WordWrap |
+        ImGuiInputTextFlags_CallbackAlways;
+
+    ImVec2 inputSize(0, std::max(GetFrameHeightWithSpacing() * 3, GetContentRegionAvail().y - 4));
 
     if (InputTextMultiline("##input", buffer.data(), buffer.size(), inputSize, inputFlags, InputTextCallback, &ui.cursor_pos) && !chat.running) {
         string input(trimWhite(buffer.data()));
@@ -997,35 +997,29 @@ void render_chat_ui(TabInfo& tab, bool& done) {
         string sep = " :: ";
 
         // Right-aligned footer line
-        auto footerWidth = GetContentRegionAvail().x;
         auto stateSize = CalcTextSize(stateInfo.c_str());
         auto branchSize = CalcTextSize(branchInfo.c_str());
         auto tokenSize = CalcTextSize(tokenInfo.c_str());
         auto sepSize = CalcTextSize(sep.c_str());
 
-        float rightEdge = GetCursorPosX() + footerWidth;
-
         // Lay out right-aligned: [branch] :: [tokens] :: [state]
-        ImVec2 pos = GetCursorPos();
-        float x = rightEdge;
-        x -= stateSize.x;
-        GetForegroundDrawList()->AddText(
-            ImVec2(x, pos.y), stateColor, stateInfo.c_str());
-        x -= sepSize.x;
-        GetForegroundDrawList()->AddText(
-            ImVec2(x, pos.y), GetColorU32(ImGuiCol_TextDisabled), sep.c_str());
-        x -= tokenSize.x;
-        GetForegroundDrawList()->AddText(
-            ImVec2(x, pos.y), tokenColor, tokenInfo.c_str());
-        x -= sepSize.x;
-        GetForegroundDrawList()->AddText(
-            ImVec2(x, pos.y), GetColorU32(ImGuiCol_TextDisabled), sep.c_str());
-        x -= branchSize.x;
-        GetForegroundDrawList()->AddText(
-            ImVec2(x, pos.y), ImColor(IM_COL32(255, 180, 50, 255)), branchInfo.c_str());
+        ImVec2 pos = GetCursorScreenPos() - ImVec2(0, GetFrameHeight())
+            + ImVec2(GetContentRegionAvail().x - GetStyle().FramePadding.x,0);
 
-        // Advance cursor past footer height
-        SetCursorPosY(pos.y + stateSize.y);
+        pos = pos - ImVec2(branchSize.x,0);
+        GetForegroundDrawList()->AddText(pos, ImColor(IM_COL32(255, 180, 50, 255)), branchInfo.c_str());
+
+        pos = pos - ImVec2(sepSize.x,0);
+        GetForegroundDrawList()->AddText(pos, GetColorU32(ImGuiCol_TextDisabled), sep.c_str());
+
+        pos = pos - ImVec2(tokenSize.x,0);
+        GetForegroundDrawList()->AddText(pos, tokenColor, tokenInfo.c_str());
+
+        pos = pos - ImVec2(sepSize.x,0);
+        GetForegroundDrawList()->AddText(pos, GetColorU32(ImGuiCol_TextDisabled), sep.c_str());
+
+        pos = pos - ImVec2(stateSize.x,0);
+        GetForegroundDrawList()->AddText(pos, stateColor, stateInfo.c_str());
     }
 }
 
