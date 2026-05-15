@@ -44,6 +44,9 @@ class AppSession {
     /// Remove an assistant filename from the manifest and persist.
     void remove_assistant_file(const std::string& filename);
 
+    /// Replace the entire assistant file list and persist.
+    void set_assistant_files(const std::vector<std::string>& files);
+
     /// Persist state.json to disk.
     void save_manifest();
 

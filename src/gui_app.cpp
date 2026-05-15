@@ -376,21 +376,25 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                     tab.ui_state.models_future.wait();
                 }
 
+                // Copy title before any mutations/erase (avoids dangling ref UB)
+                std::string closed_title = tab.title;
+
                 // Save consolidated assistant data before closing
                 save_tab_to_disk(tab, *app_session);
 
                 // Remove from manifest
-                app_session->remove_assistant_file(tab.title + ".json");
+                app_session->remove_assistant_file(closed_title + ".json");
 
-                free_lotr_name(tab.title);
-                tabs.erase(tabs.begin() + active_tab);
-
-                // Delete the consolidated JSON file from disk
+                // Delete the consolidated JSON file — do this before erase
+                // while `tab` is still alive (dangling ref after erase is UB).
                 {
                     std::error_code ec;
                     std::filesystem::remove(
-                        app_session->session_file_path(tab.title + ".json"), ec);
+                        app_session->session_file_path(closed_title + ".json"), ec);
                 }
+
+                free_lotr_name(closed_title);
+                tabs.erase(tabs.begin() + active_tab);
                 if (active_tab >= (int)tabs.size())
                     active_tab = (int)tabs.size() - 1;
                 if (active_tab < 0)
@@ -539,17 +543,20 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
 
     // ── Update manifest with current tabs ──
     {
-        // Rebuild assistant file list from tabs
-        for (auto& tab : tabs) {
-            app_session->add_assistant_file(tab.title + ".json");
+        // Rebuild assistant file list from tabs and persist once
+        std::vector<std::string> filenames;
+        filenames.reserve(tabs.size());
+        for (const auto& tab : tabs) {
+            filenames.push_back(tab.title + ".json");
         }
+        app_session->set_assistant_files(filenames);
 
         std::error_code ec;
         auto cwd = std::filesystem::current_path(ec);
         if (!ec) {
             app_session->set_last_cwd(cwd.string());
         }
-        app_session->save_manifest();
+        // set_assistant_files already called save_manifest()
     }
 
     ImGui_ImplSDLRenderer3_Shutdown();

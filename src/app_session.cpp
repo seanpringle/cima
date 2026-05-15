@@ -112,21 +112,33 @@ void AppSession::load_existing(bool force) {
                 }
             }
         } else {
-            // No files array — scan directory for .json files excluding state.json
-            assistant_files_.clear();
-            for (const auto& entry : std::filesystem::directory_iterator(session_dir_)) {
-                if (entry.is_regular_file()) {
-                    std::string fname = entry.path().filename().string();
-                    if (fname != "state.json" &&
-                        fname.size() > 5 && fname.substr(fname.size() - 5) == ".json") {
-                        assistant_files_.push_back(fname);
-                    }
-                }
-            }
-            std::sort(assistant_files_.begin(), assistant_files_.end());
+            // No files array — start with empty list (don't scan directory,
+            // which could resurrect orphan files as ghost tabs).
         }
     } else {
         throw std::runtime_error("Unexpected state.json format: expected array or object");
+    }
+
+    // ── Remove orphan .json files not listed in the manifest ──
+    {
+        std::error_code ec;
+        std::filesystem::directory_iterator dir(session_dir_, ec);
+        if (!ec) {
+            for (const auto& entry : dir) {
+                if (!entry.is_regular_file()) continue;
+                auto fname = entry.path().filename().string();
+                if (fname == "state.json") continue;
+                if (fname.size() <= 5 ||
+                    fname.substr(fname.size() - 5) != ".json")
+                    continue;
+
+                // If this file isn't in our assistant list, delete it
+                if (std::find(assistant_files_.begin(), assistant_files_.end(),
+                        fname) == assistant_files_.end()) {
+                    std::filesystem::remove(entry.path(), ec); // ignore errors
+                }
+            }
+        }
     }
 
     // Warn if last_cwd differs from current working directory
@@ -182,6 +194,11 @@ void AppSession::remove_assistant_file(const std::string& filename) {
         assistant_files_.erase(it, assistant_files_.end());
         save_manifest();
     }
+}
+
+void AppSession::set_assistant_files(const std::vector<std::string>& files) {
+    assistant_files_ = files;
+    save_manifest();
 }
 
 // -----------------------------------------------------------------------
