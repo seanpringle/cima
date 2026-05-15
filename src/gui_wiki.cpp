@@ -205,6 +205,20 @@ void render_wiki_tab(Wiki& wiki, ImFont* mono_font) {
                     if (IsItemDeactivatedAfterEdit()) {
                         do_rename();
                     }
+
+                    // Delete button (red, destructive)
+                    SameLine();
+                    PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.15f, 0.15f, 1.0f));
+                    PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
+                    PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.5f, 0.1f, 0.1f, 1.0f));
+                    if (SmallButton("Delete")) {
+                        wiki.delete_snippet(selected_snippet);
+                        selected_snippet.clear();
+                        snippet_name_buf[0] = '\0';
+                        snippet_content_buf[0] = '\0';
+                    }
+                    PopStyleColor(3);
+
                     PopID();
 
                     // Content (multi-line, auto-save on every change)
