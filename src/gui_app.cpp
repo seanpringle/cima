@@ -264,10 +264,17 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                     tab.ui_state.models_future.wait();
                 }
 
-                // Remove from AppSession manifest
+                // Remove from AppSession manifest and delete files
                 {
                     std::string agent_filename = tab.title + ".db";
                     app_session->remove_agent_db(agent_filename);
+
+                    // Delete the agent DB and auxiliary files from disk
+                    std::error_code ec;
+                    std::string db_path = app_session->agent_db_path(agent_filename);
+                    std::filesystem::remove(db_path, ec);
+                    std::filesystem::remove(db_path + ".log", ec);
+                    std::filesystem::remove(db_path + ".plan.json", ec);
                 }
 
                 free_lotr_name(tab.title);
