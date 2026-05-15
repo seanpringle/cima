@@ -23,6 +23,9 @@ class ChatClient {
 
     void set_cancelled(CancellationToken t) { cancelled_ = std::move(t); }
 
+    void set_api_base(const std::string& base) { api_base_ = base; }
+    void set_api_key(const std::string& key) { api_key_ = key; }
+
     Result<json> chat(const json& payload);
     Result<void> stream_chat(const json& payload, SSEParser::Callbacks callbacks);
 

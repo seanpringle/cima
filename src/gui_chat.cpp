@@ -534,12 +534,11 @@ void render_config_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
             bool is_selected = (p.name == tab.provider_name);
             if (Selectable(p.name.c_str(), is_selected)) {
                 if (p.name != tab.provider_name) {
-                    // Provider changed — update tab and re-fetch models
+                    // Provider changed — update session client and re-fetch models
+                    session.set_provider(p);
                     tab.provider_name = p.name;
                     tab.model_name = p.model;
                     tab.reasoning_effort = p.reasoning_effort;
-                    session.set_model(p.model);
-                    session.set_reasoning_effort(p.reasoning_effort);
                     trigger_model_fetch();
                 }
             }

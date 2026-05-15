@@ -41,6 +41,18 @@ ChatSession::ChatSession(const Config& config, const Provider& provider,
 
 }
 
+void ChatSession::set_provider(const Provider& provider) {
+    provider_name_ = provider.name;
+    api_base_ = provider.api_base;
+    api_key_ = provider.api_key;
+    model_ = provider.model;
+    reasoning_effort_ = provider.reasoning_effort;
+    context_limit_ = provider.context_limit;
+    context_limit_discovered_ = false; // will re-discover on next run
+    client_.set_api_base(provider.api_base);
+    client_.set_api_key(provider.api_key);
+}
+
 void ChatSession::set_wiki(Wiki* wiki) {
     wiki_ = wiki;
     if (wiki_) {

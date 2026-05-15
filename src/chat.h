@@ -82,6 +82,10 @@ class ChatSession {
     /// Provider name this session belongs to.
     const std::string& provider_name() const { return provider_name_; }
 
+    /// Update the session to use a different provider at runtime.
+    /// Updates api_base, api_key, model, reasoning_effort, and the underlying ChatClient.
+    void set_provider(const Provider& provider);
+
   private:
     std::string model_;
     std::string reasoning_effort_;
