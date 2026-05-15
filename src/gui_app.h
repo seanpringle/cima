@@ -64,7 +64,8 @@ struct TabInfo {
     std::unique_ptr<AsyncChatState> chat_state;
     ChatUIState ui_state;
     int id = 0;
-    std::string title;          // Culture ship name
+    std::string title;          // Culture ship name (display label)
+    std::string agent_filename; // e.g. "Gandalf.db" — on-disk filename, may differ from title
     std::string model_name;     // actual model name (shown in dropdown)
     std::string git_branch;
     std::string workspace_path;

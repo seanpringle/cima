@@ -668,6 +668,60 @@ void render_chat_controls(TabInfo& tab) {
     SetCursorPos(ImVec2(0, GetFrameHeightWithSpacing()));
 }
 
+// ── Tag expansion for @wiki-page and !snippet-name references ──
+// Expands @pagename to the full wiki page body, and !snippetname to the
+// full snippet content.  Non-matching tags are left as-is.
+static std::string expand_tags(std::string input, Wiki* wiki) {
+    if (!wiki || input.find('@') == std::string::npos && input.find('!') == std::string::npos)
+        return input;
+
+    std::string result;
+    size_t i = 0;
+    while (i < input.size()) {
+        if (input[i] == '@') {
+            size_t start = i + 1;
+            size_t end = start;
+            while (end < input.size() && !std::isspace(static_cast<unsigned char>(input[end])))
+                end++;
+            std::string name = input.substr(start, end - start);
+            if (!name.empty()) {
+                auto page = wiki->read_page(name);
+                if (page) {
+                    result += *page;
+                    i = end;
+                    continue;
+                }
+            }
+        } else if (input[i] == '!') {
+            size_t start = i + 1;
+            size_t end = start;
+            while (end < input.size() && !std::isspace(static_cast<unsigned char>(input[end])))
+                end++;
+            std::string name = input.substr(start, end - start);
+            if (!name.empty()) {
+                auto snippets = wiki->list_snippets();
+                if (snippets) {
+                    bool found = false;
+                    for (const auto& [sn, content] : *snippets) {
+                        if (sn == name) {
+                            result += content;
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (found) {
+                        i = end;
+                        continue;
+                    }
+                }
+            }
+        }
+        result += input[i];
+        i++;
+    }
+    return result;
+}
+
 void render_chat_ui(TabInfo& tab, bool& done) {
     auto& ui = tab.ui_state;
     auto& chat = *tab.chat_state;
@@ -812,85 +866,68 @@ void render_chat_ui(TabInfo& tab, bool& done) {
 
     PopFont();
 
-    // ── input area ──
-    Separator();
-
-    // ── Wiki page reference combo (inserts page name at cursor) ──
+    // ── Wiki page reference combo (inserts @pagename tag at cursor) ──
     {
         auto wiki = tab.session->wiki();
         if (wiki) {
             auto pages_result = wiki->list_pages();
-            if (pages_result && !pages_result->empty()) {
-                static string selected_page;
-                string preview = selected_page.empty() ? "Wiki@..." : selected_page;
-                SetNextItemWidth(GetContentRegionAvail().x);
-                if (BeginCombo("##wiki-ref", preview.c_str())) {
+            SetNextItemWidth(GetContentRegionAvail().x/2 - GetStyle().ItemSpacing.y/2);
+            if (BeginCombo("##wiki-ref", "@wiki")) {
+                if (pages_result && !pages_result->empty()) {
                     for (const auto& page : *pages_result) {
-                        bool is_selected = (page == selected_page);
-                        if (Selectable(page.c_str(), is_selected)) {
-                            selected_page = page;
-                            // Insert page name at cursor position (no trailing space)
+                        if (Selectable(page.c_str())) {
+                            // Insert "@pagename" tag at cursor position (no trailing space)
+                            std::string tag = "@" + page;
                             auto& buf = ui.input_buffer;
                             int pos = ui.cursor_pos;
                             if (pos < 0 || (size_t)pos > strlen(buf.data()))
                                 pos = (int)strlen(buf.data()); // append
                             // Make room and insert into buffer
                             size_t room = buf.size() - strlen(buf.data()) - 1;
-                            size_t insert_len = page.size();
+                            size_t insert_len = tag.size();
                             if (insert_len > room) insert_len = room;
                             memmove(buf.data() + pos + insert_len,
                                     buf.data() + pos,
                                     strlen(buf.data()) - pos + 1);
-                            memcpy(buf.data() + pos, page.data(), insert_len);
+                            memcpy(buf.data() + pos, tag.data(), insert_len);
                             ui.cursor_pos = pos + (int)insert_len;
                         }
                     }
-                    EndCombo();
                 }
+                EndCombo();
             }
         }
     }
 
-    // ── Snippet reference combo (inserts content at cursor) ──
+    // ── Snippet reference combo (inserts !snippetname tag at cursor) ──
     {
         auto wiki = tab.session->wiki();
         if (wiki) {
             auto snippets_result = wiki->list_snippets();
             if (snippets_result) {
-                static string selected_snippet;
-                // Clear stale selection (snippet was renamed/deleted in Wiki tab)
-                if (!selected_snippet.empty()) {
-                    bool found = false;
-                    for (const auto& [name, _] : *snippets_result) {
-                        if (name == selected_snippet) { found = true; break; }
-                    }
-                    if (!found) selected_snippet.clear();
-                }
                 // Show combo only if there are snippets to pick from
-                if (!snippets_result->empty()) {
-                string preview = selected_snippet.empty() ? "Snippet@..." : selected_snippet;
+                SameLine(0,GetStyle().ItemSpacing.y);
                 SetNextItemWidth(GetContentRegionAvail().x);
-                if (BeginCombo("##snippet-ref", preview.c_str())) {
+                if (BeginCombo("##snippet-ref", "!snippet")) {
                     for (const auto& [name, content] : *snippets_result) {
-                        bool is_selected = (name == selected_snippet);
-                        if (Selectable(name.c_str(), is_selected)) {
-                            selected_snippet = name;
+                        if (Selectable(name.c_str())) {
+                            // Insert "!snippetname" tag at cursor position
+                            std::string tag = "!" + name;
                             auto& buf = ui.input_buffer;
                             int pos = ui.cursor_pos;
                             if (pos < 0 || (size_t)pos > strlen(buf.data()))
                                 pos = (int)strlen(buf.data());
                             size_t room = buf.size() - strlen(buf.data()) - 1;
-                            size_t insert_len = content.size();
+                            size_t insert_len = tag.size();
                             if (insert_len > room) insert_len = room;
                             memmove(buf.data() + pos + insert_len,
                                     buf.data() + pos,
                                     strlen(buf.data()) - pos + 1);
-                            memcpy(buf.data() + pos, content.data(), insert_len);
+                            memcpy(buf.data() + pos, tag.data(), insert_len);
                             ui.cursor_pos = pos + (int)insert_len;
                         }
                     }
                     EndCombo();
-                }
                 }
             }
         }
@@ -955,14 +992,15 @@ void render_chat_ui(TabInfo& tab, bool& done) {
     if (InputTextMultiline("##input", buffer.data(), buffer.size(), inputSize, inputFlags, InputTextCallback, &ui.cursor_pos) && !chat.running) {
         string input(trimWhite(buffer.data()));
         if (input.size()) {
+            // Push to UI with tags visible (user sees @Page / !Snippet)
             push_entry(ui, EntryType::UserText, input, false);
-            start_chat(chat, session, input);
+            // Expand @wiki-page and !snippet-name tags before sending to the agent
+            string expanded = expand_tags(input, tab.session->wiki());
+            start_chat(chat, session, expanded);
             for (auto it = history.begin(); it != history.end();
                 it = *it == input ? history.erase(it): ++it);
             history.push_back(input);
             buffer.front() = 0;
-
-
         }
     }
 

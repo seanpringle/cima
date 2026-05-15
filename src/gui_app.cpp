@@ -120,8 +120,26 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
         TabInfo tab;
         tab.id = next_tab_id++;
         tab.model_name = model_name;
-        // Generate a Culture ship name for the tab title
-        tab.title = generate_lotr_name();
+
+        // Determine the agent DB filename: if one was given (e.g. from a
+        // resumed session or freshly created session), use it; otherwise
+        // derive one from a new random title.
+        std::string agent_filename;
+        if (!db_filename.empty()) {
+            agent_filename = db_filename;
+            // Derive the display title from the filename stem:
+            // "Gandalf.db" -> "Gandalf"
+            std::string stem = db_filename;
+            if (stem.size() >= 3 && stem.substr(stem.size() - 3) == ".db") {
+                stem = stem.substr(0, stem.size() - 3);
+            }
+            tab.title = stem;
+        } else {
+            tab.title = generate_lotr_name();
+            agent_filename = tab.title + ".db";
+        }
+        tab.agent_filename = agent_filename;
+
         tab.chat_state = std::make_unique<AsyncChatState>();
         tab.session = std::make_unique<ChatSession>(cfg, tab.chat_state->cancelled);
         tab.session->set_agent_name(tab.title);
@@ -136,9 +154,6 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
 
         // Set up session DB persistence via AppSession
         {
-            std::string agent_filename = db_filename.empty()
-                ? tab.title + ".db"
-                : db_filename;
             std::string db_path = app_session->agent_db_path(agent_filename);
             tab.session->session_db().set_auto_save_path(db_path);
             tab.session->session_db().load_from_file(db_path);
@@ -152,18 +167,12 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
         // Load chat UI history from the append-only log (separate from
         // SessionDB so the agent can compact messages without losing history).
         {
-            std::string agent_filename = db_filename.empty()
-                ? tab.title + ".db"
-                : db_filename;
             std::string log_path = app_session->agent_db_path(agent_filename) + ".log";
             tab.ui_state.load_chat_log(log_path);
         }
 
         // Load plan file (plan + comments persisted across sessions).
         {
-            std::string agent_filename = db_filename.empty()
-                ? tab.title + ".db"
-                : db_filename;
             std::string plan_path = app_session->agent_db_path(agent_filename) + ".plan.json";
             tab.session->plan().load_from_file(plan_path);
         }
@@ -265,7 +274,7 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                 }
 
                 // Capture the agent filename before erase (tab ref is dangling after)
-                std::string agent_filename = tab.title + ".db";
+                std::string agent_filename = tab.agent_filename;
 
                 // Remove from AppSession manifest
                 app_session->remove_agent_db(agent_filename);
