@@ -166,6 +166,13 @@ Result<std::string> ChatClient::http_get(const std::string& url) {
         return std::unexpected(std::string("curl error: ") + curl_easy_strerror(res));
     }
     if (http_code != 200) {
+        // Log request URL and error response for 4xx errors
+        if (http_code >= 400 && http_code < 500) {
+            std::cerr << "HTTP " << http_code << " error for GET " << url << "\n";
+            if (!body.empty()) {
+                std::cerr << "Response body:\n" << body << std::endl;
+            }
+        }
         return std::unexpected("HTTP " + std::to_string(http_code));
     }
     return body;
@@ -295,9 +302,18 @@ Result<json> ChatClient::chat(const json& payload) {
     }
 
     if (http_code != 200) {
-        // Log the full response body to stderr for debugging.
-        if (!body.empty()) {
-            std::cerr << "HTTP " << http_code << " response body:\n" << body << std::endl;
+        // Log request details and error response for 4xx errors
+        if (http_code >= 400 && http_code < 500) {
+            std::cerr << "HTTP " << http_code << " error for POST " << url() << "\n";
+            std::cerr << "Request body:\n" << payload_str.substr(0, 2000) << "\n";
+            if (!body.empty()) {
+                std::cerr << "Response body:\n" << body << std::endl;
+            }
+        } else {
+            // Log just the response body for other errors
+            if (!body.empty()) {
+                std::cerr << "HTTP " << http_code << " response body:\n" << body << std::endl;
+            }
         }
         std::string msg = "HTTP " + std::to_string(http_code);
         if (!body.empty()) {
@@ -404,9 +420,18 @@ Result<void> ChatClient::stream_chat(const json& payload, SSEParser::Callbacks c
     }
 
     if (http_code != 200) {
-        // Log the full raw response to stderr for debugging.
-        if (!raw_response_.empty()) {
-            std::cerr << "HTTP " << http_code << " response body:\n" << raw_response_ << std::endl;
+        // Log request details and error response for 4xx errors
+        if (http_code >= 400 && http_code < 500) {
+            std::cerr << "HTTP " << http_code << " error for POST " << url() << "\n";
+            std::cerr << "Request body:\n" << payload_str.substr(0, 2000) << "\n";
+            if (!raw_response_.empty()) {
+                std::cerr << "Response body:\n" << raw_response_ << std::endl;
+            }
+        } else {
+            // Log just the response body for other errors
+            if (!raw_response_.empty()) {
+                std::cerr << "HTTP " << http_code << " response body:\n" << raw_response_ << std::endl;
+            }
         }
         auto msg = "HTTP " + std::to_string(http_code);
         if (!raw_response_.empty()) {
