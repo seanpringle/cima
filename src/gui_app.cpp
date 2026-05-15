@@ -305,20 +305,7 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
             if (BeginTabBar("##chat_tabs", ImGuiTabBarFlags_NoTooltip)) {
                 // ── Wiki tab (read-only, first in the tab bar) ──
                 if (BeginTabItem("Wiki")) {
-                    auto padding = GetStyle().WindowPadding;
-                    auto space = GetContentRegionAvail();
-
-                    SetCursorPos(ImVec2(GetCursorPosX() - padding.x,
-                        GetCursorPosY() - GetStyle().ItemSpacing.y));
-                    BeginChild("##wiki_view",
-                        ImVec2(space.x + padding.x * 2,
-                            space.y + padding.y * 2 + GetStyle().ItemSpacing.y),
-                        ImGuiChildFlags_None,
-                        ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-
                     render_wiki_tab(wiki, mono_font);
-
-                    EndChild();
                     EndTabItem();
                 }
 
@@ -363,6 +350,12 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                                 ImGuiWindowFlags_None);
 
                             if (BeginTabBar("##session-tabs")) {
+                                // Config first so it's the default focus — model list loads
+                                // as soon as the assistant tab is created.
+                                if (BeginTabItem("Config")) {
+                                    render_config_tab(tab, mono_font);
+                                    EndTabItem();
+                                }
                                 if (BeginTabItem("Plan")) {
                                     auto plan_result = tab.session->plan().read_plan();
                                     if (plan_result) {
@@ -376,10 +369,6 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                                 }
                                 if (BeginTabItem("Database")) {
                                     render_session_db_view(tab.session->session_db());
-                                    EndTabItem();
-                                }
-                                if (BeginTabItem("Config")) {
-                                    render_config_tab(tab, mono_font);
                                     EndTabItem();
                                 }
                                 EndTabBar();
