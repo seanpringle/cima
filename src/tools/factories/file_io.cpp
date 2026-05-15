@@ -50,6 +50,12 @@ Tool make_read_file_lines_tool(std::shared_ptr<std::string> safe_dir_ptr,
         if (max_lines < 1) max_lines = 1;
         if (max_lines > 500) max_lines = 500;
 
+        std::error_code ec;
+        if (std::filesystem::exists(*resolved, ec) &&
+            !std::filesystem::is_regular_file(*resolved, ec)) {
+            return std::unexpected("Not a regular file: " + *resolved);
+        }
+
         std::ifstream file(*resolved);
         if (!file.is_open()) {
             return std::unexpected("Failed to open file: " + *resolved);
@@ -142,6 +148,12 @@ Tool make_read_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
             offset = 0;
         if (max_lines < 1)
             max_lines = 1;
+
+        std::error_code ec;
+        if (std::filesystem::exists(*resolved, ec) &&
+            !std::filesystem::is_regular_file(*resolved, ec)) {
+            return std::unexpected("Not a regular file: " + *resolved);
+        }
 
         std::ifstream file(*resolved);
         if (!file.is_open()) {
@@ -245,6 +257,12 @@ Tool make_edit_file_tool(std::shared_ptr<std::string> safe_dir_ptr) {
         auto resolved = resolve_path(raw, *safe_dir_ptr);
         if (!resolved) {
             return std::unexpected(resolved.error());
+        }
+
+        std::error_code ec;
+        if (std::filesystem::exists(*resolved, ec) &&
+            !std::filesystem::is_regular_file(*resolved, ec)) {
+            return std::unexpected("Not a regular file: " + *resolved);
         }
 
         // Read the file

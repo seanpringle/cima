@@ -2,6 +2,7 @@
 #include "plan.h"
 
 #include <chrono>
+#include <exception>
 #include <future>
 #include <mutex>
 #include <thread>
@@ -175,7 +176,8 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
 
         bool produced_content = false;
 
-        for (int iter = 0; iter < max_iterations_; iter++) {
+        try {
+            for (int iter = 0; iter < max_iterations_; iter++) {
             // Refresh session metadata so the agent can see current context usage
             // via SELECT * FROM metadata.
             session_db_.refresh_metadata(model_, context_limit_, last_usage_,
@@ -305,7 +307,12 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                                     "\xE2\x86\x92 " + call.name + "(" + call.arguments + ")",
                                     OutputType::ToolInvocation);
                             }
-                            auto tr = tools_.execute(call.name, call.arguments);
+                            Result<std::string> tr;
+                            try {
+                                tr = tools_.execute(call.name, call.arguments);
+                            } catch (const std::exception& e) {
+                                tr = std::unexpected(std::string(e.what()));
+                            }
                             auto result = tr ? *tr : tr.error();
                             session_db_.add_tool(call.id, result);
                         }
@@ -338,7 +345,12 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                                         ")",
                                     OutputType::ToolInvocation);
                             }
-                            auto tr = futures[i].get();
+                            Result<std::string> tr;
+                            try {
+                                tr = futures[i].get();
+                            } catch (const std::exception& e) {
+                                tr = std::unexpected(std::string(e.what()));
+                            }
                             auto result = tr ? *tr : tr.error();
                             session_db_.add_tool(calls[i].id, result);
                         }
@@ -361,7 +373,12 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                             output_cb_("\xE2\x86\x92 " + call.name + "(" + call.arguments + ")",
                                 OutputType::ToolInvocation);
                         }
-                        auto tr = tools_.execute(call.name, call.arguments);
+                        Result<std::string> tr;
+                        try {
+                            tr = tools_.execute(call.name, call.arguments);
+                        } catch (const std::exception& e) {
+                            tr = std::unexpected(std::string(e.what()));
+                        }
                         auto result = tr ? *tr : tr.error();
                         session_db_.add_tool(call.id, result);
                     }
@@ -383,6 +400,11 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
             last_reasoning = reasoning;
             produced_content = true;
             break;
+            }
+        } catch (const std::exception& e) {
+            session_db_.truncate_conversation(turn_snapshot);
+            cont_slot_.prompt.reset();
+            return std::unexpected(std::string(e.what()));
         }
 
         if (!produced_content) {

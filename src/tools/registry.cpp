@@ -172,7 +172,12 @@ Result<std::string> ToolRegistry::execute(const std::string& name, const std::st
         return future.get();
     }
 
-    return tool->execute(args);
+    try {
+        return tool->execute(args);
+    } catch (const std::exception& e) {
+        return std::unexpected(
+            std::string("tool '") + tool->name + "' threw: " + e.what());
+    }
 }
 
 Tool* ToolRegistry::find(const std::string& name) {
