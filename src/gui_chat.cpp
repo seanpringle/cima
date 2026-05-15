@@ -591,6 +591,29 @@ void render_chat_controls(TabInfo& tab) {
         stateColor = IM_COL32(180, 180, 180, 255); // grey
     }
 
+    // ── Context usage percentage (from metadata, for token colour) ──
+    int context_pct = 0;
+    {
+        auto meta = session.session_db().execute(
+            "SELECT value FROM metadata WHERE key = 'context_usage_percent'");
+        if (meta) {
+            try {
+                auto arr = json::parse(*meta);
+                if (arr.is_array() && !arr.empty() && arr[0].contains("value")) {
+                    context_pct = std::stoi(arr[0]["value"].get<std::string>());
+                }
+            } catch (...) {}
+        }
+    }
+
+    ImU32 tokenColor;
+    if (context_pct >= 90)
+        tokenColor = IM_COL32(255, 68, 68, 255);      // red — critical
+    else if (context_pct >= 60)
+        tokenColor = IM_COL32(255, 208, 0, 255);       // yellow — warning
+    else
+        tokenColor = IM_COL32(180, 180, 180, 255);     // grey — normal
+
     // ── Token count & branch info ──
     string tokenInfo = std::to_string(session.last_usage().total_tokens) + " tokens";
 
@@ -629,7 +652,7 @@ void render_chat_controls(TabInfo& tab) {
     GetForegroundDrawList()->AddText(
         GetWindowPos() + sep2Pos, GetColorU32(ImGuiCol_TextDisabled), sep.c_str());
     GetForegroundDrawList()->AddText(
-        GetWindowPos() + tokenPos, ImColor(IM_COL32(180, 180, 180, 255)), tokenInfo.c_str());
+        GetWindowPos() + tokenPos, tokenColor, tokenInfo.c_str());
     GetForegroundDrawList()->AddText(
         GetWindowPos() + sep1Pos, GetColorU32(ImGuiCol_TextDisabled), sep.c_str());
     GetForegroundDrawList()->AddText(

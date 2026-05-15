@@ -375,7 +375,7 @@ TEST_CASE("ChatSession context warning injected at low context_limit", "[chat][n
     for (const auto& msg : msgs) {
         if (msg["role"] == "system") {
             std::string content = msg["content"].get<std::string>();
-            if (content.find("[context warning:") != std::string::npos) {
+            if (content.find("**\u26A0 Context warning:") != std::string::npos) {
                 found_notice = true;
                 CHECK(content.find("~") != std::string::npos);
                 break;
@@ -423,7 +423,7 @@ TEST_CASE("ChatSession context critical injected at extreme context_limit", "[ch
     for (const auto& msg : msgs) {
         if (msg["role"] == "system") {
             std::string content = msg["content"].get<std::string>();
-            if (content.find("[context critical:") != std::string::npos) {
+            if (content.find("**\u26A0 Context critical:") != std::string::npos) {
                 found_critical = true;
                 break;
             }
@@ -485,7 +485,7 @@ TEST_CASE("ChatSession tool call warning at high iteration budget usage", "[chat
         for (const auto& msg : msgs) {
             if (msg["role"] == "system") {
                 std::string content = msg["content"].get<std::string>();
-                if (content.find("[usage warning:") != std::string::npos) {
+                if (content.find("**\u26A0 Usage warning:") != std::string::npos) {
                     found_warning = true;
                     break;
                 }
@@ -545,8 +545,7 @@ TEST_CASE("ChatSession notice not injected when below thresholds", "[chat][notic
         // System messages should not contain notices either (thresholds too low)
         if (msg["role"] == "system") {
             std::string content = msg["content"].get<std::string>();
-            if (content.find("[context") != std::string::npos ||
-                content.find("[usage") != std::string::npos) {
+            if (content.find("\u26A0") != std::string::npos) {
                 has_notice = true;
                 break;
             }

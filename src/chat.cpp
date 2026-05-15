@@ -95,13 +95,13 @@ std::string ChatSession::build_notices() {
         }
 
         if (pct >= 90) {
-            notices += "[context critical: ~" + std::to_string(pct) +
+            notices += "**\u26A0 Context critical: ~" + std::to_string(pct) +
                 "% of context window used" + tok_info +
-                "! Archive, prune or summarise session messages before continuing.]\n";
+                "! Archive, prune or summarise session messages before continuing.**\n";
         } else if (pct >= 60) {
-            notices += "[context warning: ~" + std::to_string(pct) +
+            notices += "**\u26A0 Context warning: ~" + std::to_string(pct) +
                 "% of context window used" + tok_info +
-                ". Consider compacting or pruning droppable messages.]\n";
+                ". Consider compacting or pruning droppable messages.**\n";
         }
     }
 
@@ -111,13 +111,13 @@ std::string ChatSession::build_notices() {
         std::string tc_info = " (" + std::to_string(*tc_used) + "/" + std::to_string(*tc_max) + ")";
 
         if (pct >= 90) {
-            notices += "[usage critical: ~" + std::to_string(pct) +
+            notices += "**\u26A0 Usage critical: ~" + std::to_string(pct) +
                 "% of tool call budget used" + tc_info +
-                "! Are you stuck in a loop? Check context usage and prepare a continuation.]\n";
+                "! Are you stuck in a loop? Check context usage and prepare a continuation.**\n";
         } else if (pct >= 60) {
-            notices += "[usage warning: ~" + std::to_string(pct) +
+            notices += "**\u26A0 Usage warning: ~" + std::to_string(pct) +
                 "% of tool call budget used" + tc_info +
-                ". Consider whether tools are being used efficiently or schedule a continuation.]\n";
+                ". Consider whether tools are being used efficiently or schedule a continuation.**\n";
         }
     }
 
