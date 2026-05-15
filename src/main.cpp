@@ -7,19 +7,16 @@
 
 static void print_usage() {
     std::cout
-        << "Usage: cima [--model <name>] [--api-base <url>] [--force] <session>\n\n"
+        << "Usage: cima [--force] <session>\n\n"
         << "Arguments:\n"
         << "  <session>           Session name (resume or create a new one)\n"
         << "                      Stored in ~/.local/state/cima/<session>/\n\n"
         << "Options:\n"
-        << "  --model <name>      Model name\n"
-        << "  --api-base <url>    API endpoint (default: http://127.0.0.1:11000/v1)\n"
         << "  --force             Skip session integrity checks (warn + continue)\n"
         << "  -h, --help          Print this help\n\n"
         << "Configuration file: ~/.config/cima/cima.json\n"
         << "  Created automatically on first run with default values.\n"
         << "  Edit it to persist settings across sessions.\n"
-        << "  CLI flags override file values.\n"
         << std::flush;
 }
 
@@ -39,11 +36,7 @@ int main(int argc, char* argv[]) {
             print_usage();
             return 0;
         }
-        if (arg == "--model" && i + 1 < argc) {
-            cfg.model = argv[++i];
-        } else if (arg == "--api-base" && i + 1 < argc) {
-            cfg.api_base = argv[++i];
-        } else if (arg == "--force") {
+        if (arg == "--force") {
             force = true;
         } else if (arg[0] == '-') {
             std::cerr << "Unknown option: " << arg << "\n\n";

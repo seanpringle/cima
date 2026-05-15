@@ -12,7 +12,9 @@ json AssistantData::to_json() const {
     json j;
     j["version"] = version;
     j["name"] = name;
+    j["provider_name"] = provider_name;
     j["model"] = model;
+    j["reasoning_effort"] = reasoning_effort;
     j["conversation"] = conversation;
     j["chat_log"] = chat_log;
     j["plan"] = plan;
@@ -25,7 +27,9 @@ void AssistantData::from_json(const json& j) {
 
     version = j.value("version", 1);
     name = j.value("name", std::string());
+    provider_name = j.value("provider_name", std::string());
     model = j.value("model", std::string());
+    reasoning_effort = j.value("reasoning_effort", std::string());
     conversation = j.value("conversation", json::array());
     chat_log = j.value("chat_log", json::array());
     plan = j.value("plan", json::object());

@@ -23,11 +23,18 @@ inline CancellationToken make_cancellation_token() {
 
 template <typename T> using Result = std::expected<T, std::string>;
 
-struct Config {
-    std::string api_base = "http://127.0.0.1:11000/v1";
+/// A single provider definition from cima.json.
+struct Provider {
+    std::string name;               // unique identifier, e.g. "opencode.go"
+    std::string api_base;           // e.g. "https://api.opencode.go/v1"
     std::string api_key;
-    std::string model = "deepseek-v4-flash";
+    std::string model;              // default model for this provider
     std::string reasoning_effort = "high";
+    int context_limit = 300000;     // model context window (tokens)
+};
+
+struct Config {
+    std::vector<Provider> providers;
     std::string search_api_key;
     std::string search_engine_id;
     std::string search_endpoint;
@@ -50,31 +57,8 @@ struct Config {
 
     std::string system_prompt =
         "You are an AI coding assistant.\n"
-        "\n"
-        "### Wiki (Shared Knowledge Base)\n"
-        "\n"
-        "You have access to a **local wiki** that is a knowledge base shared by all assistant\n"
-        " sessions."
-        "\n"
-        "| Tool | Description |\n"
-        "|---|---|\n"
-        "| `list_wiki_pages()` | List all wiki page titles (sorted alphabetically) |\n"
-        "| `read_wiki_page(title)` | Read the full body of a page by title |\n"
-        "| `write_wiki_page(title, body)` | Create a page or overwrite an existing one |\n"
-        "| `edit_wiki_page(title, search, replace)` | Edit a page by searching for a\n"
-        "  string and replacing it (must match exactly once) |\n"
-        "| `delete_wiki_page(title)` | Delete a page entirely |\n"
-        "\n"
-        "### General Instructions\n"
-        "\n"
         "Use markdown with a neat, clear layout for all output. Be concise.\n"
         "All of commonmark and github tables supported, but generally prefer lists over tables.\n"
-        "\n"
-        "You have access to a markdown Plan document visible to the user."
-        " Always start a task by researching the user's instructions and writing your Plan "
-        "document."
-        " Always explicitly ask the user to review and approve your completed Plan document before "
-        "you start implementation.\n"
         "\n";
 
     /// Load config from ~/.config/cima/cima.json, applying defaults for

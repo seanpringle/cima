@@ -26,7 +26,7 @@ using OutputCallback = std::function<void(const std::string& text, OutputType ty
 
 class ChatSession {
   public:
-    explicit ChatSession(Config config,
+    explicit ChatSession(const Config& config, const Provider& provider,
         CancellationToken cancelled = nullptr);
 
     ChatSession(const ChatSession&) = delete;
@@ -37,6 +37,8 @@ class ChatSession {
     Result<ChatResult> run_once(const std::string& user_input);
     void set_model(const std::string& m) { model_ = m; }
     const std::string& model() const { return model_; }
+    void set_reasoning_effort(const std::string& v) { reasoning_effort_ = v; }
+    const std::string& reasoning_effort() const { return reasoning_effort_; }
     void set_output_callback(OutputCallback cb) { output_cb_ = std::move(cb); }
     const Usage& last_usage() const { return last_usage_; }
 
@@ -77,10 +79,14 @@ class ChatSession {
     void set_wiki(Wiki* wiki);
     Wiki* wiki() const { return wiki_; }
 
+    /// Provider name this session belongs to.
+    const std::string& provider_name() const { return provider_name_; }
+
   private:
     std::string model_;
     std::string reasoning_effort_;
     std::string agent_name_;
+    std::string provider_name_;
     Wiki* wiki_ = nullptr;
     std::shared_ptr<std::string> safe_dir_;
     std::string api_base_;     // API base URL (for creating temp clients)

@@ -7,58 +7,38 @@
 namespace fs = std::filesystem;
 
 // ---------------------------------------------------------------------------
-// Helpers: write a config file, call Config::load()
+// Helpers
 // ---------------------------------------------------------------------------
-
-static fs::path write_config(const std::string& content) {
-    // Use a temp dir so tests don't clobber the real ~/.config/cima/cima.json
-    auto tmp = fs::temp_directory_path() / "cima-test-config";
-    fs::create_directories(tmp);
-    auto path = tmp / "cima.json";
-    std::ofstream out(path);
-    out << content;
-    out.close();
-    // Monkey-patch: we can't easily mock config_file_path(), so instead we
-    // temporarily move the real config and symlink our test one.
-    return path;
-}
-
-// Since Config::load() reads from a fixed path (~/.config/cima/cima.json),
-// these tests verify the JSON parsing logic by writing known content and
-// checking that the resulting Config fields are correct.
-//
-// To avoid polluting the real config, we simulate by constructing a Config
-// and calling to_json()/reading back.  The integration test below does a
-// full round-trip using a temp HOME.
 
 TEST_CASE("Config defaults", "[config]") {
     // Default-constructed Config should have built-in defaults.
-    // Note: read_only_paths defaults are populated by load(), not by the
-    // default constructor, so a default-constructed Config has an empty list.
     Config cfg;
-    REQUIRE(cfg.api_base == "http://127.0.0.1:11000/v1");
-    REQUIRE(cfg.api_key == "");
-    REQUIRE(cfg.model == "deepseek-v4-flash");
-    REQUIRE(cfg.reasoning_effort == "high");
+    // providers is empty by default (load() populates it)
+    REQUIRE(cfg.providers.empty());
     REQUIRE(cfg.system_prompt.find("AI coding assistant") != std::string::npos);
     REQUIRE(cfg.max_tool_iterations == 100);
-    REQUIRE(cfg.context_limit == 300000);
     // read_only_paths is empty until load() adds defaults
     REQUIRE(cfg.read_only_paths.empty());
 }
 
 TEST_CASE("Config to_json / round-trip", "[config]") {
     Config cfg;
-    cfg.api_base = "http://test:8080/v1";
-    cfg.api_key = "sk-test123";
-    cfg.model = "gpt-4";
-    cfg.reasoning_effort = "low";
+
+    // Set up a provider
+    Provider p;
+    p.name = "test-provider";
+    p.api_base = "http://test:8080/v1";
+    p.api_key = "sk-test123";
+    p.model = "gpt-4";
+    p.reasoning_effort = "low";
+    p.context_limit = 64000;
+    cfg.providers.push_back(p);
+
     cfg.search_api_key = "search-key";
     cfg.search_engine_id = "engine-id";
     cfg.search_endpoint = "https://custom.search";
     cfg.read_only_paths = {"/custom/path"};
     cfg.max_tool_iterations = 50;
-    cfg.context_limit = 64000;
 
     auto j = cfg.to_json();
     // system_prompt must NOT be in JSON
@@ -66,10 +46,21 @@ TEST_CASE("Config to_json / round-trip", "[config]") {
 
     // Now simulate what load() does: parse JSON and overlay on a fresh Config
     Config loaded;
-    if (j.contains("api_base"))         loaded.api_base = j["api_base"].get<std::string>();
-    if (j.contains("api_key"))          loaded.api_key = j["api_key"].get<std::string>();
-    if (j.contains("model"))            loaded.model = j["model"].get<std::string>();
-    if (j.contains("reasoning_effort")) loaded.reasoning_effort = j["reasoning_effort"].get<std::string>();
+
+    // Parse providers
+    if (j.contains("providers") && j["providers"].is_array()) {
+        for (const auto& pj : j["providers"]) {
+            Provider lp;
+            lp.name = pj.value("name", std::string());
+            lp.api_base = pj.value("api_base", std::string());
+            lp.api_key = pj.value("api_key", std::string());
+            lp.model = pj.value("model", std::string());
+            lp.reasoning_effort = pj.value("reasoning_effort", std::string("high"));
+            lp.context_limit = pj.value("context_limit", 300000);
+            loaded.providers.push_back(std::move(lp));
+        }
+    }
+
     if (j.contains("search_api_key"))   loaded.search_api_key = j["search_api_key"].get<std::string>();
     if (j.contains("search_engine_id")) loaded.search_engine_id = j["search_engine_id"].get<std::string>();
     if (j.contains("search_endpoint"))  loaded.search_endpoint = j["search_endpoint"].get<std::string>();
@@ -80,14 +71,14 @@ TEST_CASE("Config to_json / round-trip", "[config]") {
     }
     if (j.contains("max_tool_iterations") && j["max_tool_iterations"].is_number_integer())
         loaded.max_tool_iterations = j["max_tool_iterations"].get<int>();
-    if (j.contains("context_limit") && j["context_limit"].is_number_integer())
-        loaded.context_limit = j["context_limit"].get<int>();
 
-    // Read-only path defaults are re-added by load(), so compare against read_only_paths from JSON
-    REQUIRE(loaded.api_base == "http://test:8080/v1");
-    REQUIRE(loaded.api_key == "sk-test123");
-    REQUIRE(loaded.model == "gpt-4");
-    REQUIRE(loaded.reasoning_effort == "low");
+    REQUIRE(loaded.providers.size() == 1);
+    REQUIRE(loaded.providers[0].name == "test-provider");
+    REQUIRE(loaded.providers[0].api_base == "http://test:8080/v1");
+    REQUIRE(loaded.providers[0].api_key == "sk-test123");
+    REQUIRE(loaded.providers[0].model == "gpt-4");
+    REQUIRE(loaded.providers[0].reasoning_effort == "low");
+    REQUIRE(loaded.providers[0].context_limit == 64000);
     REQUIRE(loaded.search_api_key == "search-key");
     REQUIRE(loaded.search_engine_id == "engine-id");
     REQUIRE(loaded.search_endpoint == "https://custom.search");
@@ -96,12 +87,10 @@ TEST_CASE("Config to_json / round-trip", "[config]") {
     REQUIRE(loaded.read_only_paths.size() == 1);
     REQUIRE(loaded.read_only_paths[0] == "/custom/path");
     REQUIRE(loaded.max_tool_iterations == 50);
-    REQUIRE(loaded.context_limit == 64000);
 }
 
 TEST_CASE("Config read_only_paths defaults added if missing", "[config]") {
     // Simulate load()'s default-insertion logic.
-    // Note: insert at begin() means the second insert ends up first.
     Config cfg;
     cfg.read_only_paths.clear();
 
@@ -120,7 +109,6 @@ TEST_CASE("Config read_only_paths defaults added if missing", "[config]") {
 }
 
 TEST_CASE("Config read_only_paths preserves user entries", "[config]") {
-    // Simulate load()'s default-insertion logic with user-supplied paths.
     Config cfg;
     cfg.read_only_paths = {"/custom/path"};
 
@@ -133,7 +121,6 @@ TEST_CASE("Config read_only_paths preserves user entries", "[config]") {
     if (!has_usr_doc)     cfg.read_only_paths.insert(cfg.read_only_paths.begin(), "/usr/share/doc");
 
     REQUIRE(cfg.read_only_paths.size() == 3);
-    // /usr/share/doc inserted last at begin() → index 0
     REQUIRE(cfg.read_only_paths[0] == "/usr/share/doc");
     REQUIRE(cfg.read_only_paths[1] == "/usr/include");
     REQUIRE(cfg.read_only_paths[2] == "/custom/path");

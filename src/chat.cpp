@@ -9,14 +9,17 @@
 #include <thread>
 #include <unordered_map>
 
-ChatSession::ChatSession(Config config, CancellationToken cancelled)
-    : model_(std::move(config.model)), reasoning_effort_(std::move(config.reasoning_effort)),
+ChatSession::ChatSession(const Config& config, const Provider& provider,
+    CancellationToken cancelled)
+    : model_(provider.model), reasoning_effort_(provider.reasoning_effort),
+      provider_name_(provider.name),
       safe_dir_(std::make_shared<std::string>(
           std::filesystem::current_path().string())),
-      api_base_(config.api_base), api_key_(config.api_key), max_iterations_(config.max_tool_iterations),
-      context_limit_(config.context_limit),
-      system_prompt_(std::move(config.system_prompt)),
-      client_(std::move(config.api_base), std::move(config.api_key)),
+      api_base_(provider.api_base), api_key_(provider.api_key),
+      max_iterations_(config.max_tool_iterations),
+      context_limit_(provider.context_limit),
+      system_prompt_(config.system_prompt),
+      client_(provider.api_base, provider.api_key),
       cancelled_(cancelled ? std::move(cancelled) : make_cancellation_token()) {
     // Share the cancellation token with tools and client
     tools_.set_cancelled(cancelled_);

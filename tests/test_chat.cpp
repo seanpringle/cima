@@ -58,6 +58,28 @@ static std::string make_reasoning_sse(const std::string& reasoning,
     return "data: " + delta.dump() + "\n\ndata: [DONE]\n\n";
 }
 
+// Build a test Config + Provider pair
+struct TestConfig {
+    Config cfg;
+    Provider provider;
+};
+
+static TestConfig make_test_config(const std::string& base_url,
+    const std::string& model = "test-model",
+    const std::string& reasoning_effort = "high",
+    int context_limit = 1000) {
+    TestConfig tc;
+    tc.provider.name = "test";
+    tc.provider.api_base = base_url;
+    tc.provider.api_key = "";
+    tc.provider.model = model;
+    tc.provider.reasoning_effort = reasoning_effort;
+    tc.provider.context_limit = context_limit;
+    tc.cfg.system_prompt = "You are helpful.";
+    tc.cfg.max_tool_iterations = 100;
+    return tc;
+}
+
 // ===================================================================
 // Simple Q&A
 // ===================================================================
@@ -69,13 +91,8 @@ TEST_CASE("ChatSession simple Q&A", "[chat]") {
         },
         true);
 
-    Config cfg;
-    cfg.api_base = server.base_url();
-    cfg.api_key = "";
-    cfg.model = "test-model";
-    cfg.system_prompt = "You are helpful.";
-
-    ChatSession session(std::move(cfg));
+    auto tc = make_test_config(server.base_url());
+    ChatSession session(tc.cfg, tc.provider);
     auto result = session.run_once("Say hi");
     REQUIRE(result);
     CHECK(result->content == "Hello, World!");
@@ -95,15 +112,11 @@ TEST_CASE("ChatSession payload includes reasoning_effort", "[chat]") {
         },
         true);
 
-    Config cfg;
-    cfg.api_base = server.base_url();
-    cfg.api_key = "";
-    cfg.model = "test-model";
-    cfg.reasoning_effort = "high";
-    cfg.context_limit = 1000;  // avoid model discovery request
-    cfg.system_prompt = "You are helpful.";
+    auto tc = make_test_config(server.base_url());
+    tc.provider.reasoning_effort = "high";
+    tc.provider.context_limit = 1000;  // avoid model discovery request
 
-    ChatSession session(std::move(cfg));
+    ChatSession session(tc.cfg, tc.provider);
     auto result = session.run_once("Say hi");
     REQUIRE(result);
 
@@ -131,13 +144,8 @@ TEST_CASE("ChatSession tool call then content", "[chat]") {
         },
         true);
 
-    Config cfg;
-    cfg.api_base = server.base_url();
-    cfg.api_key = "";
-    cfg.model = "test";
-    cfg.system_prompt = "You are helpful.";
-
-    ChatSession session(std::move(cfg));
+    auto tc = make_test_config(server.base_url(), "test");
+    ChatSession session(tc.cfg, tc.provider);
     auto result = session.run_once("List files");
     REQUIRE(result);
     CHECK(result->content == "I found some files.");
@@ -158,14 +166,10 @@ TEST_CASE("ChatSession max tool iterations", "[chat]") {
         },
         true);
 
-    Config cfg;
-    cfg.api_base = server.base_url();
-    cfg.api_key = "";
-    cfg.model = "test";
-    cfg.system_prompt = "You are helpful.";
-    cfg.max_tool_iterations = 10;
+    auto tc = make_test_config(server.base_url(), "test", "high", 300000);
+    tc.cfg.max_tool_iterations = 10;
 
-    ChatSession session(std::move(cfg));
+    ChatSession session(tc.cfg, tc.provider);
     auto result = session.run_once("List files forever");
     CHECK(result);
     CHECK(result->content.find("Tool call budget exhausted") !=
@@ -186,13 +190,8 @@ TEST_CASE("ChatSession reasoning content preserved", "[chat]") {
         },
         true);
 
-    Config cfg;
-    cfg.api_base = server.base_url();
-    cfg.api_key = "";
-    cfg.model = "test";
-    cfg.system_prompt = "You are helpful.";
-
-    ChatSession session(std::move(cfg));
+    auto tc = make_test_config(server.base_url(), "test");
+    ChatSession session(tc.cfg, tc.provider);
     auto result = session.run_once("What is 6*7?");
     REQUIRE(result);
     CHECK(result->content == "The answer is 42.");
@@ -229,13 +228,8 @@ TEST_CASE("ChatSession reasoning with tool calls", "[chat]") {
         },
         true);
 
-    Config cfg;
-    cfg.api_base = server.base_url();
-    cfg.api_key = "";
-    cfg.model = "test";
-    cfg.system_prompt = "You are helpful.";
-
-    ChatSession session(std::move(cfg));
+    auto tc = make_test_config(server.base_url(), "test");
+    ChatSession session(tc.cfg, tc.provider);
     auto result = session.run_once("Check files");
     REQUIRE(result);
     CHECK(result->content == "Here is what I found.");
@@ -274,13 +268,8 @@ TEST_CASE("ChatSession multi-chunk tool call args", "[chat]") {
         },
         true);
 
-    Config cfg;
-    cfg.api_base = server.base_url();
-    cfg.api_key = "";
-    cfg.model = "test";
-    cfg.system_prompt = "test";
-
-    ChatSession session(std::move(cfg));
+    auto tc = make_test_config(server.base_url(), "test");
+    ChatSession session(tc.cfg, tc.provider);
     auto result = session.run_once("Read file");
     REQUIRE(result);
     CHECK(result->content == "Read the file.");
@@ -301,12 +290,9 @@ TEST_CASE("ChatSession cancelled token aborts request", "[chat]") {
         },
         true);
 
-    Config cfg;
-    cfg.api_base = server.base_url();
-    cfg.model = "test";
-    cfg.system_prompt = "test";
+    auto tc = make_test_config(server.base_url(), "test");
 
-    ChatSession session(std::move(cfg), token);
+    ChatSession session(tc.cfg, tc.provider, token);
     auto result = session.run_once("Say hi");
     CHECK_FALSE(result);
     // curl should abort the request because the progress callback sees the

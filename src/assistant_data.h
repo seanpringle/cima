@@ -17,12 +17,14 @@
 /// Now all of these are combined into a single <name>.json file.
 struct AssistantData {
     int version = 1;
-    std::string name;         // agent's Culture ship name (matches filename stem)
-    std::string model;        // model name for this assistant
-    json conversation;        // serialized Conversation (array of message objects)
-    json chat_log;            // serialized chat log entries (array of entry objects)
-    json plan;                // { "plan": "...", "comments": [...] }
-    json notes;               // { "note_name": "body", ... }
+    std::string name;               // agent's Culture ship name (matches filename stem)
+    std::string provider_name;      // which provider this tab belongs to
+    std::string model;              // model name for this assistant
+    std::string reasoning_effort;   // reasoning effort override
+    json conversation;              // serialized Conversation (array of message objects)
+    json chat_log;                  // serialized chat log entries (array of entry objects)
+    json plan;                      // { "plan": "...", "comments": [...] }
+    json notes;                     // { "note_name": "body", ... }
 
     json to_json() const;
     void from_json(const json& j);

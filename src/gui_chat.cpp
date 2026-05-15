@@ -472,15 +472,38 @@ void drain_pending(ChatUIState& ui, AsyncChatState& chat) {
     chat.pending.clear();
 }
 
-void render_config_tab(TabInfo& tab, ImFont* mono_font) {
+void render_config_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
     auto& ui = tab.ui_state;
     auto& session = *tab.session;
 
-    // ── Fetch models on first render ──
-    if (!ui.models_loaded) {
+    // ── Helper: start fetching models for the current provider ──
+    auto trigger_model_fetch = [&]() {
         ui.models_loaded = true;
-        std::packaged_task<void()> task([&ui, &session]() {
-            auto result = session.client_for_models().fetch_models();
+        ui.models_validated = false;
+        ui.models_fetched->store(false, std::memory_order_release);
+        ui.available_models.clear();
+        ui.models_error.clear();
+
+        // Build a ChatClient for the provider this tab is using
+        // (we need to find the provider in cfg.providers by name)
+        std::string api_base;
+        std::string api_key;
+        for (const auto& p : cfg.providers) {
+            if (p.name == tab.provider_name) {
+                api_base = p.api_base;
+                api_key = p.api_key;
+                break;
+            }
+        }
+        if (api_base.empty()) {
+            // Fallback to first provider
+            api_base = cfg.providers[0].api_base;
+            api_key = cfg.providers[0].api_key;
+        }
+
+        std::packaged_task<void()> task([&ui, api_base, api_key]() {
+            ChatClient client(api_base, api_key);
+            auto result = client.fetch_models();
             if (result) {
                 ui.available_models = std::move(*result);
             } else {
@@ -490,63 +513,124 @@ void render_config_tab(TabInfo& tab, ImFont* mono_font) {
         });
         ui.models_future = task.get_future();
         std::thread(std::move(task)).detach();
+    };
+
+    // ── Fetch models on first render ──
+    if (!ui.models_loaded) {
+        trigger_model_fetch();
     }
 
-    // Validate current model selection on the render thread (once)
-    if (!ui.models_validated) {
-        if (ui.models_fetched->load(std::memory_order_acquire)) {
-            ui.models_validated = true;
-            if (!ui.available_models.empty()) {
-                const auto& current = session.model();
-                bool found = std::any_of(ui.available_models.begin(), ui.available_models.end(),
-                    [&current](const std::string& m) { return m == current; });
-                if (!found) {
-                    session.set_model(ui.available_models.front());
-                    tab.model_name = ui.available_models.front();
+    // ── Provider combo ──
+    Text("Provider:");
+    SameLine();
+    PushFont(mono_font);
+    SetNextItemWidth(-1);
+
+    // Build combo label
+    string provider_label = tab.provider_name.empty() ? cfg.providers[0].name : tab.provider_name;
+
+    if (BeginCombo("##provider-combo", provider_label.c_str())) {
+        for (const auto& p : cfg.providers) {
+            bool is_selected = (p.name == tab.provider_name);
+            if (Selectable(p.name.c_str(), is_selected)) {
+                if (p.name != tab.provider_name) {
+                    // Provider changed — update tab and re-fetch models
+                    tab.provider_name = p.name;
+                    tab.model_name = p.model;
+                    tab.reasoning_effort = p.reasoning_effort;
+                    session.set_model(p.model);
+                    session.set_reasoning_effort(p.reasoning_effort);
+                    trigger_model_fetch();
                 }
             }
+            if (is_selected) SetItemDefaultFocus();
         }
+        EndCombo();
     }
+    PopFont();
 
-    // ── Model combo ──
+    // ── Model combo (or manual text input if fetch failed) ──
     Text("Model:");
     SameLine();
     PushFont(mono_font);
+    SetNextItemWidth(-1);
 
-    // Build the combo label (current model name or loading/error)
-    string combo_label;
     if (!ui.models_fetched->load(std::memory_order_acquire)) {
-        combo_label = "Loading models...";
-    } else if (!ui.models_error.empty()) {
-        combo_label = "Error: " + ui.models_error;
-    } else if (ui.available_models.empty()) {
-        combo_label = session.model();
+        // Still loading
+        string loading_label = "Loading models...";
+        PushStyleColor(ImGuiCol_Text, IM_COL32(128, 128, 128, 255));
+        TextUnformatted(loading_label.c_str());
+        PopStyleColor();
+    } else if (!ui.models_error.empty() || ui.available_models.empty()) {
+        // Fetch failed or returned empty — show manual text input
+        // Use a fixed buffer for the model name
+        static std::string manual_model;
+        manual_model = session.model();
+        char buf[256];
+        strncpy(buf, manual_model.c_str(), sizeof(buf) - 1);
+        buf[sizeof(buf) - 1] = '\0';
+        PushStyleColor(ImGuiCol_Text, IM_COL32(255, 100, 100, 255));
+        if (!ui.models_error.empty()) {
+            TextUnformatted(("Error: " + ui.models_error).c_str());
+        } else {
+            TextDisabled("(no models returned)");
+        }
+        PopStyleColor();
+        if (InputText("##model-manual", buf, sizeof(buf), ImGuiInputTextFlags_EnterReturnsTrue)) {
+            std::string new_model(buf);
+            if (!new_model.empty()) {
+                session.set_model(new_model);
+                tab.model_name = new_model;
+            }
+        }
     } else {
-        combo_label = session.model();
+        // Show dropdown
+        string combo_label = session.model();
+        if (BeginCombo("##model-combo", combo_label.c_str())) {
+            for (const auto& m : ui.available_models) {
+                bool is_selected = (m == session.model());
+                if (Selectable(m.c_str(), is_selected)) {
+                    session.set_model(m);
+                    tab.model_name = m;
+                }
+                if (is_selected) SetItemDefaultFocus();
+            }
+            EndCombo();
+        }
+    }
+    PopFont();
+
+    // Validate current model selection (auto-select first if current not found)
+    if (ui.models_fetched->load(std::memory_order_acquire) && !ui.models_validated &&
+        !ui.available_models.empty()) {
+        ui.models_validated = true;
+        const auto& current = session.model();
+        bool found = std::any_of(ui.available_models.begin(), ui.available_models.end(),
+            [&current](const std::string& m) { return m == current; });
+        if (!found) {
+            session.set_model(ui.available_models.front());
+            tab.model_name = ui.available_models.front();
+        }
     }
 
+    Separator();
+
+    // ── Reasoning effort input ──
+    Text("Reasoning Effort:");
+    SameLine();
+    PushFont(mono_font);
     SetNextItemWidth(-1);
-    if (BeginCombo("##model-combo", combo_label.c_str())) {
-        if (ui.models_fetched->load(std::memory_order_acquire)) {
-            if (!ui.models_error.empty()) {
-                TextColored(ImColor(IM_COL32(255, 100, 100, 255)), "Error: %s",
-                    ui.models_error.c_str());
-            } else if (ui.available_models.empty()) {
-                TextDisabled("(no models returned)");
-            } else {
-                for (const auto& m : ui.available_models) {
-                    bool is_selected = (m == session.model());
-                    if (Selectable(m.c_str(), is_selected)) {
-                        session.set_model(m);
-                        tab.model_name = m;
-                    }
-                    if (is_selected) SetItemDefaultFocus();
-                }
-            }
-        } else {
-            TextDisabled("Loading models...");
+    {
+        std::string re = tab.reasoning_effort.empty() ? session.reasoning_effort() : tab.reasoning_effort;
+        char buf[128];
+        strncpy(buf, re.c_str(), sizeof(buf) - 1);
+        buf[sizeof(buf) - 1] = '\0';
+        if (InputText("##reasoning-effort", buf, sizeof(buf),
+                ImGuiInputTextFlags_EnterReturnsTrue)) {
+            std::string new_re(buf);
+            tab.reasoning_effort = new_re;
+            session.set_reasoning_effort(new_re);
         }
-        EndCombo();
     }
     PopFont();
 
@@ -781,19 +865,18 @@ void render_chat_ui(TabInfo& tab, bool& done) {
                     for (const auto& page : *pages_result) {
                         if (Selectable(page.c_str())) {
                             // Insert "wiki:pagename" tag at cursor position (no trailing space)
-                            std::string tag = "wiki:" + page;
                             auto& buf = ui.input_buffer;
                             int pos = ui.cursor_pos;
                             if (pos < 0 || (size_t)pos > strlen(buf.data()))
                                 pos = (int)strlen(buf.data()); // append
                             // Make room and insert into buffer
                             size_t room = buf.size() - strlen(buf.data()) - 1;
-                            size_t insert_len = tag.size();
+                            size_t insert_len = page.size();
                             if (insert_len > room) insert_len = room;
                             memmove(buf.data() + pos + insert_len,
                                     buf.data() + pos,
                                     strlen(buf.data()) - pos + 1);
-                            memcpy(buf.data() + pos, tag.data(), insert_len);
+                            memcpy(buf.data() + pos, page.data(), insert_len);
                             ui.cursor_pos = pos + (int)insert_len;
                         }
                     }

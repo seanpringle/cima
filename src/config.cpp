@@ -1,7 +1,9 @@
 #include "config.h"
 
+#include <algorithm>
 #include <fstream>
 #include <iostream>
+#include <set>
 #include <string>
 
 // ---------------------------------------------------------------------------
@@ -25,16 +27,23 @@ std::filesystem::path Config::config_file_path() {
 
 json Config::to_json() const {
     json j;
-    j["api_base"] = api_base;
-    j["api_key"] = api_key;
-    j["model"] = model;
-    j["reasoning_effort"] = reasoning_effort;
+    json prov_arr = json::array();
+    for (const auto& p : providers) {
+        json pj;
+        pj["name"] = p.name;
+        pj["api_base"] = p.api_base;
+        pj["api_key"] = p.api_key;
+        pj["model"] = p.model;
+        pj["reasoning_effort"] = p.reasoning_effort;
+        pj["context_limit"] = p.context_limit;
+        prov_arr.push_back(std::move(pj));
+    }
+    j["providers"] = std::move(prov_arr);
     j["search_api_key"] = search_api_key;
     j["search_engine_id"] = search_engine_id;
     j["search_endpoint"] = search_endpoint;
     j["read_only_paths"] = read_only_paths;
     j["max_tool_iterations"] = max_tool_iterations;
-    j["context_limit"] = context_limit;
     j["snippets"] = snippets;
     j["bash_timeout"] = bash_timeout;
     j["project_tree_timeout"] = project_tree_timeout;
@@ -96,10 +105,41 @@ Config Config::load() {
             // Corrupt file — proceed with defaults
         }
 
-        if (j.contains("api_base"))         cfg.api_base = j["api_base"].get<std::string>();
-        if (j.contains("api_key"))          cfg.api_key = j["api_key"].get<std::string>();
-        if (j.contains("model"))            cfg.model = j["model"].get<std::string>();
-        if (j.contains("reasoning_effort")) cfg.reasoning_effort = j["reasoning_effort"].get<std::string>();
+        // ── Parse providers array ──
+        if (j.contains("providers") && j["providers"].is_array()) {
+            for (const auto& pj : j["providers"]) {
+                Provider p;
+                p.name = pj.value("name", std::string());
+                p.api_base = pj.value("api_base", std::string());
+                p.api_key = pj.value("api_key", std::string());
+                p.model = pj.value("model", std::string());
+                p.reasoning_effort = pj.value("reasoning_effort", std::string("high"));
+                p.context_limit = pj.value("context_limit", 300000);
+                cfg.providers.push_back(std::move(p));
+            }
+        }
+
+        // ── Validate provider name uniqueness ──
+        std::set<std::string> seen;
+        std::vector<std::string> duplicates;
+        for (const auto& p : cfg.providers) {
+            if (!seen.insert(p.name).second) {
+                duplicates.push_back(p.name);
+            }
+        }
+        if (!duplicates.empty()) {
+            std::string msg = "Duplicate provider name(s) in cima.json: ";
+            for (size_t i = 0; i < duplicates.size(); i++) {
+                if (i > 0) msg += ", ";
+                msg += "\"" + duplicates[i] + "\"";
+            }
+            throw std::runtime_error(msg);
+        }
+        if (cfg.providers.empty()) {
+            throw std::runtime_error("cima.json must contain at least one provider in the \"providers\" array");
+        }
+
+        // ── Other top-level fields ──
         if (j.contains("search_api_key"))   cfg.search_api_key = j["search_api_key"].get<std::string>();
         if (j.contains("search_engine_id")) cfg.search_engine_id = j["search_engine_id"].get<std::string>();
         if (j.contains("search_endpoint"))  cfg.search_endpoint = j["search_endpoint"].get<std::string>();
@@ -107,10 +147,6 @@ Config Config::load() {
         if (j.contains("max_tool_iterations") && j["max_tool_iterations"].is_number_integer()) {
             int n = j["max_tool_iterations"].get<int>();
             if (n > 0) cfg.max_tool_iterations = n;
-        }
-        if (j.contains("context_limit") && j["context_limit"].is_number_integer()) {
-            int n = j["context_limit"].get<int>();
-            if (n > 0) cfg.context_limit = n;
         }
 
         // Tool timeouts (int, >= 0)
@@ -153,6 +189,15 @@ Config Config::load() {
         std::error_code ec;
         std::filesystem::create_directories(path.parent_path(), ec);
         if (!ec) {
+            // Create a default provider so the config is valid
+            Provider def;
+            def.name = "default";
+            def.api_base = "http://127.0.0.1:11000/v1";
+            def.model = "deepseek-v4-flash";
+            def.reasoning_effort = "high";
+            def.context_limit = 300000;
+            cfg.providers.push_back(std::move(def));
+
             std::ofstream out(path);
             if (out.is_open()) {
                 out << cfg.to_json().dump(2) << std::endl;

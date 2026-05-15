@@ -20,7 +20,9 @@ static void save_tab_to_disk(const TabInfo& tab, AppSession& app_session) {
 
     AssistantData data;
     data.name = tab.title;
+    data.provider_name = tab.provider_name;
     data.model = tab.model_name;
+    data.reasoning_effort = tab.reasoning_effort;
     data.conversation = tab.session->conversation().to_json();
 
     // Serialize chat log entries
@@ -52,7 +54,8 @@ static void save_tab_to_disk(const TabInfo& tab, AppSession& app_session) {
 }
 
 // ── Helper: load a tab from its consolidated JSON file ──
-static void load_tab_from_disk(TabInfo& tab, AppSession& app_session) {
+static void load_tab_from_disk(TabInfo& tab, AppSession& app_session,
+    const std::vector<Provider>& providers) {
     std::string json_path = app_session.session_file_path(tab.title + ".json");
 
     AssistantData data;
@@ -62,11 +65,24 @@ static void load_tab_from_disk(TabInfo& tab, AppSession& app_session) {
         return;
     }
 
+    // Restore provider name (if the provider still exists)
+    if (!data.provider_name.empty()) {
+        tab.provider_name = data.provider_name;
+        // Verify the provider still exists; if not, keep the name anyway
+        // (the Config tab's provider combo will show a fallback)
+    }
+
     // Restore model from saved data (but keep the config-provided model if
     // the saved data has an empty model)
     if (!data.model.empty()) {
         tab.model_name = data.model;
         tab.session->set_model(data.model);
+    }
+
+    // Restore reasoning effort
+    if (!data.reasoning_effort.empty()) {
+        tab.reasoning_effort = data.reasoning_effort;
+        tab.session->set_reasoning_effort(data.reasoning_effort);
     }
 
     // Restore conversation
@@ -102,6 +118,16 @@ static void load_tab_from_disk(TabInfo& tab, AppSession& app_session) {
     if (data.notes.is_object()) {
         tab.session->notes().from_json(data.notes);
     }
+}
+
+// ── Helper: find a provider index by name, fallback to 0 ──
+static int find_provider_index(const std::vector<Provider>& providers,
+    const std::string& name) {
+    if (name.empty()) return 0;
+    for (size_t i = 0; i < providers.size(); i++) {
+        if (providers[i].name == name) return (int)i;
+    }
+    return 0; // fallback to first
 }
 
 int gui_main(Config cfg, const std::string& session_name, bool force) {
@@ -207,10 +233,17 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
     // Shared wiki across all sessions — file-backed via AppSession
     Wiki wiki(app_session->wiki_db_path());
 
-    auto add_tab = [&](const std::string& model_name, const std::string& restore_title = {}) {
+    // Save a reference to cfg.providers for lambda capture (lifetime: gui_main)
+    const auto& providers = cfg.providers;
+
+    auto add_tab = [&](int provider_idx, const std::string& restore_title = {}) {
+        const auto& provider = providers[provider_idx];
+
         TabInfo tab;
         tab.id = next_tab_id++;
-        tab.model_name = model_name;
+        tab.provider_name = provider.name;
+        tab.model_name = provider.model;
+        tab.reasoning_effort = provider.reasoning_effort;
 
         if (!restore_title.empty()) {
             tab.title = restore_title;
@@ -220,7 +253,7 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
         }
 
         tab.chat_state = std::make_unique<AsyncChatState>();
-        tab.session = std::make_unique<ChatSession>(cfg, tab.chat_state->cancelled);
+        tab.session = std::make_unique<ChatSession>(cfg, provider, tab.chat_state->cancelled);
         tab.session->set_agent_name(tab.title);
         tab.ui_state.mono_font = mono_font;
         tab.session->set_output_callback(
@@ -235,7 +268,7 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
         tab.snippets = &cfg.snippets;
 
         // Load consolidated assistant data from <title>.json
-        load_tab_from_disk(tab, *app_session);
+        load_tab_from_disk(tab, *app_session, providers);
 
         tabs.push_back(std::move(tab));
     };
@@ -248,12 +281,14 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                 // Extract the title from the filename (strip .json)
                 if (fname.size() > 5 && fname.substr(fname.size() - 5) == ".json") {
                     std::string title = fname.substr(0, fname.size() - 5);
-                    add_tab(cfg.model, title);
+                    // Add tab with first provider; load_tab_from_disk will
+                    // restore the actual provider from the saved data
+                    add_tab(0, title);
                 }
             }
         } else {
-            // No saved tabs — start with one default tab
-            add_tab(cfg.model);
+            // No saved tabs — start with one default tab using first provider
+            add_tab(0);
         }
     }
 
@@ -299,7 +334,7 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
         // Ctrl+T: open a new tab and switch to it
         if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_T, ImGuiInputFlags_RouteGlobal)) {
             focus_tab_id = next_tab_id;
-            add_tab(cfg.model);
+            add_tab(0); // always use first provider for new tabs
         }
         // Ctrl+W: close the active tab
         if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_W, ImGuiInputFlags_RouteGlobal)) {
@@ -398,7 +433,7 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                                 // Config first so it's the default focus — model list loads
                                 // as soon as the assistant tab is created.
                                 if (BeginTabItem("Config")) {
-                                    render_config_tab(tab, mono_font);
+                                    render_config_tab(tab, cfg, mono_font);
                                     EndTabItem();
                                 }
                                 if (BeginTabItem("Plan")) {
