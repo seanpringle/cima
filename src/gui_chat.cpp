@@ -851,6 +851,40 @@ void render_chat_ui(TabInfo& tab, bool& done) {
         }
     }
 
+    // ── Snippet reference combo (inserts content at cursor) ──
+    {
+        auto wiki = tab.session->wiki();
+        if (wiki) {
+            auto snippets_result = wiki->list_snippets();
+            if (snippets_result && !snippets_result->empty()) {
+                static string selected_snippet;
+                string preview = selected_snippet.empty() ? "Snippet@..." : selected_snippet;
+                SetNextItemWidth(GetContentRegionAvail().x);
+                if (BeginCombo("##snippet-ref", preview.c_str())) {
+                    for (const auto& [name, content] : *snippets_result) {
+                        bool is_selected = (name == selected_snippet);
+                        if (Selectable(name.c_str(), is_selected)) {
+                            selected_snippet = name;
+                            auto& buf = ui.input_buffer;
+                            int pos = ui.cursor_pos;
+                            if (pos < 0 || (size_t)pos > strlen(buf.data()))
+                                pos = (int)strlen(buf.data());
+                            size_t room = buf.size() - strlen(buf.data()) - 1;
+                            size_t insert_len = content.size();
+                            if (insert_len > room) insert_len = room;
+                            memmove(buf.data() + pos + insert_len,
+                                    buf.data() + pos,
+                                    strlen(buf.data()) - pos + 1);
+                            memcpy(buf.data() + pos, content.data(), insert_len);
+                            ui.cursor_pos = pos + (int)insert_len;
+                        }
+                    }
+                    EndCombo();
+                }
+            }
+        }
+    }
+
     SetNextItemWidth(GetContentRegionAvail().x);
 
     PushFont(ui.mono_font);

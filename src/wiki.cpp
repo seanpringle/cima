@@ -40,6 +40,10 @@ void Wiki::init_tables() {
             title      TEXT PRIMARY KEY,
             body       TEXT NOT NULL DEFAULT '',
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS snippets (
+            name    TEXT PRIMARY KEY,
+            content TEXT NOT NULL DEFAULT ''
         )
     )";
     char* err = nullptr;
@@ -293,4 +297,77 @@ Result<void> Wiki::delete_page(const std::string& title) {
     }
 
     return Result<void>();
+}
+
+// ===================================================================
+// Snippets
+// ===================================================================
+
+Result<std::vector<std::pair<std::string, std::string>>> Wiki::list_snippets() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!db_) {
+        return std::unexpected("wiki database not available");
+    }
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql = "SELECT name, content FROM snippets ORDER BY name COLLATE NOCASE";
+    int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        return std::unexpected(std::string(sqlite3_errmsg(db_)));
+    }
+    std::vector<std::pair<std::string, std::string>> result;
+    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+        const char* name = (const char*)sqlite3_column_text(stmt, 0);
+        const char* content = (const char*)sqlite3_column_text(stmt, 1);
+        result.emplace_back(name ? name : "", content ? content : "");
+    }
+    sqlite3_finalize(stmt);
+    return result;
+}
+
+Result<void> Wiki::write_snippet(const std::string& name, const std::string& content) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!db_) {
+        return std::unexpected("wiki database not available");
+    }
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql = R"(
+        INSERT INTO snippets (name, content) VALUES (?, ?)
+        ON CONFLICT(name) DO UPDATE SET content = excluded.content
+    )";
+    int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        return std::unexpected(std::string(sqlite3_errmsg(db_)));
+    }
+    sqlite3_bind_text(stmt, 1, name.c_str(), (int)name.size(), SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, content.c_str(), (int)content.size(), SQLITE_TRANSIENT);
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    if (rc != SQLITE_DONE) {
+        return std::unexpected(std::string(sqlite3_errmsg(db_)));
+    }
+    return {};
+}
+
+Result<void> Wiki::delete_snippet(const std::string& name) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!db_) {
+        return std::unexpected("wiki database not available");
+    }
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql = "DELETE FROM snippets WHERE name = ?";
+    int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        return std::unexpected(std::string(sqlite3_errmsg(db_)));
+    }
+    sqlite3_bind_text(stmt, 1, name.c_str(), (int)name.size(), SQLITE_TRANSIENT);
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+    if (rc != SQLITE_DONE) {
+        return std::unexpected(std::string(sqlite3_errmsg(db_)));
+    }
+    int changes = sqlite3_changes(db_);
+    if (changes == 0) {
+        return std::unexpected("no such snippet: " + name);
+    }
+    return {};
 }
