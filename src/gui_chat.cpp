@@ -580,6 +580,17 @@ void render_chat_controls(TabInfo& tab) {
         EndMenuBar();
     }
 
+    // ── Chat state ──
+    string stateInfo;
+    ImU32 stateColor;
+    if (tab.chat_state->running) {
+        stateInfo = "running";
+        stateColor = IM_COL32(100, 255, 100, 255); // green
+    } else {
+        stateInfo = "idle";
+        stateColor = IM_COL32(180, 180, 180, 255); // grey
+    }
+
     // ── Token count & branch info ──
     string tokenInfo = std::to_string(session.last_usage().total_tokens) + " tokens";
 
@@ -598,22 +609,29 @@ void render_chat_controls(TabInfo& tab) {
 
     string sep = " :: ";
 
+    auto stateSize = CalcTextSize(stateInfo.c_str());
     auto branchInfoSize = CalcTextSize(branchInfo.c_str());
     auto sepSize = CalcTextSize(sep.c_str());
     auto tokenInfoSize = CalcTextSize(tokenInfo.c_str());
 
-    // Lay out right-aligned: [tokens] :: [branch]
+    // Lay out right-aligned: [branch] :: [tokens] :: [state]
     auto rightEdge = GetContentRegionMax().x - GetStyle().WindowPadding.x;
 
     auto branchPos = ImVec2(rightEdge - branchInfoSize.x,
         GetFrameHeight() / 2 - branchInfoSize.y / 2);
-    auto sepPos = ImVec2(branchPos.x - sepSize.x, GetFrameHeight() / 2 - sepSize.y / 2);
-    auto tokenPos = ImVec2(sepPos.x - tokenInfoSize.x, GetFrameHeight() / 2 - tokenInfoSize.y / 2);
+    auto sep1Pos = ImVec2(branchPos.x - sepSize.x, GetFrameHeight() / 2 - sepSize.y / 2);
+    auto tokenPos = ImVec2(sep1Pos.x - tokenInfoSize.x, GetFrameHeight() / 2 - tokenInfoSize.y / 2);
+    auto sep2Pos = ImVec2(tokenPos.x - sepSize.x, GetFrameHeight() / 2 - sepSize.y / 2);
+    auto statePos = ImVec2(sep2Pos.x - stateSize.x, GetFrameHeight() / 2 - stateSize.y / 2);
 
+    GetForegroundDrawList()->AddText(
+        GetWindowPos() + statePos, stateColor, stateInfo.c_str());
+    GetForegroundDrawList()->AddText(
+        GetWindowPos() + sep2Pos, GetColorU32(ImGuiCol_TextDisabled), sep.c_str());
     GetForegroundDrawList()->AddText(
         GetWindowPos() + tokenPos, ImColor(IM_COL32(180, 180, 180, 255)), tokenInfo.c_str());
     GetForegroundDrawList()->AddText(
-        GetWindowPos() + sepPos, GetColorU32(ImGuiCol_TextDisabled), sep.c_str());
+        GetWindowPos() + sep1Pos, GetColorU32(ImGuiCol_TextDisabled), sep.c_str());
     GetForegroundDrawList()->AddText(
         GetWindowPos() + branchPos, ImColor(IM_COL32(255, 180, 50, 255)), branchInfo.c_str());
 
