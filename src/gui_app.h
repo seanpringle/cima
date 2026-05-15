@@ -11,6 +11,7 @@
 #include <atomic>
 #include <deque>
 #include <future>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -69,6 +70,9 @@ struct TabInfo {
     std::string model_name;     // actual model name (shown in dropdown)
     std::string git_branch;
     std::string workspace_path;
+
+    /// Snippets from cima.json (shared across all tabs)
+    const std::map<std::string, std::string>* snippets = nullptr;
 };
 
 int gui_main(Config cfg, const std::string& session_name, bool force = false);

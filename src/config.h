@@ -3,6 +3,7 @@
 #include <atomic>
 #include <expected>
 #include <filesystem>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -35,6 +36,7 @@ struct Config {
     int max_continuation_steps = 10;
     int continuation_delay_ms = 250;
     int context_limit = 300000; // model context window (tokens)
+    std::map<std::string, std::string> snippets; // from cima.json
 
     std::string system_prompt =
         "You are an AI coding assistant.\n"

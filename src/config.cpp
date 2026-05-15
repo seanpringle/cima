@@ -1,6 +1,7 @@
 #include "config.h"
 
 #include <fstream>
+#include <iostream>
 #include <string>
 
 // ---------------------------------------------------------------------------
@@ -36,7 +37,38 @@ json Config::to_json() const {
     j["max_continuation_steps"] = max_continuation_steps;
     j["continuation_delay_ms"] = continuation_delay_ms;
     j["context_limit"] = context_limit;
+    j["snippets"] = snippets;
     return j;
+}
+
+// ---------------------------------------------------------------------------
+// Load snippet files from ~/.config/cima/snippets/*.md
+// ---------------------------------------------------------------------------
+
+static void load_snippet_files(std::map<std::string, std::string>& snippets) {
+    auto dir = Config::config_file_path().parent_path() / "snippets";
+    std::error_code ec;
+    if (!std::filesystem::is_directory(dir, ec)) {
+        return; // silently skip if directory doesn't exist
+    }
+
+    for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
+        if (!entry.is_regular_file()) continue;
+        auto path = entry.path();
+        if (path.extension() != ".md") continue;
+
+        std::string name = path.stem().string();
+        if (name.empty()) continue;
+
+        std::ifstream file(path);
+        if (!file.is_open()) {
+            std::cerr << "Warning: cannot read snippet file: " << path.string() << std::endl;
+            continue;
+        }
+        std::string content((std::istreambuf_iterator<char>(file)),
+                             std::istreambuf_iterator<char>());
+        snippets[name] = std::move(content);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -89,6 +121,15 @@ Config Config::load() {
                 }
             }
         }
+
+        // Load snippets from config (static, user-edited file)
+        if (j.contains("snippets") && j["snippets"].is_object()) {
+            for (auto it = j["snippets"].begin(); it != j["snippets"].end(); ++it) {
+                if (it.value().is_string()) {
+                    cfg.snippets[it.key()] = it.value().get<std::string>();
+                }
+            }
+        }
     } else {
         // File doesn't exist — create directory and write defaults
         std::error_code ec;
@@ -109,6 +150,10 @@ Config Config::load() {
     }
     if (!has_usr_include) cfg.read_only_paths.insert(cfg.read_only_paths.begin(), "/usr/include");
     if (!has_usr_doc)     cfg.read_only_paths.insert(cfg.read_only_paths.begin(), "/usr/share/doc");
+
+    // Load file-based snippets from ~/.config/cima/snippets/*.md
+    // These override any snippets from cima.json on name collision.
+    load_snippet_files(cfg.snippets);
 
     return cfg;
 }

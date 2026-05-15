@@ -152,6 +152,9 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
 
         tab.session->set_wiki(&wiki);
 
+        // Point to shared config snippets (cima.json)
+        tab.snippets = &cfg.snippets;
+
         // Set up session DB persistence via AppSession
         {
             std::string db_path = app_session->agent_db_path(agent_filename);

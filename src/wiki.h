@@ -43,17 +43,6 @@ class Wiki {
     /// title doesn't exist.
     Result<void> delete_page(const std::string& title);
 
-    // ── Snippets ──
-
-    /// Return all snippets as (name, content) pairs sorted by name.
-    Result<std::vector<std::pair<std::string, std::string>>> list_snippets();
-
-    /// Write (create or overwrite) a snippet.
-    Result<void> write_snippet(const std::string& name, const std::string& content);
-
-    /// Delete a snippet by name.
-    Result<void> delete_snippet(const std::string& name);
-
   private:
     sqlite3* db_ = nullptr;
     mutable std::mutex mutex_;

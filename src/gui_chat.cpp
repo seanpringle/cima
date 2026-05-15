@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <fstream>
 #include <future>
+#include <map>
 #include <md4c.h>
 #include <string>
 #include <thread>
@@ -603,14 +604,16 @@ void render_config_tab(TabInfo& tab, ImFont* mono_font) {
 // ── Tag expansion for wiki:page-name and !snippet-name references ──
 // Expands wiki:pagename to the full wiki page body, and !snippetname to the
 // full snippet content.  Non-matching tags are left as-is.
-static std::string expand_tags(std::string input, Wiki* wiki) {
-    if (!wiki || input.find("wiki:") == std::string::npos && input.find('!') == std::string::npos)
+static std::string expand_tags(std::string input, Wiki* wiki,
+    const std::map<std::string, std::string>* snippets) {
+    if ((!wiki || input.find("wiki:") == std::string::npos) &&
+        (!snippets || input.find('!') == std::string::npos))
         return input;
 
     std::string result;
     size_t i = 0;
     while (i < input.size()) {
-        if (i + 5 <= input.size() && input.substr(i, 5) == "wiki:") {
+        if (wiki && i + 5 <= input.size() && input.substr(i, 5) == "wiki:") {
             size_t start = i + 5;
             size_t end = start;
             while (end < input.size() && !std::isspace(static_cast<unsigned char>(input[end])))
@@ -624,27 +627,18 @@ static std::string expand_tags(std::string input, Wiki* wiki) {
                     continue;
                 }
             }
-        } else if (input[i] == '!') {
+        } else if (snippets && input[i] == '!') {
             size_t start = i + 1;
             size_t end = start;
             while (end < input.size() && !std::isspace(static_cast<unsigned char>(input[end])))
                 end++;
             std::string name = input.substr(start, end - start);
             if (!name.empty()) {
-                auto snippets = wiki->list_snippets();
-                if (snippets) {
-                    bool found = false;
-                    for (const auto& [sn, content] : *snippets) {
-                        if (sn == name) {
-                            result += content;
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (found) {
-                        i = end;
-                        continue;
-                    }
+                auto it = snippets->find(name);
+                if (it != snippets->end()) {
+                    result += it->second;
+                    i = end;
+                    continue;
                 }
             }
         }
@@ -833,34 +827,30 @@ void render_chat_ui(TabInfo& tab, bool& done) {
 
     // ── Snippet reference combo (inserts !snippetname tag at cursor) ──
     {
-        auto wiki = tab.session->wiki();
-        if (wiki) {
-            auto snippets_result = wiki->list_snippets();
-            if (snippets_result) {
-                // Show combo only if there are snippets to pick from
-                SameLine(0,GetStyle().ItemSpacing.y);
-                SetNextItemWidth(GetContentRegionAvail().x);
-                if (BeginCombo("##snippet-ref", "!snippet")) {
-                    for (const auto& [name, content] : *snippets_result) {
-                        if (Selectable(name.c_str())) {
-                            // Insert "!snippetname" tag at cursor position
-                            std::string tag = "!" + name;
-                            auto& buf = ui.input_buffer;
-                            int pos = ui.cursor_pos;
-                            if (pos < 0 || (size_t)pos > strlen(buf.data()))
-                                pos = (int)strlen(buf.data());
-                            size_t room = buf.size() - strlen(buf.data()) - 1;
-                            size_t insert_len = tag.size();
-                            if (insert_len > room) insert_len = room;
-                            memmove(buf.data() + pos + insert_len,
-                                    buf.data() + pos,
-                                    strlen(buf.data()) - pos + 1);
-                            memcpy(buf.data() + pos, tag.data(), insert_len);
-                            ui.cursor_pos = pos + (int)insert_len;
-                        }
+        const auto* snippets = tab.snippets;
+        if (snippets && !snippets->empty()) {
+            SameLine(0,GetStyle().ItemSpacing.y);
+            SetNextItemWidth(GetContentRegionAvail().x);
+            if (BeginCombo("##snippet-ref", "!snippet")) {
+                for (const auto& [name, content] : *snippets) {
+                    if (Selectable(name.c_str())) {
+                        // Insert "!snippetname" tag at cursor position
+                        std::string tag = "!" + name;
+                        auto& buf = ui.input_buffer;
+                        int pos = ui.cursor_pos;
+                        if (pos < 0 || (size_t)pos > strlen(buf.data()))
+                            pos = (int)strlen(buf.data());
+                        size_t room = buf.size() - strlen(buf.data()) - 1;
+                        size_t insert_len = tag.size();
+                        if (insert_len > room) insert_len = room;
+                        memmove(buf.data() + pos + insert_len,
+                                buf.data() + pos,
+                                strlen(buf.data()) - pos + 1);
+                        memcpy(buf.data() + pos, tag.data(), insert_len);
+                        ui.cursor_pos = pos + (int)insert_len;
                     }
-                    EndCombo();
                 }
+                EndCombo();
             }
         }
     }
@@ -927,7 +917,7 @@ void render_chat_ui(TabInfo& tab, bool& done) {
             // Push to UI with tags visible (user sees @Page / !Snippet)
             push_entry(ui, EntryType::UserText, input, false);
             // Expand wiki:page-name and !snippet-name tags before sending to the agent
-            string expanded = expand_tags(input, tab.session->wiki());
+            string expanded = expand_tags(input, tab.session->wiki(), tab.snippets);
             start_chat(chat, session, expanded);
             for (auto it = history.begin(); it != history.end();
                 it = *it == input ? history.erase(it): ++it);
