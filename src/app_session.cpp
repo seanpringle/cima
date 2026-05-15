@@ -406,7 +406,7 @@ void AppSession::save_manifest() {
     files.push_back("wiki.db");
     for (const auto& ag : agent_dbs_) {
         files.push_back(ag);
-        // Auxiliary files that share the same stem (chat log, plan file).
+        // Auxiliary files that share the same stem (chat log, plan, notes).
         // These are created alongside the agent DB; include them so the
         // integrity check doesn't flag them as extra.
         if (ag.size() >= 3 && ag.substr(ag.size() - 3) == ".db") {
@@ -414,6 +414,7 @@ void AppSession::save_manifest() {
             files.push_back(stem + ".log");
             files.push_back(stem + ".plan.json");
             files.push_back(stem + ".messages.json");
+            files.push_back(stem + ".notes.json");
         }
     }
     manifest["files"] = std::move(files);
