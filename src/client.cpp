@@ -305,7 +305,7 @@ Result<json> ChatClient::chat(const json& payload) {
         // Log request details and error response for 4xx errors
         if (http_code >= 400 && http_code < 500) {
             std::cerr << "HTTP " << http_code << " error for POST " << url() << "\n";
-            std::cerr << "Request body:\n" << payload_str.substr(0, 2000) << "\n";
+            std::cerr << "Request body:\n" << payload_str << "\n";
             if (!body.empty()) {
                 std::cerr << "Response body:\n" << body << std::endl;
             }
@@ -423,7 +423,7 @@ Result<void> ChatClient::stream_chat(const json& payload, SSEParser::Callbacks c
         // Log request details and error response for 4xx errors
         if (http_code >= 400 && http_code < 500) {
             std::cerr << "HTTP " << http_code << " error for POST " << url() << "\n";
-            std::cerr << "Request body:\n" << payload_str.substr(0, 2000) << "\n";
+            std::cerr << "Request body:\n" << payload_str << "\n";
             if (!raw_response_.empty()) {
                 std::cerr << "Response body:\n" << raw_response_ << std::endl;
             }
