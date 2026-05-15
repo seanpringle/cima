@@ -161,7 +161,7 @@ Tool make_comment_plan_tool(PlanBoard& board) {
     t.description = "Append a comment to the Plan document. Comments are preserved "
                     "separately from the plan body and listed after it. Use this for "
                     "progress updates, review feedback, or change requests.";
-    t.permission = ToolPermission::ReadOnly;
+    t.permission = ToolPermission::Write;
     t.parameters = {{"type", "object"},
         {"properties",
             {{"comment",

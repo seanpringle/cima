@@ -6,9 +6,7 @@
 
 using json = nlohmann::json;
 
-#include <sstream>
 #include <string>
-#include <unordered_set>
 #include <vector>
 
 SessionDB::SessionDB() {
@@ -23,7 +21,6 @@ SessionDB::SessionDB() {
 }
 
 SessionDB::~SessionDB() {
-    // Auto-save if a path was configured
     if (db_ && !auto_save_path_.empty()) {
         save_to_file(auto_save_path_);
     }
@@ -37,24 +34,12 @@ void SessionDB::init_conversation_tables() {
     const char* sql = R"(
         CREATE TABLE IF NOT EXISTS messages (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            seq INTEGER NOT NULL,
             role TEXT NOT NULL,
             content TEXT,
             reasoning_content TEXT DEFAULT '',
-            tool_call_id TEXT DEFAULT '',
-            retention TEXT DEFAULT 'preserve',
-            created_at TEXT DEFAULT (datetime('now'))
+            tool_data TEXT DEFAULT '',
+            suggested_retention TEXT DEFAULT 'preserve'
         );
-        CREATE TABLE IF NOT EXISTS tool_calls (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
-            call_index INTEGER NOT NULL,
-            tool_call_id TEXT NOT NULL,
-            name TEXT NOT NULL,
-            arguments TEXT DEFAULT ''
-        );
-        CREATE INDEX IF NOT EXISTS idx_messages_seq ON messages(seq);
-        CREATE INDEX IF NOT EXISTS idx_tool_calls_msg ON tool_calls(message_id);
         CREATE TABLE IF NOT EXISTS metadata (
             key TEXT PRIMARY KEY,
             value TEXT
@@ -65,75 +50,64 @@ void SessionDB::init_conversation_tables() {
     if (rc != SQLITE_OK) {
         std::string msg = err ? err : "unknown error";
         sqlite3_free(err);
-        // Don't throw — the DB is still usable for user tables
     }
 }
 
-int64_t SessionDB::claim_seq() {
-    return ++next_seq_;
-}
+// ---------------------------------------------------------------------------
+// Add message helpers
+// ---------------------------------------------------------------------------
 
 int64_t SessionDB::add_user(const std::string& content) {
     std::lock_guard<std::mutex> lock(mutex_);
-    int64_t seq = claim_seq();
     sqlite3_stmt* stmt = nullptr;
-    const char* sql = "INSERT INTO messages (seq, role, content, retention) VALUES (?, 'user', ?, 'preserve')";
+    const char* sql =
+        "INSERT INTO messages (role, content, suggested_retention) VALUES ('user', ?, 'preserve')";
     int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
     if (rc != SQLITE_OK) {
         sqlite3_finalize(stmt);
         return -1;
     }
-    sqlite3_bind_int64(stmt, 1, seq);
-    sqlite3_bind_text(stmt, 2, content.c_str(), static_cast<int>(content.size()), SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 1, content.c_str(), static_cast<int>(content.size()), SQLITE_TRANSIENT);
     rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
-    if (rc != SQLITE_DONE) {
-        return -1;
-    }
+    if (rc != SQLITE_DONE) return -1;
     return sqlite3_last_insert_rowid(db_);
 }
 
 int64_t SessionDB::add_notice(const std::string& content) {
     std::lock_guard<std::mutex> lock(mutex_);
-    int64_t seq = claim_seq();
     sqlite3_stmt* stmt = nullptr;
     const char* sql =
-        "INSERT INTO messages (seq, role, content, retention) VALUES (?, 'user', ?, 'droppable')";
+        "INSERT INTO messages (role, content, suggested_retention) VALUES ('user', ?, 'droppable')";
     int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
     if (rc != SQLITE_OK) {
         sqlite3_finalize(stmt);
         return -1;
     }
-    sqlite3_bind_int64(stmt, 1, seq);
-    sqlite3_bind_text(stmt, 2, content.c_str(), static_cast<int>(content.size()), SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 1, content.c_str(), static_cast<int>(content.size()), SQLITE_TRANSIENT);
     rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
-    if (rc != SQLITE_DONE) {
-        return -1;
-    }
+    if (rc != SQLITE_DONE) return -1;
     return sqlite3_last_insert_rowid(db_);
 }
 
 int64_t SessionDB::add_system(const std::string& content,
-    const std::string& retention) {
+    const std::string& suggested_retention) {
     std::lock_guard<std::mutex> lock(mutex_);
-    int64_t seq = claim_seq();
     sqlite3_stmt* stmt = nullptr;
     const char* sql =
-        "INSERT INTO messages (seq, role, content, retention) VALUES (?, 'system', ?, ?)";
+        "INSERT INTO messages (role, content, suggested_retention) VALUES ('system', ?, ?)";
     int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
     if (rc != SQLITE_OK) {
         sqlite3_finalize(stmt);
         return -1;
     }
-    sqlite3_bind_int64(stmt, 1, seq);
-    sqlite3_bind_text(stmt, 2, content.c_str(), static_cast<int>(content.size()), SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 3, retention.c_str(), static_cast<int>(retention.size()), SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 1, content.c_str(), static_cast<int>(content.size()), SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, suggested_retention.c_str(),
+        static_cast<int>(suggested_retention.size()), SQLITE_TRANSIENT);
     rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
-    if (rc != SQLITE_DONE) {
-        return -1;
-    }
+    if (rc != SQLITE_DONE) return -1;
     return sqlite3_last_insert_rowid(db_);
 }
 
@@ -141,189 +115,188 @@ int64_t SessionDB::add_assistant(const std::string& content,
     const std::string& reasoning,
     const std::vector<ToolCall>& tool_calls) {
     std::lock_guard<std::mutex> lock(mutex_);
-    int64_t seq = claim_seq();
 
     if (!tool_calls.empty()) {
-        // Tool-call assistant message: content = NULL
+        // Serialize tool calls to JSON array
+        json td = json::array();
+        for (const auto& tc : tool_calls) {
+            td.push_back({{"id", tc.id},
+                {"type", "function"},
+                {"function",
+                    {{"name", tc.name}, {"arguments", tc.arguments}}},
+                {"result", nullptr}});
+        }
+        std::string td_str = td.dump();
+
         sqlite3_stmt* stmt = nullptr;
         const char* sql =
-            "INSERT INTO messages (seq, role, content, reasoning_content, retention) "
-            "VALUES (?, 'assistant', NULL, ?, 'preserve')";
+            "INSERT INTO messages (role, content, reasoning_content, tool_data, suggested_retention) "
+            "VALUES ('assistant', NULL, ?, ?, 'preserve')";
         int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
         if (rc != SQLITE_OK) {
             sqlite3_finalize(stmt);
             return -1;
         }
-        sqlite3_bind_int64(stmt, 1, seq);
-        sqlite3_bind_text(stmt, 2, reasoning.c_str(), static_cast<int>(reasoning.size()), SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 1, reasoning.c_str(), static_cast<int>(reasoning.size()), SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 2, td_str.c_str(), static_cast<int>(td_str.size()), SQLITE_TRANSIENT);
         rc = sqlite3_step(stmt);
         sqlite3_finalize(stmt);
-        if (rc != SQLITE_DONE) {
-            return -1;
-        }
-        int64_t msg_id = sqlite3_last_insert_rowid(db_);
-
-        // Insert tool calls
-        for (size_t i = 0; i < tool_calls.size(); i++) {
-            const auto& tc = tool_calls[i];
-            sqlite3_stmt* tc_stmt = nullptr;
-            const char* tc_sql =
-                "INSERT INTO tool_calls (message_id, call_index, tool_call_id, name, arguments) "
-                "VALUES (?, ?, ?, ?, ?)";
-            rc = sqlite3_prepare_v2(db_, tc_sql, -1, &tc_stmt, nullptr);
-            if (rc != SQLITE_OK) {
-                sqlite3_finalize(tc_stmt);
-                return -1;
-            }
-            sqlite3_bind_int64(tc_stmt, 1, msg_id);
-            sqlite3_bind_int64(tc_stmt, 2, static_cast<int64_t>(i));
-            sqlite3_bind_text(tc_stmt, 3, tc.id.c_str(), static_cast<int>(tc.id.size()), SQLITE_TRANSIENT);
-            sqlite3_bind_text(tc_stmt, 4, tc.name.c_str(), static_cast<int>(tc.name.size()), SQLITE_TRANSIENT);
-            sqlite3_bind_text(tc_stmt, 5, tc.arguments.c_str(), static_cast<int>(tc.arguments.size()), SQLITE_TRANSIENT);
-            rc = sqlite3_step(tc_stmt);
-            sqlite3_finalize(tc_stmt);
-            if (rc != SQLITE_DONE) {
-                return -1;
-            }
-        }
-
-        return msg_id;
-    } else {
-        // Content-bearing assistant message
-        sqlite3_stmt* stmt = nullptr;
-        const char* sql =
-            "INSERT INTO messages (seq, role, content, reasoning_content, retention) "
-            "VALUES (?, 'assistant', ?, ?, 'preserve')";
-        int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
-        if (rc != SQLITE_OK) {
-            sqlite3_finalize(stmt);
-            return -1;
-        }
-        sqlite3_bind_int64(stmt, 1, seq);
-        sqlite3_bind_text(stmt, 2, content.c_str(), static_cast<int>(content.size()), SQLITE_TRANSIENT);
-        sqlite3_bind_text(stmt, 3, reasoning.c_str(), static_cast<int>(reasoning.size()), SQLITE_TRANSIENT);
-        rc = sqlite3_step(stmt);
-        sqlite3_finalize(stmt);
-        if (rc != SQLITE_DONE) {
-            return -1;
-        }
+        if (rc != SQLITE_DONE) return -1;
         return sqlite3_last_insert_rowid(db_);
     }
-}
 
-int64_t SessionDB::add_tool(const std::string& tool_call_id, const std::string& content) {
-    // Sanitize tool results to prevent invalid UTF-8 from reaching JSON serialization
-    auto sanitized = sanitize_utf8(content);
-
-    std::lock_guard<std::mutex> lock(mutex_);
-    int64_t seq = claim_seq();
+    // Content-bearing assistant message (no tool calls)
     sqlite3_stmt* stmt = nullptr;
     const char* sql =
-        "INSERT INTO messages (seq, role, content, tool_call_id, retention) "
-        "VALUES (?, 'tool', ?, ?, 'droppable')";
+        "INSERT INTO messages (role, content, reasoning_content, suggested_retention) "
+        "VALUES ('assistant', ?, ?, 'preserve')";
     int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
     if (rc != SQLITE_OK) {
         sqlite3_finalize(stmt);
         return -1;
     }
-    sqlite3_bind_int64(stmt, 1, seq);
-    sqlite3_bind_text(stmt, 2, sanitized.c_str(), static_cast<int>(sanitized.size()), SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 3, tool_call_id.c_str(), static_cast<int>(tool_call_id.size()), SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 1, content.c_str(), static_cast<int>(content.size()), SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, reasoning.c_str(), static_cast<int>(reasoning.size()), SQLITE_TRANSIENT);
     rc = sqlite3_step(stmt);
     sqlite3_finalize(stmt);
-    if (rc != SQLITE_DONE) {
-        return -1;
-    }
+    if (rc != SQLITE_DONE) return -1;
     return sqlite3_last_insert_rowid(db_);
 }
+
+void SessionDB::add_tool(int64_t message_id,
+    const std::string& tool_call_id,
+    const std::string& content) {
+    auto sanitized = sanitize_utf8(content);
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    // Read the current tool_data JSON
+    sqlite3_stmt* stmt = nullptr;
+    const char* sql = "SELECT tool_data FROM messages WHERE id = ?";
+    int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        sqlite3_finalize(stmt);
+        return;
+    }
+    sqlite3_bind_int64(stmt, 1, message_id);
+    rc = sqlite3_step(stmt);
+    std::string td_str;
+    if (rc == SQLITE_ROW) {
+        const char* text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        if (text) td_str = text;
+    }
+    sqlite3_finalize(stmt);
+
+    if (td_str.empty()) return;
+
+    // Parse, find the entry, set its result
+    json td = json::parse(td_str);
+    for (auto& entry : td) {
+        if (entry["id"] == tool_call_id) {
+            entry["result"] = sanitized;
+            break;
+        }
+    }
+
+    // Write back
+    std::string updated = td.dump();
+    sqlite3_stmt* up_stmt = nullptr;
+    const char* up_sql = "UPDATE messages SET tool_data = ? WHERE id = ?";
+    rc = sqlite3_prepare_v2(db_, up_sql, -1, &up_stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        sqlite3_finalize(up_stmt);
+        return;
+    }
+    sqlite3_bind_text(up_stmt, 1, updated.c_str(), static_cast<int>(updated.size()), SQLITE_TRANSIENT);
+    sqlite3_bind_int64(up_stmt, 2, message_id);
+    sqlite3_step(up_stmt);
+    sqlite3_finalize(up_stmt);
+}
+
+// ---------------------------------------------------------------------------
+// API payload builder
+// ---------------------------------------------------------------------------
 
 json SessionDB::build_openai_payload(const std::string& system_prompt) const {
     std::lock_guard<std::mutex> lock(mutex_);
     json arr = json::array();
 
-    // System prompt first
     arr.push_back({{"role", "system"}, {"content", sanitize_utf8(system_prompt)}});
 
-    // Fetch all messages ordered by seq
     sqlite3_stmt* stmt = nullptr;
-    const char* sql = "SELECT id, role, content, reasoning_content, tool_call_id FROM messages ORDER BY seq";
+    const char* sql = "SELECT id, role, content, reasoning_content, tool_data FROM messages ORDER BY id";
     int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
     if (rc != SQLITE_OK) {
         sqlite3_finalize(stmt);
-        return arr; // empty payload
+        return arr;
     }
 
     while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
-        int64_t id = sqlite3_column_int64(stmt, 0);
         const char* role = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
         const char* content = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
         const char* reasoning = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
-        const char* tool_call_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
+        const char* tool_data_raw = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
 
-        json j;
-        j["role"] = role;
+        std::string role_s = role ? role : "";
 
-        if (role && strcmp(role, "assistant") == 0) {
-            // Check if this assistant message has tool_calls
-            sqlite3_stmt* tc_stmt = nullptr;
-            const char* tc_sql =
-                "SELECT call_index, tool_call_id, name, arguments FROM tool_calls WHERE message_id = ? ORDER BY call_index";
-            rc = sqlite3_prepare_v2(db_, tc_sql, -1, &tc_stmt, nullptr);
-            if (rc == SQLITE_OK) {
-                sqlite3_bind_int64(tc_stmt, 1, id);
-                bool has_tc = false;
-                json tc_arr = json::array();
-                while (sqlite3_step(tc_stmt) == SQLITE_ROW) {
-                    has_tc = true;
-                    const char* tc_id = reinterpret_cast<const char*>(sqlite3_column_text(tc_stmt, 1));
-                    const char* tc_name = reinterpret_cast<const char*>(sqlite3_column_text(tc_stmt, 2));
-                    const char* tc_args = reinterpret_cast<const char*>(sqlite3_column_text(tc_stmt, 3));
-                    tc_arr.push_back({{"id", sanitize_utf8(tc_id ? tc_id : "")},
-                        {"type", "function"},
-                        {"function",
-                            {{"name", sanitize_utf8(tc_name ? tc_name : "")},
-                                {"arguments", sanitize_utf8(tc_args ? tc_args : "")}}}});
-                }
-                sqlite3_finalize(tc_stmt);
-
-                if (has_tc) {
-                    j["content"] = nullptr;
-                    j["tool_calls"] = std::move(tc_arr);
-                    if (reasoning) {
-                        j["reasoning_content"] = sanitize_utf8(reasoning);
-                    }
-                    arr.push_back(std::move(j));
-                    continue;
-                }
-            }
-
-            // No tool_calls: regular content-bearing message
-            j["content"] = content ? sanitize_utf8(content) : "";
+        if (role_s == "assistant" && tool_data_raw && tool_data_raw[0]) {
+            // Assistant with tool_data — expand into assistant + tool messages
+            json td = json::parse(tool_data_raw);
+            json j;
+            j["role"] = "assistant";
+            j["content"] = nullptr;
             if (reasoning && reasoning[0]) {
                 j["reasoning_content"] = sanitize_utf8(reasoning);
             }
+
+            json tc_arr = json::array();
+            for (const auto& entry : td) {
+                json tc;
+                tc["id"] = entry["id"];
+                tc["type"] = "function";
+                tc["function"] = entry["function"];
+                tc_arr.push_back(std::move(tc));
+            }
+            j["tool_calls"] = std::move(tc_arr);
+            arr.push_back(std::move(j));
+
+            // Emit tool result messages for entries with non-null results
+            for (const auto& entry : td) {
+                if (!entry.contains("result") || entry["result"].is_null()) continue;
+                json tr;
+                tr["role"] = "tool";
+                tr["tool_call_id"] = entry["id"];
+                tr["content"] = sanitize_utf8(entry["result"].get<std::string>());
+                arr.push_back(std::move(tr));
+            }
         } else {
-            // user, tool, or system
+            // user, system, or assistant without tool_data
+            json j;
+            j["role"] = role_s;
             j["content"] = content ? sanitize_utf8(content) : "";
-        }
 
-        if (tool_call_id && tool_call_id[0]) {
-            j["tool_call_id"] = sanitize_utf8(tool_call_id);
-        }
+            if (role_s == "assistant" && reasoning && reasoning[0]) {
+                j["reasoning_content"] = sanitize_utf8(reasoning);
+            }
 
-        arr.push_back(std::move(j));
+            arr.push_back(std::move(j));
+        }
     }
 
     sqlite3_finalize(stmt);
     return arr;
 }
 
+// ---------------------------------------------------------------------------
+// Token estimation
+// ---------------------------------------------------------------------------
+
 size_t SessionDB::estimate_total_tokens() const {
     std::lock_guard<std::mutex> lock(mutex_);
     size_t total = 0;
 
     sqlite3_stmt* stmt = nullptr;
-    const char* sql = "SELECT content, reasoning_content, tool_call_id FROM messages ORDER BY seq";
+    const char* sql = "SELECT content, reasoning_content, tool_data FROM messages ORDER BY id";
     int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
     if (rc != SQLITE_OK) {
         sqlite3_finalize(stmt);
@@ -333,29 +306,14 @@ size_t SessionDB::estimate_total_tokens() const {
     while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
         const char* content = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
         const char* reasoning = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-        const char* tool_call_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        const char* tool_data = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
 
         if (content) total += estimate_tokens(content);
         if (reasoning) total += estimate_tokens(reasoning);
-        if (tool_call_id) total += estimate_tokens(tool_call_id);
+        if (tool_data) total += estimate_tokens(tool_data);
         total += 20; // framing overhead
     }
     sqlite3_finalize(stmt);
-
-    // Add tool call tokens
-    sqlite3_stmt* tc_stmt = nullptr;
-    const char* tc_sql = "SELECT name, arguments FROM tool_calls";
-    rc = sqlite3_prepare_v2(db_, tc_sql, -1, &tc_stmt, nullptr);
-    if (rc == SQLITE_OK) {
-        while (sqlite3_step(tc_stmt) == SQLITE_ROW) {
-            const char* name = reinterpret_cast<const char*>(sqlite3_column_text(tc_stmt, 0));
-            const char* args = reinterpret_cast<const char*>(sqlite3_column_text(tc_stmt, 1));
-            if (name) total += estimate_tokens(name);
-            if (args) total += estimate_tokens(args);
-        }
-        sqlite3_finalize(tc_stmt);
-    }
-
     return total;
 }
 
@@ -363,8 +321,9 @@ size_t SessionDB::estimate_droppable_tokens() const {
     std::lock_guard<std::mutex> lock(mutex_);
     size_t total = 0;
 
+    // Count tool_data JSON content as compactable
     sqlite3_stmt* stmt = nullptr;
-    const char* sql = "SELECT content, tool_call_id FROM messages WHERE retention = 'droppable'";
+    const char* sql = "SELECT tool_data FROM messages WHERE tool_data != ''";
     int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
     if (rc != SQLITE_OK) {
         sqlite3_finalize(stmt);
@@ -372,17 +331,17 @@ size_t SessionDB::estimate_droppable_tokens() const {
     }
 
     while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
-        const char* content = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-        const char* tool_call_id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
-
-        if (content) total += estimate_tokens(content);
-        if (tool_call_id) total += estimate_tokens(tool_call_id);
-        total += 20; // framing overhead
+        const char* tool_data = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        if (tool_data) total += estimate_tokens(tool_data);
     }
     sqlite3_finalize(stmt);
 
     return total;
 }
+
+// ---------------------------------------------------------------------------
+// Metadata
+// ---------------------------------------------------------------------------
 
 void SessionDB::refresh_metadata(const std::string& model,
     int context_limit,
@@ -392,14 +351,12 @@ void SessionDB::refresh_metadata(const std::string& model,
     int continuation_steps_used,
     int continuation_max_steps,
     const std::string& assistant_name) {
-    // Compute estimates outside the upsert lock — each method locks internally.
     size_t estimated_tok = estimate_total_tokens();
     size_t droppable_tok = estimate_droppable_tokens();
     size_t msg_count = message_count();
 
     std::lock_guard<std::mutex> lock(mutex_);
 
-    // Ensure the metadata table exists
     sqlite3_exec(db_,
         "CREATE TABLE IF NOT EXISTS metadata ("
         "key TEXT PRIMARY KEY,"
@@ -407,7 +364,6 @@ void SessionDB::refresh_metadata(const std::string& model,
         ")",
         nullptr, nullptr, nullptr);
 
-    // Prepare upsert statement
     sqlite3_stmt* stmt = nullptr;
     const char* upsert_sql =
         "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)";
@@ -429,17 +385,10 @@ void SessionDB::refresh_metadata(const std::string& model,
     upsert("estimated_tokens", std::to_string(estimated_tok));
     upsert("droppable_tokens", std::to_string(droppable_tok));
     upsert("message_count", std::to_string(msg_count));
-
-    // Usage from last API response
-    upsert("last_prompt_tokens", std::to_string(last_usage.prompt_tokens));
-    upsert("last_completion_tokens", std::to_string(last_usage.completion_tokens));
-    upsert("last_total_tokens", std::to_string(last_usage.total_tokens));
-
-    // Budgets
-    upsert("max_tool_iterations", std::to_string(max_iterations));
     upsert("tool_calls_used", std::to_string(tool_calls_used));
-    upsert("max_continuation_steps", std::to_string(continuation_max_steps));
+    upsert("max_tool_iterations", std::to_string(max_iterations));
     upsert("continuation_steps_used", std::to_string(continuation_steps_used));
+    upsert("continuation_max_steps", std::to_string(continuation_max_steps));
 
     // Computed percentage (integer, e.g. "35" for 35%)
     if (context_limit > 0) {
@@ -449,24 +398,30 @@ void SessionDB::refresh_metadata(const std::string& model,
         upsert("context_usage_percent", "0");
     }
 
+    if (last_usage.prompt_tokens > 0) {
+        upsert("last_prompt_tokens", std::to_string(last_usage.prompt_tokens));
+        upsert("last_completion_tokens", std::to_string(last_usage.completion_tokens));
+        upsert("last_total_tokens", std::to_string(last_usage.total_tokens));
+    }
+
     sqlite3_finalize(stmt);
 }
 
-
-
-
+// ---------------------------------------------------------------------------
+// Count / truncate
+// ---------------------------------------------------------------------------
 
 size_t SessionDB::message_count() const {
     std::lock_guard<std::mutex> lock(mutex_);
+    size_t count = 0;
     sqlite3_stmt* stmt = nullptr;
-    int rc = sqlite3_prepare_v2(db_, "SELECT COUNT(*) FROM messages", -1, &stmt, nullptr);
+    const char* sql = "SELECT COUNT(*) FROM messages";
+    int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
     if (rc != SQLITE_OK) {
         sqlite3_finalize(stmt);
-        return 0;
+        return count;
     }
-    rc = sqlite3_step(stmt);
-    size_t count = 0;
-    if (rc == SQLITE_ROW) {
+    if (sqlite3_step(stmt) == SQLITE_ROW) {
         count = static_cast<size_t>(sqlite3_column_int64(stmt, 0));
     }
     sqlite3_finalize(stmt);
@@ -476,9 +431,9 @@ size_t SessionDB::message_count() const {
 void SessionDB::truncate_conversation(size_t n) {
     std::lock_guard<std::mutex> lock(mutex_);
 
-    // Get the id of the Nth message (1-indexed, ordered by seq)
+    // Find the id of the Nth message (0-indexed by id order)
     sqlite3_stmt* stmt = nullptr;
-    const char* sql = "SELECT id FROM messages ORDER BY seq LIMIT 1 OFFSET ?";
+    const char* sql = "SELECT id FROM messages ORDER BY id LIMIT 1 OFFSET ?";
     int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
     if (rc != SQLITE_OK) {
         sqlite3_finalize(stmt);
@@ -491,106 +446,28 @@ void SessionDB::truncate_conversation(size_t n) {
         int64_t cutoff_id = sqlite3_column_int64(stmt, 0);
         sqlite3_finalize(stmt);
 
-        // Delete tool_calls for messages we're going to delete
+        // Delete everything from cutoff onward
         sqlite3_stmt* del_stmt = nullptr;
-        rc = sqlite3_prepare_v2(db_,
-            "DELETE FROM tool_calls WHERE message_id IN (SELECT id FROM messages WHERE id >= ?)",
-            -1, &del_stmt, nullptr);
-        if (rc == SQLITE_OK) {
-            sqlite3_bind_int64(del_stmt, 1, cutoff_id);
-            sqlite3_step(del_stmt);
-        }
-        sqlite3_finalize(del_stmt);
-
-        // Delete messages from cutoff onward
-        del_stmt = nullptr;
         rc = sqlite3_prepare_v2(db_, "DELETE FROM messages WHERE id >= ?", -1, &del_stmt, nullptr);
         if (rc == SQLITE_OK) {
             sqlite3_bind_int64(del_stmt, 1, cutoff_id);
             sqlite3_step(del_stmt);
         }
         sqlite3_finalize(del_stmt);
-
-        // Reset seq counter based on remaining max seq
-        sqlite3_stmt* max_stmt = nullptr;
-        rc = sqlite3_prepare_v2(db_, "SELECT COALESCE(MAX(seq), 0) FROM messages", -1, &max_stmt, nullptr);
-        if (rc == SQLITE_OK && sqlite3_step(max_stmt) == SQLITE_ROW) {
-            next_seq_ = sqlite3_column_int64(max_stmt, 0);
-        }
-        sqlite3_finalize(max_stmt);
     } else {
         sqlite3_finalize(stmt);
     }
 }
 
-void SessionDB::prune_droppable() {
-    std::lock_guard<std::mutex> lock(mutex_);
-
-    // Collect all tool_call_ids that still have a corresponding tool result
-    std::unordered_set<std::string> active_tool_ids;
-    {
-        sqlite3_stmt* stmt = nullptr;
-        const char* sql = "SELECT DISTINCT tool_call_id FROM messages WHERE role = 'tool' AND tool_call_id != ''";
-        int rc = sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
-        if (rc == SQLITE_OK) {
-            while (sqlite3_step(stmt) == SQLITE_ROW) {
-                const char* id = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-                if (id) active_tool_ids.insert(id);
-            }
-        }
-        sqlite3_finalize(stmt);
-    }
-
-    // Delete messages marked 'droppable'
-    {
-        sqlite3_stmt* stmt = nullptr;
-        const char* sql = "DELETE FROM messages WHERE retention = 'droppable'";
-        sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
-        if (stmt) {
-            sqlite3_step(stmt);
-            sqlite3_finalize(stmt);
-        }
-    }
-
-    // Delete orphaned assistant tool-call messages (no tool results for their calls)
-    {
-        sqlite3_stmt* stmt = nullptr;
-        const char* sql = R"(
-            DELETE FROM messages WHERE id IN (
-                SELECT m.id FROM messages m
-                WHERE m.role = 'assistant'
-                AND m.content IS NULL
-                AND NOT EXISTS (
-                    SELECT 1 FROM tool_calls tc
-                    WHERE tc.message_id = m.id
-                    AND tc.tool_call_id IN (SELECT tool_call_id FROM messages WHERE role = 'tool')
-                )
-            )
-        )";
-        sqlite3_prepare_v2(db_, sql, -1, &stmt, nullptr);
-        if (stmt) {
-            sqlite3_step(stmt);
-            sqlite3_finalize(stmt);
-        }
-    }
-
-    // Reset seq counter
-    {
-        sqlite3_stmt* max_stmt = nullptr;
-        int rc = sqlite3_prepare_v2(db_, "SELECT COALESCE(MAX(seq), 0) FROM messages", -1, &max_stmt, nullptr);
-        if (rc == SQLITE_OK && sqlite3_step(max_stmt) == SQLITE_ROW) {
-            next_seq_ = sqlite3_column_int64(max_stmt, 0);
-        }
-        sqlite3_finalize(max_stmt);
-    }
-}
+// ---------------------------------------------------------------------------
+// Raw SQL execution for the agent
+// ---------------------------------------------------------------------------
 
 Result<std::string> SessionDB::execute(const std::string& sql) {
     if (!db_) {
         return std::unexpected(std::string("SQLite database handle is null"));
     }
 
-    // Reject excessively long queries (sanity limit)
     const size_t max_sql_len = 100 * 1024; // 100 KB
     if (sql.size() > max_sql_len) {
         return std::unexpected("SQL query too large (" + std::to_string(sql.size()) +
@@ -608,29 +485,22 @@ Result<std::string> SessionDB::execute(const std::string& sql) {
         return std::unexpected("SQL error: " + err);
     }
 
-    // If no statement was produced (empty / whitespace-only input), treat as OK
     if (!stmt) {
         return std::string(R"({"ok": true})");
     }
 
-    // Determine if this is a query (produces rows) or a DML/DDL statement
     int col_count = sqlite3_column_count(stmt);
 
     if (col_count > 0) {
-        // ── SELECT / query-like statement ──
         json rows = json::array();
-
         while (true) {
             rc = sqlite3_step(stmt);
-            if (rc == SQLITE_DONE) {
-                break;
-            }
+            if (rc == SQLITE_DONE) break;
             if (rc == SQLITE_ROW) {
                 json row;
                 for (int i = 0; i < col_count; i++) {
                     const char* col_name = sqlite3_column_name(stmt, i);
                     std::string key = col_name ? col_name : "col" + std::to_string(i);
-
                     int col_type = sqlite3_column_type(stmt, i);
                     switch (col_type) {
                     case SQLITE_NULL:
@@ -650,13 +520,13 @@ Result<std::string> SessionDB::execute(const std::string& sql) {
                         break;
                     }
                     case SQLITE_BLOB: {
-                        // Represent BLOB as a hex string
                         const void* blob = sqlite3_column_blob(stmt, i);
                         int len = sqlite3_column_bytes(stmt, i);
                         std::ostringstream hex;
                         hex << "\\x";
                         for (int j = 0; j < len; j++) {
-                            hex << std::hex << (static_cast<const unsigned char*>(blob)[j] >> 4)
+                            hex << std::hex
+                                << (static_cast<const unsigned char*>(blob)[j] >> 4)
                                 << (static_cast<const unsigned char*>(blob)[j] & 0x0F);
                         }
                         row[key] = hex.str();
@@ -669,34 +539,28 @@ Result<std::string> SessionDB::execute(const std::string& sql) {
                 }
                 rows.push_back(std::move(row));
             } else {
-                // SQLITE_BUSY, SQLITE_ERROR, etc.
                 std::string err = sqlite3_errmsg(db_);
                 sqlite3_finalize(stmt);
                 return std::unexpected("SQL error during step: " + err);
             }
         }
-
         sqlite3_finalize(stmt);
         return rows.dump();
-    } else {
-        // ── DML / DDL (INSERT, UPDATE, DELETE, CREATE TABLE, etc.) ──
-        rc = sqlite3_step(stmt);
-        int finalized = sqlite3_finalize(stmt);
-
-        if (rc != SQLITE_DONE && rc != SQLITE_ROW) {
-            std::string err = sqlite3_errmsg(db_);
-            return std::unexpected("SQL error: " + err);
-        }
-
-        if (finalized != SQLITE_OK) {
-            std::string err = sqlite3_errmsg(db_);
-            return std::unexpected("SQL finalize error: " + err);
-        }
-
-        int changes = sqlite3_changes(db_);
-        json result = {{"rows_affected", changes}};
-        return result.dump();
     }
+
+    // DML / DDL
+    rc = sqlite3_step(stmt);
+    int finalized = sqlite3_finalize(stmt);
+    if (rc != SQLITE_DONE && rc != SQLITE_ROW) {
+        std::string err = sqlite3_errmsg(db_);
+        return std::unexpected("SQL error: " + err);
+    }
+    if (finalized != SQLITE_OK) {
+        std::string err = sqlite3_errmsg(db_);
+        return std::unexpected("SQL finalize error: " + err);
+    }
+    int changes = sqlite3_changes(db_);
+    return json({{"rows_affected", changes}}).dump();
 }
 
 // ===================================================================
@@ -710,7 +574,6 @@ Result<void> SessionDB::save_to_file(const std::string& path) {
 
     std::lock_guard<std::mutex> lock(mutex_);
 
-    // Open the destination file (creates or overwrites)
     sqlite3* file_db = nullptr;
     int rc = sqlite3_open(path.c_str(), &file_db);
     if (rc != SQLITE_OK) {
@@ -721,7 +584,6 @@ Result<void> SessionDB::save_to_file(const std::string& path) {
     auto file_cleanup =
         std::unique_ptr<sqlite3, decltype(&sqlite3_close)>(file_db, sqlite3_close);
 
-    // Backup in-memory DB → file DB
     sqlite3_backup* backup = sqlite3_backup_init(file_db, "main", db_, "main");
     if (!backup) {
         std::string err = sqlite3_errmsg(file_db);
@@ -731,10 +593,8 @@ Result<void> SessionDB::save_to_file(const std::string& path) {
         std::unique_ptr<sqlite3_backup, decltype(&sqlite3_backup_finish)>(
             backup, sqlite3_backup_finish);
 
-    // Step the backup to completion (single call copies everything for
-    // an in-memory database since it's small — typically < 100 pages).
-    rc = sqlite3_backup_step(backup, -1);
-    if (rc != SQLITE_DONE) {
+    int rc2 = sqlite3_backup_step(backup, -1);
+    if (rc2 != SQLITE_DONE) {
         std::string err = sqlite3_errmsg(file_db);
         return std::unexpected("Backup failed: " + err);
     }
@@ -749,7 +609,6 @@ Result<void> SessionDB::load_from_file(const std::string& path) {
 
     std::lock_guard<std::mutex> lock(mutex_);
 
-    // Open the source file (read-only)
     sqlite3* file_db = nullptr;
     int rc = sqlite3_open_v2(path.c_str(), &file_db,
         SQLITE_OPEN_READONLY, nullptr);
@@ -761,10 +620,6 @@ Result<void> SessionDB::load_from_file(const std::string& path) {
     auto file_cleanup =
         std::unique_ptr<sqlite3, decltype(&sqlite3_close)>(file_db, sqlite3_close);
 
-    // We need to replace the current in-memory DB entirely.  Since
-    // transactions and backup can't target two different in-memory
-    // databases atomically, we create a fresh in-memory DB, backup
-    // the file into it, then swap handles.
     sqlite3* new_db = nullptr;
     rc = sqlite3_open(":memory:", &new_db);
     if (rc != SQLITE_OK) {
@@ -773,7 +628,6 @@ Result<void> SessionDB::load_from_file(const std::string& path) {
         return std::unexpected("Failed to create in-memory DB: " + err);
     }
 
-    // Backup file DB → new in-memory DB
     sqlite3_backup* backup = sqlite3_backup_init(new_db, "main", file_db, "main");
     if (!backup) {
         std::string err = sqlite3_errmsg(new_db);
@@ -791,57 +645,31 @@ Result<void> SessionDB::load_from_file(const std::string& path) {
         return std::unexpected("Backup failed: " + err);
     }
     backup_cleanup.reset();
-
-    // Close the file DB (no longer needed)
     file_cleanup.reset();
 
-    // Close the old in-memory DB and swap in the new one
     sqlite3_close(db_);
     db_ = new_db;
 
-    // Ensure conversation tables exist (the loaded file might be empty/new)
-    // We already hold the mutex, so execute the SQL directly.
+    // Ensure tables exist
     {
-        const char* sql = R"(
+        const char* tbl_sql = R"(
             CREATE TABLE IF NOT EXISTS messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                seq INTEGER NOT NULL,
                 role TEXT NOT NULL,
                 content TEXT,
                 reasoning_content TEXT DEFAULT '',
-                tool_call_id TEXT DEFAULT '',
-                retention TEXT DEFAULT 'preserve',
-                created_at TEXT DEFAULT (datetime('now'))
+                tool_data TEXT DEFAULT '',
+                suggested_retention TEXT DEFAULT 'preserve'
             );
-            CREATE TABLE IF NOT EXISTS tool_calls (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
-                call_index INTEGER NOT NULL,
-                tool_call_id TEXT NOT NULL,
-                name TEXT NOT NULL,
-                arguments TEXT DEFAULT ''
-            );
-            CREATE INDEX IF NOT EXISTS idx_messages_seq ON messages(seq);
-            CREATE INDEX IF NOT EXISTS idx_tool_calls_msg ON tool_calls(message_id);
             CREATE TABLE IF NOT EXISTS metadata (
                 key TEXT PRIMARY KEY,
                 value TEXT
             );
         )";
         char* err = nullptr;
-        sqlite3_exec(db_, sql, nullptr, nullptr, &err);
+        sqlite3_exec(db_, tbl_sql, nullptr, nullptr, &err);
         if (err) sqlite3_free(err);
     }
-
-    // Reset sequence counter from the loaded data
-    next_seq_ = 0;
-    sqlite3_stmt* stmt = nullptr;
-    rc = sqlite3_prepare_v2(db_, "SELECT COALESCE(MAX(seq), 0) FROM messages",
-        -1, &stmt, nullptr);
-    if (rc == SQLITE_OK && sqlite3_step(stmt) == SQLITE_ROW) {
-        next_seq_ = sqlite3_column_int64(stmt, 0);
-    }
-    sqlite3_finalize(stmt);
 
     return {};
 }

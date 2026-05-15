@@ -856,8 +856,18 @@ void render_chat_ui(TabInfo& tab, bool& done) {
         auto wiki = tab.session->wiki();
         if (wiki) {
             auto snippets_result = wiki->list_snippets();
-            if (snippets_result && !snippets_result->empty()) {
+            if (snippets_result) {
                 static string selected_snippet;
+                // Clear stale selection (snippet was renamed/deleted in Wiki tab)
+                if (!selected_snippet.empty()) {
+                    bool found = false;
+                    for (const auto& [name, _] : *snippets_result) {
+                        if (name == selected_snippet) { found = true; break; }
+                    }
+                    if (!found) selected_snippet.clear();
+                }
+                // Show combo only if there are snippets to pick from
+                if (!snippets_result->empty()) {
                 string preview = selected_snippet.empty() ? "Snippet@..." : selected_snippet;
                 SetNextItemWidth(GetContentRegionAvail().x);
                 if (BeginCombo("##snippet-ref", preview.c_str())) {
@@ -880,6 +890,7 @@ void render_chat_ui(TabInfo& tab, bool& done) {
                         }
                     }
                     EndCombo();
+                }
                 }
             }
         }

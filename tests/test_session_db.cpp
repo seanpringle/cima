@@ -13,7 +13,6 @@ using json = nlohmann::json;
 
 TEST_CASE("SessionDB init tables and empty conversation", "[session_db]") {
     SessionDB db;
-    // Tables should be initialized in constructor
     CHECK(db.message_count() == 0);
 
     // query_session should be able to see the tables
@@ -22,14 +21,14 @@ TEST_CASE("SessionDB init tables and empty conversation", "[session_db]") {
     auto tables = json::parse(*result);
     REQUIRE(tables.is_array());
     bool found_messages = false;
-    bool found_tool_calls = false;
+    bool found_metadata = false;
     for (const auto& t : tables) {
         std::string name = t["name"];
         if (name == "messages") found_messages = true;
-        if (name == "tool_calls") found_tool_calls = true;
+        if (name == "metadata") found_metadata = true;
     }
     CHECK(found_messages);
-    CHECK(found_tool_calls);
+    CHECK(found_metadata);
 }
 
 TEST_CASE("SessionDB basic user-assistant exchange", "[session_db]") {
@@ -52,7 +51,6 @@ TEST_CASE("SessionDB basic user-assistant exchange", "[session_db]") {
 
     CHECK(msgs[2]["role"] == "assistant");
     CHECK(msgs[2]["content"] == "Hi there!");
-    // reasoning_content should NOT appear when empty
     CHECK(msgs[2].find("reasoning_content") == msgs[2].end());
 }
 
@@ -103,15 +101,16 @@ TEST_CASE("SessionDB with tool result", "[session_db]") {
     SessionDB db;
 
     db.add_user("List files");
+    int64_t msg_id;
     {
         ToolCall tc;
         tc.index = 0;
         tc.id = "call_req1";
         tc.name = "list_files";
         tc.arguments = R"({"path": "."})";
-        db.add_assistant("", "", {tc});
+        msg_id = db.add_assistant("", "", {tc});
     }
-    db.add_tool("call_req1", "file1.txt\nfile2.txt");
+    db.add_tool(msg_id, "call_req1", "file1.txt\nfile2.txt");
 
     json msgs = db.build_openai_payload("You are helpful.");
     REQUIRE(msgs.size() == 4);
@@ -125,7 +124,6 @@ TEST_CASE("SessionDB empty content for tool_call message is null", "[session_db]
     SessionDB db;
 
     db.add_user("hi");
-    // Simulate a tool_call assistant message with reasoning but no content
     {
         ToolCall tc;
         tc.id = "c1";
@@ -147,7 +145,6 @@ TEST_CASE("SessionDB truncate conversation on error", "[session_db]") {
     db.add_assistant("Thinking...");
     CHECK(db.message_count() == 2);
 
-    // Simulate error rollback
     db.truncate_conversation(snapshot);
     CHECK(db.message_count() == 0);
 }
@@ -155,7 +152,6 @@ TEST_CASE("SessionDB truncate conversation on error", "[session_db]") {
 TEST_CASE("SessionDB estimate total tokens", "[session_db]") {
     SessionDB db;
 
-    // Empty conversation should have low token count
     size_t empty_tokens = db.estimate_total_tokens();
 
     db.add_user("Hello world");
@@ -163,39 +159,35 @@ TEST_CASE("SessionDB estimate total tokens", "[session_db]") {
 
     size_t filled_tokens = db.estimate_total_tokens();
     CHECK(filled_tokens > empty_tokens);
-    CHECK(filled_tokens >= 10); // at least some tokens
+    CHECK(filled_tokens >= 10);
 }
 
-TEST_CASE("SessionDB prune droppable", "[session_db]") {
+TEST_CASE("SessionDB delete assistant removes tool_data cleanly", "[session_db]") {
     SessionDB db;
 
     db.add_user("List files");
+    int64_t msg_id;
     {
         ToolCall tc;
         tc.id = "call_1";
         tc.name = "list_files";
         tc.arguments = R"({"path": "."})";
-        db.add_assistant("", "", {tc});
+        msg_id = db.add_assistant("", "", {tc});
     }
-    db.add_tool("call_1", "file1.txt");
-    db.add_assistant("Here are the files.");
+    db.add_tool(msg_id, "call_1", "file1.txt");
+    int64_t final_id = db.add_assistant("Here are the files.");
 
-    CHECK(db.message_count() == 4);
+    // tool_data is embedded in the assistant — no separate tool row
+    CHECK(db.message_count() == 3);
 
-    // Prune droppable (tool results are tagged 'droppable')
-    db.prune_droppable();
-
-    // The tool result (droppable) is removed, and the orphaned assistant
-    // tool-call message (no remaining tool results for its calls) is also removed.
-    // User + final content assistant remain.
+    // Delete the tool-call assistant — tool_data goes with it
+    auto result = db.execute("DELETE FROM messages WHERE id = " + std::to_string(msg_id));
+    REQUIRE(result);
     CHECK(db.message_count() == 2);
 
-    // Verify the tool result and orphaned assistant are gone
+    // Remaining: user, final assistant (tool_calls and results fully gone)
     json msgs = db.build_openai_payload("test");
     REQUIRE(msgs.size() == 3); // system + 2 remaining messages
-    CHECK(msgs[1]["role"] == "user");
-    CHECK(msgs[2]["role"] == "assistant");
-    CHECK(msgs[2]["content"] == "Here are the files.");
 }
 
 TEST_CASE("SessionDB multiple tool calls in one message", "[session_db]") {
@@ -237,4 +229,54 @@ TEST_CASE("SessionDB multiple tool calls in one message", "[session_db]") {
     CHECK(tcs[1]["id"] == "call_2");
     CHECK(tcs[1]["function"]["name"] == "read_file");
     CHECK(tcs[1]["function"]["arguments"] == R"({"path": "/tmp/foo.txt"})");
+}
+
+TEST_CASE("SessionDB multiple tool results in order", "[session_db]") {
+    SessionDB db;
+
+    db.add_user("Do two things");
+
+    std::vector<ToolCall> calls;
+    {
+        ToolCall tc1;
+        tc1.id = "first";
+        tc1.name = "list_files";
+        tc1.arguments = R"({"path": "."})";
+        calls.push_back(tc1);
+    }
+    {
+        ToolCall tc2;
+        tc2.id = "second";
+        tc2.name = "read_file";
+        tc2.arguments = R"({"path": "/tmp/foo.txt"})";
+        calls.push_back(tc2);
+    }
+
+    int64_t mid = db.add_assistant("", "", calls);
+    db.add_tool(mid, "first", "file1.txt");
+    db.add_tool(mid, "second", "file contents here");
+
+    json msgs = db.build_openai_payload("test");
+    // system + user + assistant(with 2 calls) + tool(first) + tool(second)
+    REQUIRE(msgs.size() == 5);
+
+    // Assistant
+    CHECK(msgs[2]["role"] == "assistant");
+    CHECK(msgs[2]["tool_calls"].size() == 2);
+
+    // Tool results in the same order as the calls
+    CHECK(msgs[3]["role"] == "tool");
+    CHECK(msgs[3]["tool_call_id"] == "first");
+    CHECK(msgs[3]["content"] == "file1.txt");
+
+    CHECK(msgs[4]["role"] == "tool");
+    CHECK(msgs[4]["tool_call_id"] == "second");
+    CHECK(msgs[4]["content"] == "file contents here");
+
+    // If we add another assistant, the sequence continues
+    db.add_assistant("Done.");
+    msgs = db.build_openai_payload("test");
+    CHECK(msgs.size() == 6);
+    CHECK(msgs[5]["role"] == "assistant");
+    CHECK(msgs[5]["content"] == "Done.");
 }

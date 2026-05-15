@@ -185,20 +185,25 @@ void render_wiki_tab(Wiki& wiki, ImFont* mono_font) {
                 if (selected_snippet.empty()) {
                     TextDisabled("Select a snippet from the left panel");
                 } else {
-                    // Name (single-line, auto-save on change)
+                    // Name (single-line, save on Enter or focus loss)
                     PushID("snippet-name");
                     Text("Name:");
                     SameLine();
-                    if (InputText("##name", snippet_name_buf, sizeof(snippet_name_buf),
-                            ImGuiInputTextFlags_EnterReturnsTrue))
-                    {
+                    auto do_rename = [&] {
                         std::string new_name(snippet_name_buf);
                         if (!new_name.empty() && new_name != selected_snippet) {
-                            // Write with new name, delete old
                             wiki.write_snippet(new_name, std::string(snippet_content_buf));
                             wiki.delete_snippet(selected_snippet);
                             selected_snippet = new_name;
                         }
+                    };
+                    if (InputText("##name", snippet_name_buf, sizeof(snippet_name_buf),
+                            ImGuiInputTextFlags_EnterReturnsTrue))
+                    {
+                        do_rename();
+                    }
+                    if (IsItemDeactivatedAfterEdit()) {
+                        do_rename();
                     }
                     PopID();
 

@@ -363,7 +363,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
 
             auto calls = tool_acc.finalize();
             if (!calls.empty()) {
-                session_db_.add_assistant("", reasoning, calls);
+                auto msg_id = session_db_.add_assistant("", reasoning, calls);
 
                 if (*cancelled_) {
                     // User cancelled — roll back only this turn
@@ -408,7 +408,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                                 tr = std::unexpected(std::string(e.what()));
                             }
                             auto result = tr ? *tr : tr.error();
-                            session_db_.add_tool(call.id, result);
+                            session_db_.add_tool(msg_id, call.id, result);
                         }
                         // Inject usage notices as a system message (once per iteration)
                         {
@@ -446,7 +446,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                                 tr = std::unexpected(std::string(e.what()));
                             }
                             auto result = tr ? *tr : tr.error();
-                            session_db_.add_tool(calls[i].id, result);
+                            session_db_.add_tool(msg_id, calls[i].id, result);
                         }
                         // Inject usage notices as a system message (once per iteration)
                         {
@@ -474,7 +474,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                             tr = std::unexpected(std::string(e.what()));
                         }
                         auto result = tr ? *tr : tr.error();
-                        session_db_.add_tool(call.id, result);
+                        session_db_.add_tool(msg_id, call.id, result);
                     }
                     // Inject usage notices as a system message (once per iteration)
                     {

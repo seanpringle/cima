@@ -13,10 +13,11 @@ struct sqlite3;
 /// Each ChatSession owns one SessionDB instance. Agents can create tables,
 /// insert data, and query results across tool calls within the same session.
 ///
-/// The conversation history is stored in two tables:
-///   messages  — one row per message (user, assistant, tool)
-///   tool_calls — one row per tool_call within an assistant message
-/// Agents can read/write these tables directly via the query_session tool
+/// The conversation history is stored in the `messages` table:
+///   messages — one row per message (user or assistant)
+///     Tool calls and results are stored as a JSON array in `tool_data`
+///     on the assistant message.  No separate `tool_calls` table.
+/// Agents can read/write this table directly via the query_session tool
 /// to manage their own context (summarize, prune, reorganize).
 class SessionDB {
   public:
@@ -43,7 +44,7 @@ class SessionDB {
     // These methods are used by ChatSession to persist the conversation.
     // The same data is also accessible via SQL through query_session.
 
-    /// Initialize conversation tables (messages, tool_calls).
+    /// Initialize conversation tables (messages, metadata).
     /// Safe to call multiple times (CREATE TABLE IF NOT EXISTS).
     void init_conversation_tables();
 
@@ -52,22 +53,26 @@ class SessionDB {
 
     /// Add a system message (e.g. usage notices). Returns the new message id.
     int64_t add_system(const std::string& content,
-        const std::string& retention = "droppable");
+        const std::string& suggested_retention = "droppable");
 
     /// Add an assistant message. If tool_calls is non-empty, the message
-    /// content is set to NULL and tool_calls are inserted into the
-    /// tool_calls table.  Returns the new message id.
+    /// content is set to NULL and the calls are serialized into `tool_data`.
+    /// Returns the new message id.
     int64_t add_assistant(const std::string& content,
         const std::string& reasoning = {},
         const std::vector<ToolCall>& tool_calls = {});
 
-    /// Add a notice message (user role, droppable retention).
+    /// Add a notice message (user role, droppable suggested_retention).
     /// Used for context/tool usage warnings so they appear as direct
     /// user input rather than ambient system messages.
     int64_t add_notice(const std::string& content);
 
-    /// Add a tool result message. Returns the new message id.
-    int64_t add_tool(const std::string& tool_call_id, const std::string& content);
+    /// Set the result of a tool call on the given assistant message.
+    /// Looks up the entry by tool_call_id in the tool_data JSON array
+    /// and fills in its "result" field.
+    void add_tool(int64_t message_id,
+        const std::string& tool_call_id,
+        const std::string& content);
 
     /// Build the OpenAI-compatible messages array from the DB contents.
     /// Prepends the system prompt as the first message.
@@ -82,7 +87,7 @@ class SessionDB {
     /// Truncate conversation to at most N messages (for rollback on error).
     void truncate_conversation(size_t n);
 
-    /// Estimate tokens for messages with retention='droppable'.
+    /// Estimate tokens for compactable content (tool_data JSON).
     size_t estimate_droppable_tokens() const;
 
     /// Populate/refresh the metadata table with current session state.
@@ -95,12 +100,6 @@ class SessionDB {
         int continuation_steps_used,
         int continuation_max_steps,
         const std::string& assistant_name = {});
-
-    /// Delete all messages tagged 'droppable' and clean up orphaned
-    /// assistant tool-call messages (same logic as old Conversation::compact).
-    void prune_droppable();
-
-
 
     // ── Persistence ────────────────────────────────────────────────────
 
@@ -122,12 +121,6 @@ class SessionDB {
     sqlite3* db_ = nullptr;
     mutable std::mutex mutex_; // guard execute() — may be called from parallel tool paths
 
-    // Next sequence number for messages
-    int64_t next_seq_ = 0;
-
     // Optional auto-save path (set by ChatSession if persistence is configured)
     std::string auto_save_path_;
-
-    // Internal helper: get the next seq and increment
-    int64_t claim_seq();
 };
