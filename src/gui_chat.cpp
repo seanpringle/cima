@@ -584,16 +584,27 @@ void render_config_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
             }
         }
     } else {
-        // Show dropdown
+        // Show dropdown with "default" override first, then discovered models
         string combo_label = session.model();
         if (BeginCombo("##model-combo", combo_label.c_str())) {
-            for (const auto& m : ui.available_models) {
-                bool is_selected = (m == session.model());
-                if (Selectable(m.c_str(), is_selected)) {
-                    session.set_model(m);
-                    tab.model_name = m;
+            // "default" sends no model field to the API (backend chooses)
+            bool is_default = (session.model() == "default");
+            if (Selectable("default", is_default)) {
+                session.set_model("default");
+                tab.model_name = "default";
+            }
+            if (is_default) SetItemDefaultFocus();
+
+            if (!ui.available_models.empty()) {
+                Separator();
+                for (const auto& m : ui.available_models) {
+                    bool is_selected = (m == session.model());
+                    if (Selectable(m.c_str(), is_selected)) {
+                        session.set_model(m);
+                        tab.model_name = m;
+                    }
+                    if (is_selected) SetItemDefaultFocus();
                 }
-                if (is_selected) SetItemDefaultFocus();
             }
             EndCombo();
         }
@@ -601,15 +612,18 @@ void render_config_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
     PopFont();
 
     // Validate current model selection (auto-select first if current not found)
+    // "default" is always valid and should not be auto-replaced.
     if (ui.models_fetched->load(std::memory_order_acquire) && !ui.models_validated &&
         !ui.available_models.empty()) {
         ui.models_validated = true;
         const auto& current = session.model();
-        bool found = std::any_of(ui.available_models.begin(), ui.available_models.end(),
-            [&current](const std::string& m) { return m == current; });
-        if (!found) {
-            session.set_model(ui.available_models.front());
-            tab.model_name = ui.available_models.front();
+        if (current != "default") {
+            bool found = std::any_of(ui.available_models.begin(), ui.available_models.end(),
+                [&current](const std::string& m) { return m == current; });
+            if (!found) {
+                session.set_model(ui.available_models.front());
+                tab.model_name = ui.available_models.front();
+            }
         }
     }
 

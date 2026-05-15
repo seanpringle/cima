@@ -99,11 +99,12 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
     try {
         for (int iter = 0; iter < max_iterations_; iter++) {
             // Build payload from the conversation.
-            json payload = {{"model", model_},
+            json payload = {
                 {"reasoning_effort", reasoning_effort_},
                 {"messages", conversation_.build_openai_payload(system_prompt_)},
                 {"tools", tools_.to_openai_tools()},
                 {"stream", true}};
+            if (model_ != "default") payload["model"] = model_;
             payload["stream_options"] = {{"include_usage", true}};
             std::string content;
             std::string reasoning;
@@ -348,7 +349,6 @@ Result<void> ChatSession::compact() {
 
     // Send to LLM via client_
     json payload = {
-        {"model", model_},
         {"reasoning_effort", reasoning_effort_},
         {"messages", json::array({
             {{"role", "system"}, {"content", sanitize_utf8(system_prompt_)}},
@@ -356,6 +356,7 @@ Result<void> ChatSession::compact() {
         })},
         {"stream", true}
     };
+    if (model_ != "default") payload["model"] = model_;
     payload["stream_options"] = {{"include_usage", true}};
 
     std::string summary;
