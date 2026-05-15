@@ -264,21 +264,25 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                     tab.ui_state.models_future.wait();
                 }
 
-                // Remove from AppSession manifest and delete files
-                {
-                    std::string agent_filename = tab.title + ".db";
-                    app_session->remove_agent_db(agent_filename);
+                // Capture the agent filename before erase (tab ref is dangling after)
+                std::string agent_filename = tab.title + ".db";
 
-                    // Delete the agent DB and auxiliary files from disk
+                // Remove from AppSession manifest
+                app_session->remove_agent_db(agent_filename);
+
+                free_lotr_name(tab.title);
+                tabs.erase(tabs.begin() + active_tab);
+
+                // Delete files from disk AFTER erase (SessionDB destructor in
+                // ChatSession creates the .db file via save_to_file; deleting
+                // before erase means the file is born after we try to kill it).
+                {
                     std::error_code ec;
                     std::string db_path = app_session->agent_db_path(agent_filename);
                     std::filesystem::remove(db_path, ec);
                     std::filesystem::remove(db_path + ".log", ec);
                     std::filesystem::remove(db_path + ".plan.json", ec);
                 }
-
-                free_lotr_name(tab.title);
-                tabs.erase(tabs.begin() + active_tab);
                 if (active_tab >= (int)tabs.size())
                     active_tab = (int)tabs.size() - 1;
                 if (active_tab < 0)
