@@ -155,9 +155,17 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
         // Point to shared config snippets (cima.json)
         tab.snippets = &cfg.snippets;
 
+        // Compute base paths:
+        //   db_path  = <dir>/<name>.db           (SQLite scratch space)
+        //   aux_base = <dir>/<name>              (stem for auxiliary files)
+        std::string db_path = app_session->agent_db_path(agent_filename);
+        std::string stem = agent_filename;
+        if (stem.size() >= 3 && stem.substr(stem.size() - 3) == ".db")
+            stem = stem.substr(0, stem.size() - 3);
+        std::string aux_base = app_session->agent_db_path(stem);
+
         // Set up session DB persistence via AppSession
         {
-            std::string db_path = app_session->agent_db_path(agent_filename);
             tab.session->session_db().set_auto_save_path(db_path);
             tab.session->session_db().load_from_file(db_path);
             // Register with app session for manifest tracking
@@ -166,20 +174,17 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
 
         // Load conversation from JSON file
         {
-            std::string conv_path = app_session->agent_db_path(agent_filename) + ".messages.json";
-            tab.session->conversation().load_from_file(conv_path);
+            tab.session->conversation().load_from_file(aux_base + ".messages.json");
         }
 
         // Load chat UI history from the append-only log.
         {
-            std::string log_path = app_session->agent_db_path(agent_filename) + ".log";
-            tab.ui_state.load_chat_log(log_path);
+            tab.ui_state.load_chat_log(aux_base + ".log");
         }
 
         // Load plan file (plan + comments persisted across sessions).
         {
-            std::string plan_path = app_session->agent_db_path(agent_filename) + ".plan.json";
-            tab.session->plan().load_from_file(plan_path);
+            tab.session->plan().load_from_file(aux_base + ".plan.json");
         }
 
         tabs.push_back(std::move(tab));
@@ -281,10 +286,15 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                 // Capture the agent filename before erase (tab ref is dangling after)
                 std::string agent_filename = tab.agent_filename;
 
+                // Compute auxiliary base path (strip .db from filename)
+                std::string stem = agent_filename;
+                if (stem.size() >= 3 && stem.substr(stem.size() - 3) == ".db")
+                    stem = stem.substr(0, stem.size() - 3);
+                std::string aux_base = app_session->agent_db_path(stem);
+
                 // Save conversation to JSON file before closing
                 {
-                    std::string conv_path = app_session->agent_db_path(agent_filename) + ".messages.json";
-                    tab.session->conversation().save_to_file(conv_path);
+                    tab.session->conversation().save_to_file(aux_base + ".messages.json");
                 }
 
                 // Remove from AppSession manifest
@@ -300,9 +310,9 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                     std::error_code ec;
                     std::string db_path = app_session->agent_db_path(agent_filename);
                     std::filesystem::remove(db_path, ec);
-                    std::filesystem::remove(db_path + ".messages.json", ec);
-                    std::filesystem::remove(db_path + ".log", ec);
-                    std::filesystem::remove(db_path + ".plan.json", ec);
+                    std::filesystem::remove(aux_base + ".messages.json", ec);
+                    std::filesystem::remove(aux_base + ".log", ec);
+                    std::filesystem::remove(aux_base + ".plan.json", ec);
                 }
                 if (active_tab >= (int)tabs.size())
                     active_tab = (int)tabs.size() - 1;
@@ -447,7 +457,10 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
 
     // ── Save all conversation files ──
     for (auto& tab : tabs) {
-        std::string conv_path = app_session->agent_db_path(tab.agent_filename) + ".messages.json";
+        std::string stem = tab.agent_filename;
+        if (stem.size() >= 3 && stem.substr(stem.size() - 3) == ".db")
+            stem = stem.substr(0, stem.size() - 3);
+        std::string conv_path = app_session->agent_db_path(stem) + ".messages.json";
         tab.session->conversation().save_to_file(conv_path);
     }
 
