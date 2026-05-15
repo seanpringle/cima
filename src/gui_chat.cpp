@@ -641,14 +641,25 @@ void render_config_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
     PushFont(mono_font);
     SetNextItemWidth(-1);
     {
-        std::string ws = session.safe_dir();
+        // Sync buffer from session when the input is NOT active
+        // (avoids overwriting the user's in-progress edit)
+        if (!IsItemActive()) {
+            ui.workspace_path_buf = session.safe_dir();
+        }
+
         char buf[1024];
-        strncpy(buf, ws.c_str(), sizeof(buf) - 1);
+        strncpy(buf, ui.workspace_path_buf.c_str(), sizeof(buf) - 1);
         buf[sizeof(buf) - 1] = '\0';
-        if (InputText("##workspace-path", buf, sizeof(buf),
-                ImGuiInputTextFlags_EnterReturnsTrue)) {
+
+        bool was_active = IsItemActive();
+        bool committed = InputText("##workspace-path", buf, sizeof(buf),
+            ImGuiInputTextFlags_EnterReturnsTrue);
+        bool now_active = IsItemActive();
+        bool focus_lost = was_active && !now_active;
+
+        if (committed || focus_lost) {
             std::string new_ws(buf);
-            // Normalise: expand ~ and resolve to absolute path
+            // Normalise: resolve to absolute path, keep as-is if it fails
             if (!new_ws.empty()) {
                 try {
                     std::error_code ec;
@@ -658,10 +669,50 @@ void render_config_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
                         new_ws = p.string();
                     }
                 } catch (...) {
-                    // Keep user input as-is if canonicalisation fails
                 }
             }
+            ui.workspace_path_buf = new_ws;
             session.set_safe_dir(new_ws);
+        }
+
+        // Validate and show status indicator
+        if (!ui.workspace_path_buf.empty()) {
+            std::error_code ec;
+            bool exists = std::filesystem::exists(ui.workspace_path_buf, ec);
+            if (ec) {
+                // exists() failed — likely invalid characters
+                SameLine();
+                TextUnformatted("\xE2\x9A\xA0"); // warning sign
+                if (IsItemHovered()) {
+                    BeginTooltip();
+                    TextUnformatted("Invalid path");
+                    EndTooltip();
+                }
+            } else if (!exists) {
+                SameLine();
+                TextUnformatted("\xE2\x9C\x98"); // cross mark
+                if (IsItemHovered()) {
+                    BeginTooltip();
+                    TextUnformatted("Path does not exist");
+                    EndTooltip();
+                }
+            } else if (!std::filesystem::is_directory(ui.workspace_path_buf, ec)) {
+                SameLine();
+                TextUnformatted("\xE2\x9C\x98"); // cross mark
+                if (IsItemHovered()) {
+                    BeginTooltip();
+                    TextUnformatted("Not a directory");
+                    EndTooltip();
+                }
+            } else {
+                SameLine();
+                TextUnformatted("\xE2\x9C\x93"); // check mark
+                if (IsItemHovered()) {
+                    BeginTooltip();
+                    TextUnformatted("Valid directory");
+                    EndTooltip();
+                }
+            }
         }
     }
     PopFont();

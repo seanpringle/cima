@@ -61,6 +61,9 @@ struct ChatUIState {
     std::deque<std::string> input_history;
     std::vector<char> input_buffer = {0};
     int cursor_pos = 0; // tracked by InputText callback for insert-at-cursor
+
+    // Workspace path input state
+    std::string workspace_path_buf; // local editor buffer, synced from session when inactive
 };
 
 struct TabInfo {
