@@ -95,13 +95,47 @@ std::string ChatSession::build_notices() {
         }
 
         if (pct >= 90) {
-            notices += "**\u26A0 Context critical: ~" + std::to_string(pct) +
-                "% of context window used" + tok_info +
-                "! Archive, prune or summarise session messages before continuing.**\n";
+            notices +=
+                "\n\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557\n"
+                "\u2551  \u26A0 CONTEXT CRITICAL" + tok_info + "           \u2551\n"
+                "\u2551  ~" + std::to_string(pct) +
+                "% of context window used                    \u2551\n"
+                "\u2551                                              "
+                " \u2551\n"
+                "\u2551  Archive, prune or summarise session messages   "
+                " \u2551\n"
+                "\u2551  before continuing.                              "
+                "\u2551\n"
+                "\u255A\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255D\n";
         } else if (pct >= 60) {
-            notices += "**\u26A0 Context warning: ~" + std::to_string(pct) +
-                "% of context window used" + tok_info +
-                ". Consider compacting or pruning droppable messages.**\n";
+            notices +=
+                "\n\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557\n"
+                "\u2551  \u26A0 CONTEXT WARNING" + tok_info + "            \u2551\n"
+                "\u2551  ~" + std::to_string(pct) +
+                "% of context window used                    \u2551\n"
+                "\u2551                                              "
+                " \u2551\n"
+                "\u2551  Consider compacting or pruning droppable          "
+                " \u2551\n"
+                "\u2551  messages.                                        "
+                "\u2551\n"
+                "\u255A\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255D\n";
         }
     }
 
@@ -111,13 +145,47 @@ std::string ChatSession::build_notices() {
         std::string tc_info = " (" + std::to_string(*tc_used) + "/" + std::to_string(*tc_max) + ")";
 
         if (pct >= 90) {
-            notices += "**\u26A0 Usage critical: ~" + std::to_string(pct) +
-                "% of tool call budget used" + tc_info +
-                "! Are you stuck in a loop? Check context usage and prepare a continuation.**\n";
+            notices +=
+                "\n\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557\n"
+                "\u2551  \u26A0 USAGE CRITICAL" + tc_info + "                  \u2551\n"
+                "\u2551  ~" + std::to_string(pct) +
+                "% of tool call budget used                \u2551\n"
+                "\u2551                                              "
+                " \u2551\n"
+                "\u2551  Are you stuck in a loop? Check context usage    "
+                " \u2551\n"
+                "\u2551  and prepare a continuation.                     "
+                "\u2551\n"
+                "\u255A\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255D\n";
         } else if (pct >= 60) {
-            notices += "**\u26A0 Usage warning: ~" + std::to_string(pct) +
-                "% of tool call budget used" + tc_info +
-                ". Consider whether tools are being used efficiently or schedule a continuation.**\n";
+            notices +=
+                "\n\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557\n"
+                "\u2551  \u26A0 USAGE WARNING" + tc_info + "                  \u2551\n"
+                "\u2551  ~" + std::to_string(pct) +
+                "% of tool call budget used                \u2551\n"
+                "\u2551                                              "
+                " \u2551\n"
+                "\u2551  Consider whether tools are being used               "
+                " \u2551\n"
+                "\u2551  efficiently or schedule a continuation.            "
+                "\u2551\n"
+                "\u255A\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
+                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255D\n";
         }
     }
 

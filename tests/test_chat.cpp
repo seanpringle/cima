@@ -375,7 +375,7 @@ TEST_CASE("ChatSession context warning injected at low context_limit", "[chat][n
     for (const auto& msg : msgs) {
         if (msg["role"] == "system") {
             std::string content = msg["content"].get<std::string>();
-            if (content.find("**\u26A0 Context warning:") != std::string::npos) {
+            if (content.find("\u26A0 CONTEXT WARNING") != std::string::npos) {
                 found_notice = true;
                 CHECK(content.find("~") != std::string::npos);
                 break;
@@ -423,7 +423,7 @@ TEST_CASE("ChatSession context critical injected at extreme context_limit", "[ch
     for (const auto& msg : msgs) {
         if (msg["role"] == "system") {
             std::string content = msg["content"].get<std::string>();
-            if (content.find("**\u26A0 Context critical:") != std::string::npos) {
+            if (content.find("\u26A0 CONTEXT CRITICAL") != std::string::npos) {
                 found_critical = true;
                 break;
             }
@@ -485,7 +485,7 @@ TEST_CASE("ChatSession tool call warning at high iteration budget usage", "[chat
         for (const auto& msg : msgs) {
             if (msg["role"] == "system") {
                 std::string content = msg["content"].get<std::string>();
-                if (content.find("**\u26A0 Usage warning:") != std::string::npos) {
+                if (content.find("\u26A0 USAGE WARNING") != std::string::npos) {
                     found_warning = true;
                     break;
                 }
