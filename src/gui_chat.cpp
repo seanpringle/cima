@@ -872,7 +872,7 @@ void render_chat_ui(TabInfo& tab, bool& done) {
         if (wiki) {
             auto pages_result = wiki->list_pages();
             SetNextItemWidth(GetContentRegionAvail().x/2 - GetStyle().ItemSpacing.y/2);
-            if (BeginCombo("##wiki-ref", "@wiki")) {
+            if (BeginCombo("##wiki-ref", "wiki:")) {
                 if (pages_result && !pages_result->empty()) {
                     for (const auto& page : *pages_result) {
                         if (Selectable(page.c_str())) {
