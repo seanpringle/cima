@@ -28,10 +28,7 @@ Result<std::string> Notes::read_note(const std::string& name) {
 
 Result<void> Notes::write_note(const std::string& name, const std::string& body) {
     notes_[name] = body;
-    if (!notes_file_path_.empty()) {
-        auto r = save();
-        if (!r) return r;
-    }
+    // Auto-save is no longer performed here — external persistence handles it.
     return {};
 }
 
@@ -41,34 +38,47 @@ Result<void> Notes::delete_note(const std::string& name) {
         return std::unexpected("no such note: " + name);
     }
     notes_.erase(it);
-    if (!notes_file_path_.empty()) {
-        auto r = save();
-        if (!r) return r;
-    }
+    // Auto-save is no longer performed here — external persistence handles it.
     return {};
 }
 
 Result<void> Notes::delete_all_notes() {
     notes_.clear();
-    if (!notes_file_path_.empty()) {
-        auto r = save();
-        if (!r) return r;
-    }
+    // Auto-save is no longer performed here — external persistence handles it.
     return {};
 }
 
 // ===================================================================
-// File persistence
+// Serialization (for consolidated JSON)
+// ===================================================================
+
+json Notes::to_json() const {
+    json j = json::object();
+    for (const auto& [name, body] : notes_) {
+        j[name] = body;
+    }
+    return j;
+}
+
+void Notes::from_json(const json& j) {
+    notes_.clear();
+    if (!j.is_object()) return;
+    for (auto it = j.begin(); it != j.end(); ++it) {
+        if (it.value().is_string()) {
+            notes_[it.key()] = it.value().get<std::string>();
+        }
+    }
+}
+
+// ===================================================================
+// File persistence (legacy)
 // ===================================================================
 
 Result<void> Notes::save() {
     if (notes_file_path_.empty()) {
         return {};
     }
-    json j = json::object();
-    for (const auto& [name, body] : notes_) {
-        j[name] = body;
-    }
+    auto j = to_json();
     std::ofstream file(notes_file_path_);
     if (!file.is_open()) {
         return std::unexpected("Cannot write notes file: " + notes_file_path_);

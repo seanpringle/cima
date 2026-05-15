@@ -108,6 +108,7 @@ add_library(cima_core
     src/plan.cpp
     src/notes.cpp
     src/app_session.cpp
+    src/assistant_data.cpp
     src/wiki.cpp
     src/tools/factories/wiki.cpp
     src/tools/factories/notes.cpp

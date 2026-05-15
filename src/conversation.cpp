@@ -186,6 +186,8 @@ void Conversation::replace_with_summary(const std::string& summary) {
     msg.content = "[Conversation summary: " + summary + "]";
     msg.suggested_retention = "preserve";
     messages_.push_back(std::move(msg));
+
+    next_id_ = messages_.size() + 1;
 }
 
 // ---------------------------------------------------------------------------
@@ -258,6 +260,8 @@ void Conversation::from_json(const json& j) {
 
         messages_.push_back(std::move(msg));
     }
+
+    next_id_ = messages_.size() + 1;
 }
 
 Result<void> Conversation::save_to_file(const std::string& path) {

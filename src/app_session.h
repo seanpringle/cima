@@ -4,16 +4,13 @@
 #include <string>
 #include <vector>
 
-/// Session folder contents as enumerated from the filesystem.
-struct SessionFolderContents {
-    std::vector<std::string> filenames; // all files in the session dir (excluding state.json)
-};
-
 /// Manages a single app session persisted to ~/.local/state/cima/<name>/.
 ///
 /// Each session folder contains:
-///   state.json   — manifest (version, last_cwd, file list)
+///   state.json   — JSON array of assistant filenames (e.g. ["Fingolfin.json"])
+///                   Optionally also contains top-level "last_cwd" string.
 ///   wiki.db      — Wiki tab SQLite database
+///   <name>.json  — One JSON file per assistant tab (consolidated data)
 ///
 class AppSession {
   public:
@@ -38,6 +35,15 @@ class AppSession {
     const std::string& last_cwd() const { return last_cwd_; }
     void set_last_cwd(const std::string& cwd);
 
+    /// Return the list of assistant filenames from state.json.
+    const std::vector<std::string>& assistant_files() const { return assistant_files_; }
+
+    /// Add an assistant filename to the manifest and persist.
+    void add_assistant_file(const std::string& filename);
+
+    /// Remove an assistant filename from the manifest and persist.
+    void remove_assistant_file(const std::string& filename);
+
     /// Persist state.json to disk.
     void save_manifest();
 
@@ -57,16 +63,9 @@ class AppSession {
     /// Create a brand new session directory and manifest.
     void create_new();
 
-    /// Check integrity: files listed in state.json must match actual folder.
-    /// On mismatch: if !force, prints error and throws; if force, prints warning and corrects.
-    /// @return true if any issues were found (missing or extra files)
-    bool verify_integrity(bool force);
-
-    /// Enumerate all files currently in the session directory (excluding state.json).
-    SessionFolderContents scan_folder() const;
-
     std::string session_name_;
     std::filesystem::path session_dir_;
     std::string last_cwd_;
+    std::vector<std::string> assistant_files_;
     bool is_new_ = false;
 };

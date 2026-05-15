@@ -15,7 +15,7 @@
 #include <cstring>
 #include <ctime>
 #include <filesystem>
-#include <fstream>
+// #include <fstream>  // no longer needed — persistence via AssistantData
 #include <future>
 #include <map>
 #include <md4c.h>
@@ -29,59 +29,18 @@ using std::string_view;
 using std::stringstream;
 using std::vector;
 
-// ── Chat UI log persistence (JSON Lines format) ──────────────────────────
+// ── Chat UI log persistence (now handled via AssistantData) ──────────────
 
-void ChatUIState::load_chat_log(const std::string& path) {
-    log_path = path;
-    entries.clear();
-    int max_seq = 0;
-    std::ifstream file(path);
-    if (!file.is_open()) {
-        next_seq = 1;
-        return; // first run — no log yet
-    }
-    std::string line;
-    while (std::getline(file, line)) {
-        if (line.empty()) continue;
-        try {
-            auto j = json::parse(line);
-            DisplayEntry e;
-            e.seq = j.value("seq", 0);
-            std::string t = j.value("type", "Content");
-            if (t == "UserText")      e.type = EntryType::UserText;
-            else if (t == "Reasoning") e.type = EntryType::Reasoning;
-            else if (t == "Content")   e.type = EntryType::Content;
-            else if (t == "ToolCall")  e.type = EntryType::ToolCall;
-            else continue;
-            e.text = j.value("text", "");
-            e.is_streaming = j.value("streaming", false);
-            entries.push_back(std::move(e));
-            if (e.seq > max_seq) max_seq = e.seq;
-        } catch (...) {
-            // skip corrupt line
-        }
-    }
-    next_seq = max_seq + 1;
+void ChatUIState::load_chat_log(const std::string& /*path*/) {
+    // No-op: chat log persistence is now handled externally via AssistantData.
+    // Entries are managed in-memory; they are loaded/saved as part of the
+    // consolidated per-assistant JSON file.
 }
 
-void ChatUIState::append_chat_log_entry(const DisplayEntry& entry) {
-    if (log_path.empty()) return;
-    json j;
-    switch (entry.type) {
-        case EntryType::UserText:     j["type"] = "UserText"; break;
-        case EntryType::Reasoning:    j["type"] = "Reasoning"; break;
-        case EntryType::Content:      j["type"] = "Content"; break;
-        case EntryType::ToolCall:     j["type"] = "ToolCall"; break;
-    }
-    j["seq"] = entry.seq;
-    j["text"] = entry.text;
-    if (entry.is_streaming) {
-        j["streaming"] = true;
-    }
-    std::ofstream file(log_path, std::ios::app);
-    if (file.is_open()) {
-        file << j.dump() << "\n";
-    }
+void ChatUIState::append_chat_log_entry(const DisplayEntry& /*entry*/) {
+    // No-op: chat log persistence is now handled externally via AssistantData.
+    // Entries remain in the in-memory `entries` vector and are saved during
+    // tab close / application shutdown.
 }
 
 // ── InputText callback: track cursor position for insert-at-cursor ──────

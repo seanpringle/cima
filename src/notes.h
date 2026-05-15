@@ -9,7 +9,10 @@
 /// Each ChatSession owns one Notes instance. Notes are local to that agent
 /// (not shared across tabs like the Wiki).
 ///
-/// Persisted to a JSON file alongside the plan, conversation, etc.
+/// Unlike the old design, Notes no longer auto-saves to a file on every
+/// mutation.  Persistence is handled externally by the session management
+/// code, which calls to_json() / from_json() to consolidate data into a
+/// single per-assistant JSON file.
 class Notes {
   public:
     Notes() = default;
@@ -34,7 +37,12 @@ class Notes {
     /// Delete all notes.
     Result<void> delete_all_notes();
 
-    // ── File persistence ──
+    // ── Serialization (used by external persistence) ──
+
+    json to_json() const;
+    void from_json(const json& j);
+
+    // ── File persistence (legacy, may be removed) ──
 
     /// Set the file path for auto-save.
     void set_notes_file_path(const std::string& path) { notes_file_path_ = path; }

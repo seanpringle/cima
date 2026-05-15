@@ -11,11 +11,7 @@ Result<void> PlanBoard::write_plan(const std::string& markdown) {
     plan_ = markdown;
     // Clear comments when a new plan is written
     comments_.clear();
-    // Auto-save
-    if (!plan_file_path_.empty()) {
-        auto r = save();
-        if (!r) return r;
-    }
+    // Auto-save is no longer performed here — external persistence handles it.
     return {};
 }
 
@@ -45,28 +41,52 @@ Result<void> PlanBoard::comment_plan(const std::string& markdown) {
     }
 
     comments_.push_back(markdown);
-    // Auto-save
-    if (!plan_file_path_.empty()) {
-        auto r = save();
-        if (!r) return r;
-    }
+    // Auto-save is no longer performed here — external persistence handles it.
     return {};
 }
 
 // ===================================================================
-// File persistence
+// Serialization (for consolidated JSON)
 // ===================================================================
 
-Result<void> PlanBoard::save() {
-    if (plan_file_path_.empty()) {
-        return {};
-    }
+json PlanBoard::to_json() const {
     json j;
     j["plan"] = plan_;
     j["comments"] = json::array();
     for (const auto& c : comments_) {
         j["comments"].push_back(c);
     }
+    return j;
+}
+
+void PlanBoard::from_json(const json& j) {
+    if (!j.is_object()) return;
+    plan_.clear();
+    comments_.clear();
+
+    auto p = j.find("plan");
+    if (p != j.end() && p->is_string()) {
+        plan_ = p->get<std::string>();
+    }
+    auto c = j.find("comments");
+    if (c != j.end() && c->is_array()) {
+        for (const auto& item : *c) {
+            if (item.is_string()) {
+                comments_.push_back(item.get<std::string>());
+            }
+        }
+    }
+}
+
+// ===================================================================
+// File persistence (legacy)
+// ===================================================================
+
+Result<void> PlanBoard::save() {
+    if (plan_file_path_.empty()) {
+        return {};
+    }
+    auto j = to_json();
     std::ofstream file(plan_file_path_);
     if (!file.is_open()) {
         return std::unexpected("Cannot write plan file: " + plan_file_path_);

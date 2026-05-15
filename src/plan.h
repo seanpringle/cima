@@ -6,8 +6,11 @@
 
 // PlanBoard — per-session plan document storage.
 // Holds a single plan markdown body plus an append-only list of comments.
-// Supports file persistence: set_plan_file_path() + load_from_file() on
-// init; auto-saves on every mutation (write_plan, comment_plan).
+//
+// Unlike the old design, PlanBoard no longer auto-saves to a file on every
+// mutation.  Persistence is handled externally by the session management
+// code, which calls to_json() / from_json() to consolidate data into a
+// single per-assistant JSON file.
 class PlanBoard {
   public:
     PlanBoard() = default;
@@ -26,7 +29,12 @@ class PlanBoard {
     /// Append a comment to the plan.
     Result<void> comment_plan(const std::string& markdown);
 
-    // ── File persistence ──
+    // ── Serialization (used by external persistence) ──
+
+    json to_json() const;
+    void from_json(const json& j);
+
+    // ── File persistence (legacy, may be removed) ──
 
     /// Set the file path for auto-save.  Load is separate (see load_from_file).
     void set_plan_file_path(const std::string& path) { plan_file_path_ = path; }

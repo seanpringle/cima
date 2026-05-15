@@ -1,4 +1,5 @@
 #include "gui_app.h"
+#include "assistant_data.h"
 #include "gui_chat.h"
 #include "gui_wiki.h"
 #include "plan.h"
@@ -12,6 +13,96 @@ using namespace ImGui;
 
 #include <algorithm>
 #include <csignal>
+
+// ── Helper: save a single tab to its consolidated JSON file ──
+static void save_tab_to_disk(const TabInfo& tab, AppSession& app_session) {
+    std::string json_path = app_session.session_file_path(tab.title + ".json");
+
+    AssistantData data;
+    data.name = tab.title;
+    data.model = tab.model_name;
+    data.conversation = tab.session->conversation().to_json();
+
+    // Serialize chat log entries
+    json log_arr = json::array();
+    for (const auto& e : tab.ui_state.entries) {
+        json entry;
+        entry["seq"] = e.seq;
+        switch (e.type) {
+            case EntryType::UserText:  entry["type"] = "UserText"; break;
+            case EntryType::Reasoning: entry["type"] = "Reasoning"; break;
+            case EntryType::Content:   entry["type"] = "Content"; break;
+            case EntryType::ToolCall:  entry["type"] = "ToolCall"; break;
+        }
+        entry["text"] = e.text;
+        if (e.is_streaming) {
+            entry["streaming"] = true;
+        }
+        log_arr.push_back(std::move(entry));
+    }
+    data.chat_log = std::move(log_arr);
+
+    // Plan data
+    data.plan = tab.session->plan().to_json();
+
+    // Notes data
+    data.notes = tab.session->notes().to_json();
+
+    data.save_to_file(json_path);
+}
+
+// ── Helper: load a tab from its consolidated JSON file ──
+static void load_tab_from_disk(TabInfo& tab, AppSession& app_session) {
+    std::string json_path = app_session.session_file_path(tab.title + ".json");
+
+    AssistantData data;
+    auto result = data.load_from_file(json_path);
+    if (!result) {
+        // File doesn't exist or is corrupt — start fresh
+        return;
+    }
+
+    // Restore model from saved data (but keep the config-provided model if
+    // the saved data has an empty model)
+    if (!data.model.empty()) {
+        tab.model_name = data.model;
+        tab.session->set_model(data.model);
+    }
+
+    // Restore conversation
+    tab.session->conversation().from_json(data.conversation);
+
+    // Restore chat log
+    tab.ui_state.entries.clear();
+    int max_seq = 0;
+    if (data.chat_log.is_array()) {
+        for (const auto& entry : data.chat_log) {
+            DisplayEntry e;
+            e.seq = entry.value("seq", 0);
+            std::string t = entry.value("type", "Content");
+            if (t == "UserText")      e.type = EntryType::UserText;
+            else if (t == "Reasoning") e.type = EntryType::Reasoning;
+            else if (t == "Content")   e.type = EntryType::Content;
+            else if (t == "ToolCall")  e.type = EntryType::ToolCall;
+            else continue;
+            e.text = entry.value("text", "");
+            e.is_streaming = entry.value("streaming", false);
+            tab.ui_state.entries.push_back(std::move(e));
+            if (e.seq > max_seq) max_seq = e.seq;
+        }
+    }
+    tab.ui_state.next_seq = max_seq + 1;
+
+    // Restore plan
+    if (data.plan.is_object()) {
+        tab.session->plan().from_json(data.plan);
+    }
+
+    // Restore notes
+    if (data.notes.is_object()) {
+        tab.session->notes().from_json(data.notes);
+    }
+}
 
 int gui_main(Config cfg, const std::string& session_name, bool force) {
     // ── App session ──
@@ -143,34 +234,28 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
         // Point to shared config snippets (cima.json)
         tab.snippets = &cfg.snippets;
 
-        // Compute stem for auxiliary files: <session_dir>/<title>
-        std::string aux_base = app_session->session_file_path(tab.title);
-
-        // Load conversation from JSON file
-        {
-            tab.session->conversation().load_from_file(aux_base + ".messages.json");
-        }
-
-        // Load chat UI history from the append-only log.
-        {
-            tab.ui_state.load_chat_log(aux_base + ".log");
-        }
-
-        // Load plan file (plan + comments persisted across sessions).
-        {
-            tab.session->plan().load_from_file(aux_base + ".plan.json");
-        }
-
-        // Load notes file (per-agent note storage).
-        {
-            tab.session->notes().load_from_file(aux_base + ".notes.json");
-        }
+        // Load consolidated assistant data from <title>.json
+        load_tab_from_disk(tab, *app_session);
 
         tabs.push_back(std::move(tab));
     };
 
-    // Start with one default tab (new or resumed session)
-    add_tab(cfg.model);
+    // Restore existing tabs from session manifest
+    {
+        const auto& assistant_files = app_session->assistant_files();
+        if (!assistant_files.empty()) {
+            for (const auto& fname : assistant_files) {
+                // Extract the title from the filename (strip .json)
+                if (fname.size() > 5 && fname.substr(fname.size() - 5) == ".json") {
+                    std::string title = fname.substr(0, fname.size() - 5);
+                    add_tab(cfg.model, title);
+                }
+            }
+        } else {
+            // No saved tabs — start with one default tab
+            add_tab(cfg.model);
+        }
+    }
 
     // Focus the first chat tab
     if (!tabs.empty()) {
@@ -237,24 +322,20 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                     tab.ui_state.models_future.wait();
                 }
 
-                // Compute auxiliary base path from the agent title
-                std::string aux_base = app_session->session_file_path(tab.title);
+                // Save consolidated assistant data before closing
+                save_tab_to_disk(tab, *app_session);
 
-                // Save conversation to JSON file before closing
-                {
-                    tab.session->conversation().save_to_file(aux_base + ".messages.json");
-                }
+                // Remove from manifest
+                app_session->remove_assistant_file(tab.title + ".json");
 
                 free_lotr_name(tab.title);
                 tabs.erase(tabs.begin() + active_tab);
 
-                // Delete auxiliary files from disk
+                // Delete the consolidated JSON file from disk
                 {
                     std::error_code ec;
-                    std::filesystem::remove(aux_base + ".messages.json", ec);
-                    std::filesystem::remove(aux_base + ".log", ec);
-                    std::filesystem::remove(aux_base + ".plan.json", ec);
-                    std::filesystem::remove(aux_base + ".notes.json", ec);
+                    std::filesystem::remove(
+                        app_session->session_file_path(tab.title + ".json"), ec);
                 }
                 if (active_tab >= (int)tabs.size())
                     active_tab = (int)tabs.size() - 1;
@@ -397,19 +478,18 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
         }
     }
 
-    // ── Save all conversation files ──
+    // ── Save all tabs to consolidated JSON files ──
     for (auto& tab : tabs) {
-        std::string conv_path = app_session->session_file_path(tab.title) + ".messages.json";
-        tab.session->conversation().save_to_file(conv_path);
+        save_tab_to_disk(tab, *app_session);
     }
 
-    // ── Save all plan files ──
-    for (auto& tab : tabs) {
-        tab.session->plan().save();
-    }
-
-    // ── Save final AppSession manifest ──
+    // ── Update manifest with current tabs ──
     {
+        // Rebuild assistant file list from tabs
+        for (auto& tab : tabs) {
+            app_session->add_assistant_file(tab.title + ".json");
+        }
+
         std::error_code ec;
         auto cwd = std::filesystem::current_path(ec);
         if (!ec) {
