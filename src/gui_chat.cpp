@@ -668,18 +668,18 @@ void render_chat_controls(TabInfo& tab) {
     SetCursorPos(ImVec2(0, GetFrameHeightWithSpacing()));
 }
 
-// ── Tag expansion for @wiki-page and !snippet-name references ──
-// Expands @pagename to the full wiki page body, and !snippetname to the
+// ── Tag expansion for wiki:page-name and !snippet-name references ──
+// Expands wiki:pagename to the full wiki page body, and !snippetname to the
 // full snippet content.  Non-matching tags are left as-is.
 static std::string expand_tags(std::string input, Wiki* wiki) {
-    if (!wiki || input.find('@') == std::string::npos && input.find('!') == std::string::npos)
+    if (!wiki || input.find("wiki:") == std::string::npos && input.find('!') == std::string::npos)
         return input;
 
     std::string result;
     size_t i = 0;
     while (i < input.size()) {
-        if (input[i] == '@') {
-            size_t start = i + 1;
+        if (i + 5 <= input.size() && input.substr(i, 5) == "wiki:") {
+            size_t start = i + 5;
             size_t end = start;
             while (end < input.size() && !std::isspace(static_cast<unsigned char>(input[end])))
                 end++;
@@ -866,7 +866,7 @@ void render_chat_ui(TabInfo& tab, bool& done) {
 
     PopFont();
 
-    // ── Wiki page reference combo (inserts @pagename tag at cursor) ──
+    // ── Wiki page reference combo (inserts wiki:pagename tag at cursor) ──
     {
         auto wiki = tab.session->wiki();
         if (wiki) {
@@ -876,8 +876,8 @@ void render_chat_ui(TabInfo& tab, bool& done) {
                 if (pages_result && !pages_result->empty()) {
                     for (const auto& page : *pages_result) {
                         if (Selectable(page.c_str())) {
-                            // Insert "@pagename" tag at cursor position (no trailing space)
-                            std::string tag = "@" + page;
+                            // Insert "wiki:pagename" tag at cursor position (no trailing space)
+                            std::string tag = "wiki:" + page;
                             auto& buf = ui.input_buffer;
                             int pos = ui.cursor_pos;
                             if (pos < 0 || (size_t)pos > strlen(buf.data()))
@@ -994,7 +994,7 @@ void render_chat_ui(TabInfo& tab, bool& done) {
         if (input.size()) {
             // Push to UI with tags visible (user sees @Page / !Snippet)
             push_entry(ui, EntryType::UserText, input, false);
-            // Expand @wiki-page and !snippet-name tags before sending to the agent
+            // Expand wiki:page-name and !snippet-name tags before sending to the agent
             string expanded = expand_tags(input, tab.session->wiki());
             start_chat(chat, session, expanded);
             for (auto it = history.begin(); it != history.end();
