@@ -160,15 +160,17 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
             std::string db_path = app_session->agent_db_path(agent_filename);
             tab.session->session_db().set_auto_save_path(db_path);
             tab.session->session_db().load_from_file(db_path);
-            // Restore last token usage from metadata so the UI shows
-            // the last known count instead of 0 on session resume.
-            tab.session->restore_last_usage_from_db();
             // Register with app session for manifest tracking
             app_session->add_agent_db(agent_filename);
         }
 
-        // Load chat UI history from the append-only log (separate from
-        // SessionDB so the agent can compact messages without losing history).
+        // Load conversation from JSON file
+        {
+            std::string conv_path = app_session->agent_db_path(agent_filename) + ".messages.json";
+            tab.session->conversation().load_from_file(conv_path);
+        }
+
+        // Load chat UI history from the append-only log.
         {
             std::string log_path = app_session->agent_db_path(agent_filename) + ".log";
             tab.ui_state.load_chat_log(log_path);
@@ -279,6 +281,12 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                 // Capture the agent filename before erase (tab ref is dangling after)
                 std::string agent_filename = tab.agent_filename;
 
+                // Save conversation to JSON file before closing
+                {
+                    std::string conv_path = app_session->agent_db_path(agent_filename) + ".messages.json";
+                    tab.session->conversation().save_to_file(conv_path);
+                }
+
                 // Remove from AppSession manifest
                 app_session->remove_agent_db(agent_filename);
 
@@ -292,6 +300,7 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                     std::error_code ec;
                     std::string db_path = app_session->agent_db_path(agent_filename);
                     std::filesystem::remove(db_path, ec);
+                    std::filesystem::remove(db_path + ".messages.json", ec);
                     std::filesystem::remove(db_path + ".log", ec);
                     std::filesystem::remove(db_path + ".plan.json", ec);
                 }
@@ -434,6 +443,12 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
         if (tab.ui_state.models_future.valid()) {
             tab.ui_state.models_future.wait();
         }
+    }
+
+    // ── Save all conversation files ──
+    for (auto& tab : tabs) {
+        std::string conv_path = app_session->agent_db_path(tab.agent_filename) + ".messages.json";
+        tab.session->conversation().save_to_file(conv_path);
     }
 
     // ── Save all plan files ──

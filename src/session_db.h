@@ -13,12 +13,8 @@ struct sqlite3;
 /// Each ChatSession owns one SessionDB instance. Agents can create tables,
 /// insert data, and query results across tool calls within the same session.
 ///
-/// The conversation history is stored in the `messages` table:
-///   messages — one row per message (user or assistant)
-///     Tool calls and results are stored as a JSON array in `tool_data`
-///     on the assistant message.
-/// Agents can read/write this table directly via the query_session tool
-/// to manage their own context (summarize, prune, reorganize).
+/// This is pure scratch space — no conversation tables are created.
+/// Conversation history is managed by the Conversation class instead.
 class SessionDB {
   public:
     SessionDB();
@@ -39,67 +35,6 @@ class SessionDB {
 
     /// Direct access to the raw handle (for potential future extensions).
     sqlite3* handle() { return db_; }
-
-    // ── Conversation management ──────────────────────────────────────────
-    // These methods are used by ChatSession to persist the conversation.
-    // The same data is also accessible via SQL through query_session.
-
-    /// Initialize conversation tables (messages, metadata).
-    /// Safe to call multiple times (CREATE TABLE IF NOT EXISTS).
-    void init_conversation_tables();
-
-    /// Add a user message. Returns the new message id.
-    int64_t add_user(const std::string& content);
-
-    /// Add a system message (e.g. usage notices). Returns the new message id.
-    int64_t add_system(const std::string& content,
-        const std::string& suggested_retention = "droppable");
-
-    /// Add an assistant message. If tool_calls is non-empty, the message
-    /// content is set to NULL and the calls are serialized into `tool_data`.
-    /// Returns the new message id.
-    int64_t add_assistant(const std::string& content,
-        const std::string& reasoning = {},
-        const std::vector<ToolCall>& tool_calls = {});
-
-    /// Add a notice message (user role, droppable suggested_retention).
-    /// Used for context/tool usage warnings so they appear as direct
-    /// user input rather than ambient system messages.
-    int64_t add_notice(const std::string& content);
-
-    /// Set the result of a tool call on the given assistant message.
-    /// Looks up the entry by tool_call_id in the tool_data JSON array
-    /// and fills in its "result" field.
-    void add_tool(int64_t message_id,
-        const std::string& tool_call_id,
-        const std::string& content);
-
-    /// Build the OpenAI-compatible messages array from the DB contents.
-    /// Prepends the system prompt as the first message.
-    json build_openai_payload(const std::string& system_prompt) const;
-
-    /// Estimate total tokens for all messages currently in the DB.
-    size_t estimate_total_tokens() const;
-
-    /// Return the number of messages in the conversation.
-    size_t message_count() const;
-
-    /// Truncate conversation to at most N messages (for rollback on error).
-    void truncate_conversation(size_t n);
-
-    /// Estimate tokens for compactable content (tool_data JSON).
-    size_t estimate_droppable_tokens() const;
-
-    /// Populate/refresh the metadata table with current session state.
-    /// Creates the table if it doesn't exist.
-    void refresh_metadata(const std::string& model,
-        int context_limit,
-        const Usage& last_usage,
-        int max_iterations,
-        int tool_calls_used,
-        int continuation_steps_used,
-        int continuation_max_steps,
-        const std::string& assistant_name = {});
 
     // ── Persistence ────────────────────────────────────────────────────
 

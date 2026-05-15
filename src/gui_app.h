@@ -55,6 +55,11 @@ struct ChatUIState {
 
     bool models_validated = false; // true once the render thread has applied auto-select
 
+    // Compact button state
+    bool compact_requested = false;
+    bool compacting = false;
+    std::future<Result<void>> compact_future;
+
     std::deque<std::string> input_history;
     std::vector<char> input_buffer = {0};
     int cursor_pos = 0; // tracked by InputText callback for insert-at-cursor

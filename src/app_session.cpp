@@ -411,8 +411,9 @@ void AppSession::save_manifest() {
         // integrity check doesn't flag them as extra.
         if (ag.size() >= 3 && ag.substr(ag.size() - 3) == ".db") {
             std::string stem = ag.substr(0, ag.size() - 3);
-            files.push_back(stem + ".db.log");
-            files.push_back(stem + ".db.plan.json");
+            files.push_back(stem + ".log");
+            files.push_back(stem + ".plan.json");
+            files.push_back(stem + ".messages.json");
         }
     }
     manifest["files"] = std::move(files);

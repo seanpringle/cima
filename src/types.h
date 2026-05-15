@@ -27,7 +27,7 @@ void from_json(const json& j, Usage& u);
 // ---------------------------------------------------------------------------
 // Display types for the chat UI
 // ---------------------------------------------------------------------------
-enum class EntryType { UserText, Reasoning, Content, ToolCall, Continuation };
+enum class EntryType { UserText, Reasoning, Content, ToolCall };
 
 struct DisplayEntry {
     EntryType type;
@@ -45,6 +45,7 @@ struct ToolCall {
     std::string id;
     std::string name;
     std::string arguments; // accumulated JSON fragment from streaming
+    std::string result;    // tool result, empty until filled
 };
 
 // ---------------------------------------------------------------------------
@@ -57,6 +58,7 @@ struct Message {
     std::string reasoning_content;      // model-specific, may be empty
     std::vector<ToolCall> tool_calls;   // for assistant tool_call msgs
     std::string tool_call_id;           // for tool result messages
+    std::string suggested_retention = "preserve";  // "preserve" or "droppable"
 };
 
 // ---------------------------------------------------------------------------

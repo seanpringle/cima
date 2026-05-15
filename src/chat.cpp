@@ -29,15 +29,8 @@ ChatSession::ChatSession(Config config, CancellationToken cancelled)
     tools_.add(make_read_plan_tool(plan_));
     tools_.add(make_comment_plan_tool(plan_));
 
-    // Each session gets an in-memory SQLite database tool.
-    // The conversation lives in 'messages' and 'metadata' tables
-    // within this DB, so the agent can read/write its own context.
+    // Each session gets an in-memory SQLite database tool (scratch space only).
     tools_.add(make_query_session_tool(session_db_));
-
-    // Continuation tool — allows the agent to schedule its own next turn
-    cont_slot_.max_steps = config.max_continuation_steps;
-    cont_slot_.delay_ms = config.continuation_delay_ms;
-    tools_.add(make_schedule_continuation_tool(cont_slot_, cancelled_));
 }
 
 void ChatSession::set_wiki(Wiki* wiki) {
@@ -51,162 +44,10 @@ void ChatSession::set_wiki(Wiki* wiki) {
     }
 }
 
-std::string ChatSession::build_notices() {
-    // Read current metadata values.
-    auto read_int = [&](const std::string& key) -> std::optional<int> {
-        auto res = session_db_.execute("SELECT value FROM metadata WHERE key = '" + key + "'");
-        if (!res) return std::nullopt;
-        auto arr = json::parse(*res, nullptr, false);
-        if (!arr.is_array() || arr.empty()) return std::nullopt;
-        auto v = arr[0]["value"];
-        if (v.is_null() || !v.is_string()) return std::nullopt;
-        try { return std::stoi(v.get<std::string>()); }
-        catch (...) { return std::nullopt; }
-    };
-
-    auto ctx_pct = read_int("context_usage_percent");
-    auto tc_used = read_int("tool_calls_used");
-    auto tc_max  = read_int("max_tool_iterations");
-    auto est_tok = read_int("estimated_tokens");
-    auto ctx_lim = read_int("context_limit");
-
-    // Collect notices (order: critical before warning, ctx before tc).
-    std::string notices;
-
-    // ── Context usage ──
-    if (ctx_pct.has_value()) {
-        int pct = *ctx_pct;
-        std::string tok_info;
-        if (est_tok.has_value() && ctx_lim.has_value() && *ctx_lim > 0) {
-            tok_info = " (" + std::to_string(*est_tok) + "/" + std::to_string(*ctx_lim) + " tokens)";
-        }
-
-        if (pct >= 90) {
-            notices +=
-                "\n\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
-                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
-                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
-                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
-                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557\n"
-                "\u2551  \u26A0 CONTEXT CRITICAL" + tok_info + "           \u2551\n"
-                "\u2551  ~" + std::to_string(pct) +
-                "% of context window used                    \u2551\n"
-                "\u2551                                              "
-                " \u2551\n"
-                "\u2551  Use schedule_continuation to compact and         "
-                " \u2551\n"
-                "\u2551  continue with a summary of the work so far.      "
-                "\u2551\n"
-                "\u255A\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
-                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
-                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
-                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
-                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255D\n";
-        } else if (pct >= 60) {
-            notices +=
-                "\n\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
-                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
-                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
-                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
-                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557\n"
-                "\u2551  \u26A0 CONTEXT WARNING" + tok_info + "            \u2551\n"
-                "\u2551  ~" + std::to_string(pct) +
-                "% of context window used                    \u2551\n"
-                "\u2551                                              "
-                " \u2551\n"
-                "\u2551  Consider compacting via schedule_continuation    "
-                " \u2551\n"
-                "\u2551  to free up context before continuing.            "
-                "\u2551\n"
-                "\u255A\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
-                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
-                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
-                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
-                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255D\n";
-        }
-    }
-
-    // ── Tool call usage ──
-    if (tc_used.has_value() && tc_max.has_value() && *tc_max > 0) {
-        int pct = *tc_used * 100 / *tc_max;
-        std::string tc_info = " (" + std::to_string(*tc_used) + "/" + std::to_string(*tc_max) + ")";
-
-        if (pct >= 90) {
-            notices +=
-                "\n\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
-                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
-                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
-                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
-                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557\n"
-                "\u2551  \u26A0 USAGE CRITICAL" + tc_info + "                  \u2551\n"
-                "\u2551  ~" + std::to_string(pct) +
-                "% of tool call budget used                \u2551\n"
-                "\u2551                                              "
-                " \u2551\n"
-                "\u2551  Are you stuck in a loop? Check context usage    "
-                " \u2551\n"
-                "\u2551  and prepare a continuation.                     "
-                "\u2551\n"
-                "\u255A\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
-                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
-                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
-                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
-                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255D\n";
-        } else if (pct >= 60) {
-            notices +=
-                "\n\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
-                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
-                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
-                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
-                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557\n"
-                "\u2551  \u26A0 USAGE WARNING" + tc_info + "                  \u2551\n"
-                "\u2551  ~" + std::to_string(pct) +
-                "% of tool call budget used                \u2551\n"
-                "\u2551                                              "
-                " \u2551\n"
-                "\u2551  Consider whether tools are being used               "
-                " \u2551\n"
-                "\u2551  efficiently or schedule a continuation.            "
-                "\u2551\n"
-                "\u255A\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
-                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
-                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
-                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550"
-                "\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255D\n";
-        }
-    }
-
-    // Strip trailing newline, if any
-    if (!notices.empty() && notices.back() == '\n') {
-        notices.pop_back();
-    }
-    return notices;
-}
-
-void ChatSession::restore_last_usage_from_db() {
-    auto read_int = [&](const std::string& key) -> std::optional<int> {
-        auto res = session_db_.execute("SELECT value FROM metadata WHERE key = '" + key + "'");
-        if (!res) return std::nullopt;
-        auto arr = json::parse(*res, nullptr, false);
-        if (!arr.is_array() || arr.empty()) return std::nullopt;
-        auto v = arr[0]["value"];
-        if (v.is_null() || !v.is_string()) return std::nullopt;
-        try { return std::stoi(v.get<std::string>()); }
-        catch (...) { return std::nullopt; }
-    };
-
-    auto total = read_int("last_total_tokens");
-    if (total.has_value()) {
-        last_usage_.total_tokens = *total;
-    }
-    auto prompt = read_int("last_prompt_tokens");
-    if (prompt.has_value()) {
-        last_usage_.prompt_tokens = *prompt;
-    }
-    auto completion = read_int("last_completion_tokens");
-    if (completion.has_value()) {
-        last_usage_.completion_tokens = *completion;
-    }
+int ChatSession::context_usage_percent() const {
+    if (context_limit_ <= 0) return 0;
+    auto est = conversation_.estimate_total_tokens();
+    return static_cast<int>(est * 100 / context_limit_);
 }
 
 Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
@@ -235,42 +76,24 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
         }
     }
 
-    // ── Continuation loop ──
-    // Each iteration of this loop processes one "turn" (initial user input
-    // or a scheduled continuation).  Per-turn snapshots allow errors in one
-    // turn to roll back only that turn's messages, preserving prior work.
+    // ── Single turn processing ──
+    // Snapshot before adding this turn's prompt.  If anything goes wrong
+    // we roll back to here.
+    auto turn_snapshot = conversation_.message_count();
+
+    // Add the user input as a message
+    conversation_.add_user(user_input);
+
     std::string last_content;
     std::string last_reasoning;
+    bool produced_content = false;
 
-    // The prompt for the current turn.  Starts with the user's input; on
-    // subsequent turns it comes from the continuation slot.
-    std::string turn_prompt = user_input;
-
-    while (true) {
-        // Snapshot BEFORE adding this turn's prompt.  If anything goes wrong
-        // we roll back to here, which removes the prompt + all subsequent
-        // messages from this turn, preserving prior conversation history.
-        auto turn_snapshot = session_db_.message_count();
-
-        // Add the prompt for this turn (user input or continuation)
-        session_db_.add_user(turn_prompt);
-
-        bool produced_content = false;
-
-        try {
-            for (int iter = 0; iter < max_iterations_; iter++) {
-            // Refresh session metadata so the agent can see current context usage
-            // via SELECT * FROM metadata.
-            session_db_.refresh_metadata(model_, context_limit_, last_usage_,
-                max_iterations_, iter, cont_slot_.step_count, cont_slot_.max_steps,
-                agent_name_);
-
-            // Build payload from the session DB (messages table).
-            // The agent may have modified these tables via query_session during
-            // previous tool execution to manage its own context.
+    try {
+        for (int iter = 0; iter < max_iterations_; iter++) {
+            // Build payload from the conversation.
             json payload = {{"model", model_},
                 {"reasoning_effort", reasoning_effort_},
-                {"messages", session_db_.build_openai_payload(system_prompt_)},
+                {"messages", conversation_.build_openai_payload(system_prompt_)},
                 {"tools", tools_.to_openai_tools()},
                 {"stream", true}};
             payload["stream_options"] = {{"include_usage", true}};
@@ -331,8 +154,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
 
             if (!stream_result) {
                 // Stream transport error — roll back only this turn
-                session_db_.truncate_conversation(turn_snapshot);
-                cont_slot_.prompt.reset();
+                conversation_.truncate_conversation(turn_snapshot);
                 auto msg = stream_result.error();
                 auto raw = client_.last_raw_response();
                 if (!raw.empty()) {
@@ -343,19 +165,17 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
 
             if (stream_errored && content.empty()) {
                 // Stream error with no content — roll back only this turn
-                session_db_.truncate_conversation(turn_snapshot);
-                cont_slot_.prompt.reset();
+                conversation_.truncate_conversation(turn_snapshot);
                 return std::unexpected(stream_error);
             }
 
             auto calls = tool_acc.finalize();
             if (!calls.empty()) {
-                auto msg_id = session_db_.add_assistant("", reasoning, calls);
+                auto msg_id = conversation_.add_assistant("", reasoning, calls);
 
                 if (*cancelled_) {
                     // User cancelled — roll back only this turn
-                    session_db_.truncate_conversation(turn_snapshot);
-                    cont_slot_.prompt.reset();
+                    conversation_.truncate_conversation(turn_snapshot);
                     return std::unexpected("Interrupted during tool execution");
                 }
 
@@ -379,8 +199,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                         // Serial execution for write tools
                         for (const auto& call : calls) {
                             if (*cancelled_) {
-                                session_db_.truncate_conversation(turn_snapshot);
-                                cont_slot_.prompt.reset();
+                                conversation_.truncate_conversation(turn_snapshot);
                                 return std::unexpected("Interrupted during tool execution");
                             }
                             if (output_cb_) {
@@ -395,14 +214,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                                 tr = std::unexpected(std::string(e.what()));
                             }
                             auto result = tr ? *tr : tr.error();
-                            session_db_.add_tool(msg_id, call.id, result);
-                        }
-                        // Inject usage notices as a system message (once per iteration)
-                        {
-                            auto notice = build_notices();
-                            if (!notice.empty()) {
-                                session_db_.add_notice(notice);
-                            }
+                            conversation_.add_tool(msg_id, call.id, result);
                         }
                     } else {
                         // Parallel execution for read-only tools
@@ -416,8 +228,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                         }
                         for (size_t i = 0; i < calls.size(); i++) {
                             if (*cancelled_) {
-                                session_db_.truncate_conversation(turn_snapshot);
-                                cont_slot_.prompt.reset();
+                                conversation_.truncate_conversation(turn_snapshot);
                                 return std::unexpected("Interrupted during tool execution");
                             }
                             if (output_cb_) {
@@ -433,21 +244,13 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                                 tr = std::unexpected(std::string(e.what()));
                             }
                             auto result = tr ? *tr : tr.error();
-                            session_db_.add_tool(msg_id, calls[i].id, result);
-                        }
-                        // Inject usage notices as a system message (once per iteration)
-                        {
-                            auto notice = build_notices();
-                            if (!notice.empty()) {
-                                session_db_.add_notice(notice);
-                            }
+                            conversation_.add_tool(msg_id, calls[i].id, result);
                         }
                     }
                 } else {
                     for (const auto& call : calls) {
                         if (*cancelled_) {
-                            session_db_.truncate_conversation(turn_snapshot);
-                            cont_slot_.prompt.reset();
+                            conversation_.truncate_conversation(turn_snapshot);
                             return std::unexpected("Interrupted during tool execution");
                         }
                         if (output_cb_) {
@@ -461,82 +264,129 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                             tr = std::unexpected(std::string(e.what()));
                         }
                         auto result = tr ? *tr : tr.error();
-                        session_db_.add_tool(msg_id, call.id, result);
-                    }
-                    // Inject usage notices as a system message (once per iteration)
-                    {
-                        auto notice = build_notices();
-                        if (!notice.empty()) {
-                            session_db_.add_notice(notice);
-                        }
+                        conversation_.add_tool(msg_id, call.id, result);
                     }
                 }
                 continue;
             }
 
-            // No tool calls — content response.  Remember it but don't return
-            // yet — we may have a continuation pending.
-            session_db_.add_assistant(content, reasoning);
+            // No tool calls — content response.
+            conversation_.add_assistant(content, reasoning);
             last_content = content;
             last_reasoning = reasoning;
             produced_content = true;
             break;
-            }
-        } catch (const std::exception& e) {
-            session_db_.truncate_conversation(turn_snapshot);
-            cont_slot_.prompt.reset();
-            return std::unexpected(std::string(e.what()));
         }
+    } catch (const std::exception& e) {
+        conversation_.truncate_conversation(turn_snapshot);
+        return std::unexpected(std::string(e.what()));
+    }
 
-        if (!produced_content) {
-            // Budget exhausted — preserve accumulated work so the user/agent
-            // can continue (e.g. via schedule_continuation).
-            cont_slot_.prompt.reset();
-            std::string msg = "Tool call budget exhausted (" +
-                std::to_string(max_iterations_) + " iterations). " +
-                "Use `schedule_continuation` to continue in a new turn if needed.";
-            session_db_.add_assistant(msg, "");
-            last_content = msg;
-            last_reasoning = "";
-            produced_content = true;
-        }
+    if (!produced_content) {
+        std::string msg = "Tool call budget exhausted (" +
+            std::to_string(max_iterations_) + " iterations).";
+        conversation_.add_assistant(msg, "");
+        last_content = msg;
+        last_reasoning = "";
+        produced_content = true;
+    }
 
-        // ── Check for scheduled continuation ──
-        if (!cont_slot_.prompt.has_value())
-            break; // normal end — no continuation
-
-        // Guard rails
-        if (*cancelled_) {
-            cont_slot_.prompt.reset();
-            break;
-        }
-        if (cont_slot_.max_steps > 0 && cont_slot_.step_count >= cont_slot_.max_steps) {
-            cont_slot_.prompt.reset();
-            break;
-        }
-
-        // Set up the next turn's prompt from the continuation slot.
-        // The prompt will be added (with a fresh snapshot) at the top of
-        // the next loop iteration.
-        {
-            turn_prompt = std::move(*cont_slot_.prompt);
-            cont_slot_.prompt.reset();
-
-            // Notify the UI via the output callback
+    // ── Auto-compaction at 90% context usage ──
+    if (context_usage_percent() >= 90) {
+        auto compact_result = compact();
+        if (!compact_result) {
+            // Compaction failed — log but don't fail the overall turn
             if (output_cb_)
-                output_cb_("Continuing: " + turn_prompt, OutputType::Continuation);
-
-            cont_slot_.step_count++;
-
-            // Anti-DoS delay
-            if (cont_slot_.delay_ms > 0) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(cont_slot_.delay_ms));
-            }
+                output_cb_("compact() failed: " + compact_result.error(), OutputType::ToolInvocation);
         }
-
-        // Continue the outer loop to process the new turn
-        continue;
     }
 
     return ChatResult{std::move(last_content), std::move(last_reasoning)};
+}
+
+Result<void> ChatSession::compact() {
+    // Snapshot the current messages (skip system prompt — that's added at build time)
+    auto& msgs = conversation_.messages();
+
+    // Don't compact if there's nothing meaningful
+    if (msgs.size() < 2) {
+        return {}; // Nothing to compact
+    }
+
+    // Build a summarization prompt from the conversation
+    std::string summary_prompt = "Please provide a comprehensive summary of the following conversation. "
+        "Preserve all important context, decisions, code changes, file paths, "
+        "and outstanding tasks. Be detailed enough that the conversation can "
+        "continue seamlessly from this summary.\n\n---\n";
+
+    for (const auto& msg : msgs) {
+        if (msg.role == "system") continue; // skip system messages
+
+        summary_prompt += "[" + msg.role + "]: ";
+        if (msg.content.has_value()) {
+            summary_prompt += *msg.content;
+        }
+        if (!msg.reasoning_content.empty()) {
+            summary_prompt += "\n[reasoning]: " + msg.reasoning_content;
+        }
+        for (const auto& tc : msg.tool_calls) {
+            summary_prompt += "\n[tool_call: " + tc.name + "(" + tc.arguments + ")]";
+            if (!tc.result.empty()) {
+                summary_prompt += "\n[tool_result: " + tc.result + "]";
+            }
+        }
+        summary_prompt += "\n";
+    }
+
+    // Send to LLM via client_
+    json payload = {
+        {"model", model_},
+        {"reasoning_effort", reasoning_effort_},
+        {"messages", json::array({
+            {{"role", "system"}, {"content", sanitize_utf8(system_prompt_)}},
+            {{"role", "user"}, {"content", sanitize_utf8(summary_prompt)}}
+        })},
+        {"stream", true}
+    };
+    payload["stream_options"] = {{"include_usage", true}};
+
+    std::string summary;
+    bool stream_errored = false;
+    std::string stream_error;
+
+    auto on_data = [&](const json& data) {
+        if (!data.contains("choices") || data["choices"].empty())
+            return;
+        const auto& delta = data["choices"][0]["delta"];
+
+        auto c_it = delta.find("content");
+        if (c_it != delta.end() && c_it->is_string()) {
+            summary += c_it->get<std::string>();
+        }
+    };
+
+    SSEParser::Callbacks callbacks({
+        .on_data = on_data,
+        .on_done = []() {},
+        .on_error = [&](const std::string& err) {
+            stream_errored = true;
+            stream_error = err;
+        },
+    });
+
+    auto stream_result = client_.stream_chat(payload, callbacks);
+    if (!stream_result) {
+        return std::unexpected(stream_result.error());
+    }
+    if (stream_errored && summary.empty()) {
+        return std::unexpected(stream_error);
+    }
+
+    // Replace the conversation with just the summary
+    conversation_.replace_with_summary(summary);
+
+    if (output_cb_)
+        output_cb_("Conversation compacted.", OutputType::ToolInvocation);
+
+    return {};
 }

@@ -33,8 +33,6 @@ struct Config {
     std::string search_endpoint;
     std::vector<std::string> read_only_paths;
     int max_tool_iterations = 100;
-    int max_continuation_steps = 10;
-    int continuation_delay_ms = 250;
     int context_limit = 300000; // model context window (tokens)
     std::map<std::string, std::string> snippets; // from cima.json
 
@@ -53,25 +51,11 @@ struct Config {
     std::string system_prompt =
         "You are an AI coding assistant.\n"
         "\n"
-        "### Session Database & Mutable Chat History\n"
+        "### Session Database (Scratch Space)\n"
         "\n"
-        "You have an in-memory SQLite database (`query_session` tool) that stores the"
-        " conversation history itself in the built-in tables (`messages`, `metadata`)."
-        " You can also create tables for your own use.\n"
-        "\n"
-        "**Key insight:** You can read and *modify* your own conversation history. "
-        "Whatever you write to the `messages` table is what the next API call will see. "
-        "You can curate, summarise and prune your own context window with SQL.\n"
-        "\n"
-        "**The only constraint:** The `messages` table schema must stay intact; "
-        "the code that builds your next API request depends on its columns.\n"
-        "\n"
-        "### Continuations\n"
-        "\n"
-        "You can schedule a continuation of the current task with the `schedule_continuation`\n"
-        "tool. The provided prompt will be treated as a new user message after the current\n"
-        "response completes. This lets you break long tasks into manageable turns, perform\n"
-        "context compaction, or continue working after summarizing the conversation history.\n"
+        "You have an in-memory SQLite database (`query_session` tool) that you can use\n"
+        "to store structured data across tool calls. Create tables, insert data, and\n"
+        "query results freely — it's scratch space.\n"
         "\n"
         "### Wiki (Shared Knowledge Base)\n"
         "\n"
@@ -91,10 +75,6 @@ struct Config {
         "\n"
         "Use markdown with a neat, clear layout for all output. Be concise.\n"
         "All of commonmark and github tables supported, but generally prefer lists over tables.\n"
-        "\n"
-        "Keep your context window size and fragmentation in mind and **proactively manage** it."
-        " Pay attention to usage warnings at 60% and 90% thresholds, and your `metadata` table."
-        " Don't overflow! Your session will not auto-compact!\n"
         "\n"
         "You have access to a markdown Plan document visible to the user."
         " Always start a task by researching the user's instructions and writing your Plan "

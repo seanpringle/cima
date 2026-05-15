@@ -34,8 +34,6 @@ json Config::to_json() const {
     j["search_endpoint"] = search_endpoint;
     j["read_only_paths"] = read_only_paths;
     j["max_tool_iterations"] = max_tool_iterations;
-    j["max_continuation_steps"] = max_continuation_steps;
-    j["continuation_delay_ms"] = continuation_delay_ms;
     j["context_limit"] = context_limit;
     j["snippets"] = snippets;
     j["bash_timeout"] = bash_timeout;
@@ -109,14 +107,6 @@ Config Config::load() {
         if (j.contains("max_tool_iterations") && j["max_tool_iterations"].is_number_integer()) {
             int n = j["max_tool_iterations"].get<int>();
             if (n > 0) cfg.max_tool_iterations = n;
-        }
-        if (j.contains("max_continuation_steps") && j["max_continuation_steps"].is_number_integer()) {
-            int n = j["max_continuation_steps"].get<int>();
-            if (n >= 0) cfg.max_continuation_steps = n;
-        }
-        if (j.contains("continuation_delay_ms") && j["continuation_delay_ms"].is_number_integer()) {
-            int n = j["continuation_delay_ms"].get<int>();
-            if (n >= 0) cfg.continuation_delay_ms = n;
         }
         if (j.contains("context_limit") && j["context_limit"].is_number_integer()) {
             int n = j["context_limit"].get<int>();

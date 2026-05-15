@@ -42,8 +42,6 @@ TEST_CASE("Config defaults", "[config]") {
     REQUIRE(cfg.reasoning_effort == "high");
     REQUIRE(cfg.system_prompt.find("AI coding assistant") != std::string::npos);
     REQUIRE(cfg.max_tool_iterations == 100);
-    REQUIRE(cfg.max_continuation_steps == 10);
-    REQUIRE(cfg.continuation_delay_ms == 250);
     REQUIRE(cfg.context_limit == 300000);
     // read_only_paths is empty until load() adds defaults
     REQUIRE(cfg.read_only_paths.empty());
@@ -60,8 +58,6 @@ TEST_CASE("Config to_json / round-trip", "[config]") {
     cfg.search_endpoint = "https://custom.search";
     cfg.read_only_paths = {"/custom/path"};
     cfg.max_tool_iterations = 50;
-    cfg.max_continuation_steps = 5;
-    cfg.continuation_delay_ms = 500;
     cfg.context_limit = 64000;
 
     auto j = cfg.to_json();
@@ -84,10 +80,6 @@ TEST_CASE("Config to_json / round-trip", "[config]") {
     }
     if (j.contains("max_tool_iterations") && j["max_tool_iterations"].is_number_integer())
         loaded.max_tool_iterations = j["max_tool_iterations"].get<int>();
-    if (j.contains("max_continuation_steps") && j["max_continuation_steps"].is_number_integer())
-        loaded.max_continuation_steps = j["max_continuation_steps"].get<int>();
-    if (j.contains("continuation_delay_ms") && j["continuation_delay_ms"].is_number_integer())
-        loaded.continuation_delay_ms = j["continuation_delay_ms"].get<int>();
     if (j.contains("context_limit") && j["context_limit"].is_number_integer())
         loaded.context_limit = j["context_limit"].get<int>();
 
@@ -104,8 +96,6 @@ TEST_CASE("Config to_json / round-trip", "[config]") {
     REQUIRE(loaded.read_only_paths.size() == 1);
     REQUIRE(loaded.read_only_paths[0] == "/custom/path");
     REQUIRE(loaded.max_tool_iterations == 50);
-    REQUIRE(loaded.max_continuation_steps == 5);
-    REQUIRE(loaded.continuation_delay_ms == 500);
     REQUIRE(loaded.context_limit == 64000);
 }
 

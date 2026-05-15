@@ -2,6 +2,7 @@
 
 #include "client.h"
 #include "config.h"
+#include "conversation.h"
 #include "plan.h"
 #include "session_db.h"
 #include "tools.h"
@@ -19,7 +20,7 @@ struct ChatResult {
     std::string reasoning;
 };
 
-enum class OutputType { Reasoning, Content, ToolInvocation, Continuation };
+enum class OutputType { Reasoning, Content, ToolInvocation };
 
 using OutputCallback = std::function<void(const std::string& text, OutputType type)>;
 
@@ -47,8 +48,12 @@ class ChatSession {
     const std::string& api_base() const { return api_base_; }
     const std::string& api_key() const { return api_key_; }
 
-    // Each session has its own in-memory SQLite database.
+    // Each session has its own in-memory SQLite database (scratch space).
     SessionDB& session_db() { return session_db_; }
+
+    // Each session has its own conversation history.
+    Conversation& conversation() { return conversation_; }
+    const Conversation& conversation() const { return conversation_; }
 
     // Expose the underlying client so the GUI can call fetch_models() etc.
     ChatClient& client_for_models() { return client_; }
@@ -56,20 +61,12 @@ class ChatSession {
     // Return the current safe directory (workspace) path for this session.
     const std::string& safe_dir() const { return *safe_dir_; }
 
-    // Access the continuation slot (used by GUI to display state).
-    const ContinuationSlot& continuation_slot() const { return cont_slot_; }
+    /// Compact the conversation by asking the LLM to summarise.
+    /// Replaces the entire history with a single summary message.
+    Result<void> compact();
 
-    /// Check metadata thresholds and return a notice string if any
-    /// thresholds are triggered (e.g. context >60%, tool-call budget
-    /// >90%, inbox messages).  Returns empty string if no notices needed.
-    /// The caller should inject the return value as a separate system
-    /// message rather than prepending it to tool output.
-    std::string build_notices();
-
-    /// Restore last_usage_ from the session DB metadata table.
-    /// Call after load_from_file() so the UI displays the last known token count
-    /// instead of 0 on session resume.
-    void restore_last_usage_from_db();
+    /// Compute context usage percentage (0-100).
+    int context_usage_percent() const;
 
     /// Set/Get the agent's Culture ship name.
     void set_agent_name(const std::string& name) { agent_name_ = name; }
@@ -85,13 +82,13 @@ class ChatSession {
     std::string agent_name_;
     Wiki* wiki_ = nullptr;
     std::shared_ptr<std::string> safe_dir_;
-    ContinuationSlot cont_slot_;
     std::string api_base_;     // API base URL (for creating temp clients)
     std::string api_key_;      // API key for authentication
     int max_iterations_ = 100; // overridden by config.max_tool_iterations
     std::string system_prompt_;
     PlanBoard plan_;
     SessionDB session_db_;
+    Conversation conversation_;
     ChatClient client_;
     CancellationToken cancelled_;
     ToolRegistry tools_;
@@ -100,5 +97,3 @@ class ChatSession {
     int context_limit_ = 300000;           // discovered from API, falls back to Config
     bool context_limit_discovered_ = false;
 };
-
-

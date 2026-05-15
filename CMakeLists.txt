@@ -102,11 +102,11 @@ add_library(cima_core
     src/tools/factories/web.cpp
     src/tools/factories/git.cpp
     src/tools/factories/session_db.cpp
-    src/tools/factories/continuation.cpp
     src/tools/registry.cpp
     src/session_db.cpp
     src/client.cpp
     src/chat.cpp
+    src/conversation.cpp
     src/plan.cpp
     src/app_session.cpp
     src/wiki.cpp
@@ -158,6 +158,9 @@ target_link_libraries(test_session_db PRIVATE cima_core Catch2::Catch2WithMain)
 add_executable(test_wiki tests/test_wiki.cpp)
 target_link_libraries(test_wiki PRIVATE cima_core Catch2::Catch2WithMain)
 
+add_executable(test_conversation tests/test_conversation.cpp)
+target_link_libraries(test_conversation PRIVATE cima_core Catch2::Catch2WithMain)
+
 include(CTest)
 include(Catch)
 catch_discover_tests(test_config)
@@ -167,3 +170,4 @@ catch_discover_tests(test_client)
 catch_discover_tests(test_chat)
 catch_discover_tests(test_session_db)
 catch_discover_tests(test_wiki)
+catch_discover_tests(test_conversation)

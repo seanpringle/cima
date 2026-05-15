@@ -51,7 +51,6 @@ void ChatUIState::load_chat_log(const std::string& path) {
             else if (t == "Reasoning") e.type = EntryType::Reasoning;
             else if (t == "Content")   e.type = EntryType::Content;
             else if (t == "ToolCall")  e.type = EntryType::ToolCall;
-            else if (t == "Continuation") e.type = EntryType::Continuation;
             else continue;
             e.text = j.value("text", "");
             e.is_streaming = j.value("streaming", false);
@@ -72,7 +71,6 @@ void ChatUIState::append_chat_log_entry(const DisplayEntry& entry) {
         case EntryType::Reasoning:    j["type"] = "Reasoning"; break;
         case EntryType::Content:      j["type"] = "Content"; break;
         case EntryType::ToolCall:     j["type"] = "ToolCall"; break;
-        case EntryType::Continuation: j["type"] = "Continuation"; break;
     }
     j["seq"] = entry.seq;
     j["text"] = entry.text;
@@ -499,9 +497,6 @@ void drain_pending(ChatUIState& ui, AsyncChatState& chat) {
         if (type == OutputType::ToolInvocation) {
             finalize_streaming_entry(ui);
             push_entry(ui, EntryType::ToolCall, pending_text, false);
-        } else if (type == OutputType::Continuation) {
-            finalize_streaming_entry(ui);
-            push_entry(ui, EntryType::Continuation, pending_text, false);
         } else {
             auto entry_type =
                 (type == OutputType::Reasoning) ? EntryType::Reasoning : EntryType::Content;
@@ -599,6 +594,21 @@ void render_config_tab(TabInfo& tab, ImFont* mono_font) {
 
     // ── Raw checkbox ──
     Checkbox("Raw", &ui.show_raw);
+
+    Separator();
+
+    // ── Compact button ──
+    {
+        if (ui.compacting) {
+            TextDisabled("Compacting...");
+        } else {
+            int ctx_pct = session.context_usage_percent();
+            string btn_label = "Compact (" + std::to_string(ctx_pct) + "% context used)";
+            if (Button(btn_label.c_str())) {
+                ui.compact_requested = true;
+            }
+        }
+    }
 }
 
 // ── Tag expansion for wiki:page-name and !snippet-name references ──
@@ -670,6 +680,26 @@ void render_chat_ui(TabInfo& tab, bool& done) {
     // ── drain pending output (includes any items that arrived after last frame's drain) ──
     drain_pending(ui, chat);
 
+    // ── Handle compact request ──
+    if (ui.compact_requested && !ui.compacting) {
+        ui.compacting = true;
+        ui.compact_requested = false;
+        ui.compact_future = std::async(std::launch::async,
+            [&session]() { return session.compact(); });
+    }
+    if (ui.compacting && ui.compact_future.valid() &&
+        ui.compact_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        ui.compacting = false;
+        auto compact_result = ui.compact_future.get();
+        // Clear UI entries and show result
+        ui.entries.clear();
+        if (compact_result) {
+            push_entry(ui, EntryType::Content, "Conversation compacted.", false);
+        } else {
+            push_entry(ui, EntryType::Content, "Compaction failed: " + compact_result.error(), false);
+        }
+    }
+
     // ── finalize streaming entry now that all pending data is incorporated ──
     if (stream_ended) {
         finalize_streaming_entry(ui);
@@ -719,9 +749,6 @@ void render_chat_ui(TabInfo& tab, bool& done) {
             case EntryType::ToolCall:
                 prefix = "[Tool] ";
                 break;
-            case EntryType::Continuation:
-                prefix = "[Continuing] ";
-                break;
             }
             PushTextWrapPos(0);
             ss << prefix << entry.text;
@@ -757,15 +784,6 @@ void render_chat_ui(TabInfo& tab, bool& done) {
                     i++) {
                     text_unformatted_ellipsis(ui.entries[i + 1].text);
                 }
-                NewLine();
-                PopTextWrapPos();
-                PopStyleColor();
-                break;
-            case EntryType::Continuation:
-                PushStyleColor(ImGuiCol_Text, IM_COL32(100, 255, 100, 255));
-                PushTextWrapPos(0);
-                ss << entry.text;
-                TextUnformatted(ss.str().c_str());
                 NewLine();
                 PopTextWrapPos();
                 PopStyleColor();
@@ -944,19 +962,7 @@ void render_chat_ui(TabInfo& tab, bool& done) {
         }
 
         // Context usage percentage (for token colour)
-        int context_pct = 0;
-        {
-            auto meta = session.session_db().execute(
-                "SELECT value FROM metadata WHERE key = 'context_usage_percent'");
-            if (meta) {
-                try {
-                    auto arr = json::parse(*meta);
-                    if (arr.is_array() && !arr.empty() && arr[0].contains("value")) {
-                        context_pct = std::stoi(arr[0]["value"].get<std::string>());
-                    }
-                } catch (...) {}
-            }
-        }
+        int context_pct = session.context_usage_percent();
 
         ImU32 tokenColor;
         if (context_pct >= 90)

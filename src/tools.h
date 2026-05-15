@@ -181,15 +181,4 @@ Tool make_write_wiki_page_tool(Wiki& wiki);
 Tool make_edit_wiki_page_tool(Wiki& wiki);
 Tool make_delete_wiki_page_tool(Wiki& wiki);
 
-// ---------------------------------------------------------------------------
-// Continuation slot — shared state between the tool and ChatSession::run_once
-// ---------------------------------------------------------------------------
-struct ContinuationSlot {
-    std::optional<std::string> prompt;
-    std::atomic<int> step_count{0};
-    int max_steps = 10;
-    int delay_ms = 250;
-};
 
-Tool make_schedule_continuation_tool(
-    ContinuationSlot& slot, CancellationToken cancelled);
