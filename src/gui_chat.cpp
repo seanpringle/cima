@@ -516,16 +516,13 @@ void drain_pending(ChatUIState& ui, AsyncChatState& chat) {
     chat.pending.clear();
 }
 
-void render_chat_controls(TabInfo& tab) {
+void render_config_tab(TabInfo& tab, ImFont* mono_font) {
     auto& ui = tab.ui_state;
     auto& session = *tab.session;
 
     // ── Fetch models on first render ──
     if (!ui.models_loaded) {
         ui.models_loaded = true;
-        // Fire off an async fetch so the UI stays responsive.
-        // Use a packaged_task so we can track completion via the future
-        // and wait for it before destroying the tab (prevents use-after-free).
         std::packaged_task<void()> task([&ui, &session]() {
             auto result = session.client_for_models().fetch_models();
             if (result) {
@@ -540,7 +537,6 @@ void render_chat_controls(TabInfo& tab) {
     }
 
     // Validate current model selection on the render thread (once)
-    // so we can safely access tab.session and tab.title without races.
     if (!ui.models_validated) {
         if (ui.models_fetched->load(std::memory_order_acquire)) {
             ui.models_validated = true;
@@ -556,116 +552,52 @@ void render_chat_controls(TabInfo& tab) {
         }
     }
 
-    if (BeginMenuBar()) {
-        if (BeginMenu("Model")) {
-            // Show a loading indicator if models haven't arrived yet
-            // Acquire-load synchronises with the release-store in the
-            // model-fetch thread, making available_models/models_error visible.
-            if (!ui.models_fetched->load(std::memory_order_acquire)) {
-                TextDisabled("Loading models...");
-            } else if (!ui.models_error.empty()) {
-                TextColored(
-                    ImColor(IM_COL32(255, 100, 100, 255)), "Error: %s", ui.models_error.c_str());
+    // ── Model combo ──
+    Text("Model:");
+    SameLine();
+    PushFont(mono_font);
+
+    // Build the combo label (current model name or loading/error)
+    string combo_label;
+    if (!ui.models_fetched->load(std::memory_order_acquire)) {
+        combo_label = "Loading models...";
+    } else if (!ui.models_error.empty()) {
+        combo_label = "Error: " + ui.models_error;
+    } else if (ui.available_models.empty()) {
+        combo_label = session.model();
+    } else {
+        combo_label = session.model();
+    }
+
+    SetNextItemWidth(-1);
+    if (BeginCombo("##model-combo", combo_label.c_str())) {
+        if (ui.models_fetched->load(std::memory_order_acquire)) {
+            if (!ui.models_error.empty()) {
+                TextColored(ImColor(IM_COL32(255, 100, 100, 255)), "Error: %s",
+                    ui.models_error.c_str());
             } else if (ui.available_models.empty()) {
                 TextDisabled("(no models returned)");
             } else {
                 for (const auto& m : ui.available_models) {
                     bool is_selected = (m == session.model());
-                    if (MenuItem(m.c_str(), nullptr, is_selected)) {
+                    if (Selectable(m.c_str(), is_selected)) {
                         session.set_model(m);
-                        // Update the model name
                         tab.model_name = m;
                     }
+                    if (is_selected) SetItemDefaultFocus();
                 }
             }
-            EndMenu();
-        }
-        if (BeginMenu("Debug")) {
-            Checkbox("Raw", &ui.show_raw);
-            EndMenu();
-        }
-        EndMenuBar();
-    }
-
-    // ── Chat state ──
-    string stateInfo;
-    ImU32 stateColor;
-    if (tab.chat_state->running) {
-        stateInfo = "running";
-        stateColor = IM_COL32(100, 255, 100, 255); // green
-    } else {
-        stateInfo = "idle";
-        stateColor = IM_COL32(180, 180, 180, 255); // grey
-    }
-
-    // ── Context usage percentage (from metadata, for token colour) ──
-    int context_pct = 0;
-    {
-        auto meta = session.session_db().execute(
-            "SELECT value FROM metadata WHERE key = 'context_usage_percent'");
-        if (meta) {
-            try {
-                auto arr = json::parse(*meta);
-                if (arr.is_array() && !arr.empty() && arr[0].contains("value")) {
-                    context_pct = std::stoi(arr[0]["value"].get<std::string>());
-                }
-            } catch (...) {}
-        }
-    }
-
-    ImU32 tokenColor;
-    if (context_pct >= 90)
-        tokenColor = IM_COL32(255, 68, 68, 255);      // red — critical
-    else if (context_pct >= 60)
-        tokenColor = IM_COL32(255, 208, 0, 255);       // yellow — warning
-    else
-        tokenColor = IM_COL32(180, 180, 180, 255);     // grey — normal
-
-    // ── Token count & branch info ──
-    string tokenInfo = std::to_string(session.last_usage().total_tokens) + " tokens";
-
-    auto current_safe_dir = session.safe_dir();
-    if (current_safe_dir != tab.workspace_path) {
-        tab.workspace_path = current_safe_dir;
-        auto branch_result = get_current_git_branch(current_safe_dir);
-        if (branch_result) {
-            tab.git_branch = std::move(*branch_result);
         } else {
-            tab.git_branch.clear();
+            TextDisabled("Loading models...");
         }
+        EndCombo();
     }
+    PopFont();
 
-    string branchInfo = tab.git_branch;
+    Separator();
 
-    string sep = " :: ";
-
-    auto stateSize = CalcTextSize(stateInfo.c_str());
-    auto branchInfoSize = CalcTextSize(branchInfo.c_str());
-    auto sepSize = CalcTextSize(sep.c_str());
-    auto tokenInfoSize = CalcTextSize(tokenInfo.c_str());
-
-    // Lay out right-aligned: [branch] :: [tokens] :: [state]
-    auto rightEdge = GetContentRegionMax().x - GetStyle().WindowPadding.x;
-
-    auto branchPos = ImVec2(rightEdge - branchInfoSize.x,
-        GetFrameHeight() / 2 - branchInfoSize.y / 2);
-    auto sep1Pos = ImVec2(branchPos.x - sepSize.x, GetFrameHeight() / 2 - sepSize.y / 2);
-    auto tokenPos = ImVec2(sep1Pos.x - tokenInfoSize.x, GetFrameHeight() / 2 - tokenInfoSize.y / 2);
-    auto sep2Pos = ImVec2(tokenPos.x - sepSize.x, GetFrameHeight() / 2 - sepSize.y / 2);
-    auto statePos = ImVec2(sep2Pos.x - stateSize.x, GetFrameHeight() / 2 - stateSize.y / 2);
-
-    GetForegroundDrawList()->AddText(
-        GetWindowPos() + statePos, stateColor, stateInfo.c_str());
-    GetForegroundDrawList()->AddText(
-        GetWindowPos() + sep2Pos, GetColorU32(ImGuiCol_TextDisabled), sep.c_str());
-    GetForegroundDrawList()->AddText(
-        GetWindowPos() + tokenPos, tokenColor, tokenInfo.c_str());
-    GetForegroundDrawList()->AddText(
-        GetWindowPos() + sep1Pos, GetColorU32(ImGuiCol_TextDisabled), sep.c_str());
-    GetForegroundDrawList()->AddText(
-        GetWindowPos() + branchPos, ImColor(IM_COL32(255, 180, 50, 255)), branchInfo.c_str());
-
-    SetCursorPos(ImVec2(0, GetFrameHeightWithSpacing()));
+    // ── Raw checkbox ──
+    Checkbox("Raw", &ui.show_raw);
 }
 
 // ── Tag expansion for wiki:page-name and !snippet-name references ──
@@ -1005,6 +937,96 @@ void render_chat_ui(TabInfo& tab, bool& done) {
     }
 
     PopFont();
+
+    // ── Footer: status bar ──
+    {
+        auto& session = *tab.session;
+
+        // State
+        string stateInfo;
+        ImU32 stateColor;
+        if (tab.chat_state->running) {
+            stateInfo = "running";
+            stateColor = IM_COL32(100, 255, 100, 255);
+        } else {
+            stateInfo = "idle";
+            stateColor = IM_COL32(180, 180, 180, 255);
+        }
+
+        // Context usage percentage (for token colour)
+        int context_pct = 0;
+        {
+            auto meta = session.session_db().execute(
+                "SELECT value FROM metadata WHERE key = 'context_usage_percent'");
+            if (meta) {
+                try {
+                    auto arr = json::parse(*meta);
+                    if (arr.is_array() && !arr.empty() && arr[0].contains("value")) {
+                        context_pct = std::stoi(arr[0]["value"].get<std::string>());
+                    }
+                } catch (...) {}
+            }
+        }
+
+        ImU32 tokenColor;
+        if (context_pct >= 90)
+            tokenColor = IM_COL32(255, 68, 68, 255);
+        else if (context_pct >= 60)
+            tokenColor = IM_COL32(255, 208, 0, 255);
+        else
+            tokenColor = IM_COL32(180, 180, 180, 255);
+
+        // Token count
+        string tokenInfo = std::to_string(session.last_usage().total_tokens) + " tokens";
+
+        // Git branch (refresh if workspace changed)
+        {
+            auto current_safe_dir = session.safe_dir();
+            if (current_safe_dir != tab.workspace_path) {
+                tab.workspace_path = current_safe_dir;
+                auto branch_result = get_current_git_branch(current_safe_dir);
+                if (branch_result) {
+                    tab.git_branch = std::move(*branch_result);
+                } else {
+                    tab.git_branch.clear();
+                }
+            }
+        }
+        string branchInfo = tab.git_branch;
+
+        string sep = " :: ";
+
+        // Right-aligned footer line
+        auto footerWidth = GetContentRegionAvail().x;
+        auto stateSize = CalcTextSize(stateInfo.c_str());
+        auto branchSize = CalcTextSize(branchInfo.c_str());
+        auto tokenSize = CalcTextSize(tokenInfo.c_str());
+        auto sepSize = CalcTextSize(sep.c_str());
+
+        float rightEdge = GetCursorPosX() + footerWidth;
+
+        // Lay out right-aligned: [branch] :: [tokens] :: [state]
+        ImVec2 pos = GetCursorPos();
+        float x = rightEdge;
+        x -= stateSize.x;
+        GetForegroundDrawList()->AddText(
+            ImVec2(x, pos.y), stateColor, stateInfo.c_str());
+        x -= sepSize.x;
+        GetForegroundDrawList()->AddText(
+            ImVec2(x, pos.y), GetColorU32(ImGuiCol_TextDisabled), sep.c_str());
+        x -= tokenSize.x;
+        GetForegroundDrawList()->AddText(
+            ImVec2(x, pos.y), tokenColor, tokenInfo.c_str());
+        x -= sepSize.x;
+        GetForegroundDrawList()->AddText(
+            ImVec2(x, pos.y), GetColorU32(ImGuiCol_TextDisabled), sep.c_str());
+        x -= branchSize.x;
+        GetForegroundDrawList()->AddText(
+            ImVec2(x, pos.y), ImColor(IM_COL32(255, 180, 50, 255)), branchInfo.c_str());
+
+        // Advance cursor past footer height
+        SetCursorPosY(pos.y + stateSize.y);
+    }
 }
 
 void render_session_db_view(SessionDB& db) {

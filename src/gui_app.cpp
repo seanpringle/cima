@@ -340,37 +340,20 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                             tab_flags)) {
                         active_tab = ti;
 
-                        auto padding = GetStyle().WindowPadding;
-                        auto space = GetContentRegionAvail();
-
-                        SetCursorPos(ImVec2(GetCursorPosX() - padding.x,
-                            GetCursorPosY() - GetStyle().ItemSpacing.y));
-                        BeginChild("##tab_view",
-                            ImVec2(space.x + padding.x * 2,
-                                space.y + padding.y * 2 + GetStyle().ItemSpacing.y),
-                            ImGuiChildFlags_None,
-                            ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoScrollbar |
-                                ImGuiWindowFlags_NoScrollWithMouse);
-
-                        // Controls row at tab level (model combo, raw, tokens, branch)
-                        render_chat_controls(tab);
-
-                        Separator();
-
-                        // Inside each tab: 40% session tabs (left) + 60% Chat (right)
+                        // 40% session tabs (left) + 60% Chat (right) — no menu bar wrapper
                         {
-                            auto canvas = GetContentRegionAvail();
+                            auto space = GetContentRegionAvail();
                             auto tl = GetCursorPos();
                             float gap = GetStyle().ItemSpacing.x * 2.0f;
-                            float planWidth = canvas.x * 0.4f - gap;
+                            float planWidth = space.x * 0.4f - gap;
                             auto planPos = tl;
-                            auto planSize = ImVec2(planWidth, canvas.y);
+                            auto planSize = ImVec2(planWidth, space.y);
                             auto chatPos = ImVec2(tl.x + planWidth + gap, tl.y);
-                            auto chatSize = ImVec2(-1, canvas.y);
+                            auto chatSize = ImVec2(-1, space.y);
                             auto winPos = GetWindowPos();
                             auto sepPosA =
                                 ImVec2(winPos.x + tl.x + planWidth + (gap / 2), winPos.y + tl.y);
-                            auto sepPosB = ImVec2(sepPosA.x, winPos.y + tl.y + canvas.y);
+                            auto sepPosB = ImVec2(sepPosA.x, winPos.y + tl.y + space.y);
 
                             // Left panel: session tabs
                             SetCursorPos(planPos);
@@ -395,6 +378,10 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                                     render_session_db_view(tab.session->session_db());
                                     EndTabItem();
                                 }
+                                if (BeginTabItem("Config")) {
+                                    render_config_tab(tab, mono_font);
+                                    EndTabItem();
+                                }
                                 EndTabBar();
                             }
 
@@ -417,7 +404,6 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                             EndChild();
                         }
 
-                        EndChild();
                         EndTabItem();
                     }
                     PopID();
