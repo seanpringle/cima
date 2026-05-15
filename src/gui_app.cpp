@@ -68,12 +68,25 @@ static void load_tab_from_disk(TabInfo& tab, AppSession& app_session,
     // Restore provider name (if the provider still exists)
     if (!data.provider_name.empty()) {
         tab.provider_name = data.provider_name;
-        // Verify the provider still exists; if not, keep the name anyway
-        // (the Config tab's provider combo will show a fallback)
+        // Verify the provider still exists
+        bool found = false;
+        for (const auto& p : providers) {
+            if (p.name == data.provider_name) {
+                // Update the session to use this provider's api_base/api_key
+                tab.session->set_provider(p);
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            // Keep the name anyway (the Config tab's provider combo will show a fallback)
+        }
     }
 
     // Restore model from saved data (but keep the config-provided model if
     // the saved data has an empty model)
+    // Note: session.set_provider() above already set the model from the provider.
+    // Override with saved model if non-empty (restores the user's last selection).
     if (!data.model.empty()) {
         tab.model_name = data.model;
         tab.session->set_model(data.model);
