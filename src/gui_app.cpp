@@ -23,6 +23,7 @@ static void save_tab_to_disk(const TabInfo& tab, AppSession& app_session) {
     data.provider_name = tab.provider_name;
     data.model = tab.model_name;
     data.reasoning_effort = tab.reasoning_effort;
+    data.workspace_path = tab.session->safe_dir();
     data.conversation = tab.session->conversation().to_json();
 
     // Serialize chat log entries
@@ -96,6 +97,11 @@ static void load_tab_from_disk(TabInfo& tab, AppSession& app_session,
     if (!data.reasoning_effort.empty()) {
         tab.reasoning_effort = data.reasoning_effort;
         tab.session->set_reasoning_effort(data.reasoning_effort);
+    }
+
+    // Restore workspace path (safe directory)
+    if (!data.workspace_path.empty()) {
+        tab.session->set_safe_dir(data.workspace_path);
     }
 
     // Restore conversation

@@ -635,6 +635,39 @@ void render_config_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
 
     Separator();
 
+    // ── Workspace path (safe directory) ──
+    Text("Workspace:");
+    SameLine();
+    PushFont(mono_font);
+    SetNextItemWidth(-1);
+    {
+        std::string ws = session.safe_dir();
+        char buf[1024];
+        strncpy(buf, ws.c_str(), sizeof(buf) - 1);
+        buf[sizeof(buf) - 1] = '\0';
+        if (InputText("##workspace-path", buf, sizeof(buf),
+                ImGuiInputTextFlags_EnterReturnsTrue)) {
+            std::string new_ws(buf);
+            // Normalise: expand ~ and resolve to absolute path
+            if (!new_ws.empty()) {
+                try {
+                    std::error_code ec;
+                    auto p = std::filesystem::weakly_canonical(
+                        std::filesystem::path(new_ws), ec);
+                    if (!ec) {
+                        new_ws = p.string();
+                    }
+                } catch (...) {
+                    // Keep user input as-is if canonicalisation fails
+                }
+            }
+            session.set_safe_dir(new_ws);
+        }
+    }
+    PopFont();
+
+    Separator();
+
     // ── Raw checkbox ──
     Checkbox("Raw", &ui.show_raw);
 

@@ -64,6 +64,11 @@ class ChatSession {
     // Return the current safe directory (workspace) path for this session.
     const std::string& safe_dir() const { return *safe_dir_; }
 
+    /// Update the safe directory (workspace) for tool calls.
+    /// All tool factories hold a shared_ptr to the internal string, so the
+    /// change takes effect immediately without re-registering tools.
+    void set_safe_dir(const std::string& path) { *safe_dir_ = path; }
+
     /// Compact the conversation by asking the LLM to summarise.
     /// Replaces the entire history with a single summary message.
     Result<void> compact();

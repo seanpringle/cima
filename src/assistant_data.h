@@ -21,6 +21,7 @@ struct AssistantData {
     std::string provider_name;      // which provider this tab belongs to
     std::string model;              // model name for this assistant
     std::string reasoning_effort;   // reasoning effort override
+    std::string workspace_path;     // safe directory for tool calls (overrides cwd)
     json conversation;              // serialized Conversation (array of message objects)
     json chat_log;                  // serialized chat log entries (array of entry objects)
     json plan;                      // { "plan": "...", "comments": [...] }
