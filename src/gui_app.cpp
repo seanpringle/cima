@@ -146,6 +146,16 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
             app_session->add_agent_db(agent_filename);
         }
 
+        // Load chat UI history from the append-only log (separate from
+        // SessionDB so the agent can compact messages without losing history).
+        {
+            std::string agent_filename = db_filename.empty()
+                ? tab.title + ".db"
+                : db_filename;
+            std::string log_path = app_session->agent_db_path(agent_filename) + ".log";
+            tab.ui_state.load_chat_log(log_path);
+        }
+
         tabs.push_back(std::move(tab));
     };
 

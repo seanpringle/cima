@@ -33,6 +33,14 @@ struct ChatUIState {
     ImFont* mono_font = nullptr;
     int next_seq = 1;
     bool show_raw = false;
+    std::string log_path; // path to the append-only chat log file (.jsonl)
+
+    /// Load entries from the JSON Lines log file into `entries`.
+    /// Sets `next_seq` to max seq + 1.  Silently ignores corrupt lines.
+    void load_chat_log(const std::string& path);
+
+    /// Append a single entry to the JSON Lines log file.
+    void append_chat_log_entry(const DisplayEntry& entry);
 
     // Available models from the endpoint (populated by fetch_models)
     std::vector<std::string> available_models;

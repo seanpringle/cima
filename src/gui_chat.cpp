@@ -14,6 +14,7 @@
 #include <cstring>
 #include <ctime>
 #include <filesystem>
+#include <fstream>
 #include <future>
 #include <md4c.h>
 #include <string>
@@ -25,6 +26,71 @@ using std::string;
 using std::string_view;
 using std::stringstream;
 using std::vector;
+
+// ── Chat UI log persistence (JSON Lines format) ──────────────────────────
+
+void ChatUIState::load_chat_log(const std::string& path) {
+    log_path = path;
+    entries.clear();
+    int max_seq = 0;
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        next_seq = 1;
+        return; // first run — no log yet
+    }
+    std::string line;
+    while (std::getline(file, line)) {
+        if (line.empty()) continue;
+        try {
+            auto j = json::parse(line);
+            DisplayEntry e;
+            e.seq = j.value("seq", 0);
+            std::string t = j.value("type", "Content");
+            if (t == "UserText")      e.type = EntryType::UserText;
+            else if (t == "Reasoning") e.type = EntryType::Reasoning;
+            else if (t == "Content")   e.type = EntryType::Content;
+            else if (t == "ToolCall")  e.type = EntryType::ToolCall;
+            else if (t == "Continuation") e.type = EntryType::Continuation;
+            else continue;
+            e.text = j.value("text", "");
+            e.is_streaming = j.value("streaming", false);
+            entries.push_back(std::move(e));
+            if (e.seq > max_seq) max_seq = e.seq;
+        } catch (...) {
+            // skip corrupt line
+        }
+    }
+    next_seq = max_seq + 1;
+}
+
+void ChatUIState::append_chat_log_entry(const DisplayEntry& entry) {
+    if (log_path.empty()) return;
+    json j;
+    switch (entry.type) {
+        case EntryType::UserText:     j["type"] = "UserText"; break;
+        case EntryType::Reasoning:    j["type"] = "Reasoning"; break;
+        case EntryType::Content:      j["type"] = "Content"; break;
+        case EntryType::ToolCall:     j["type"] = "ToolCall"; break;
+        case EntryType::Continuation: j["type"] = "Continuation"; break;
+    }
+    j["seq"] = entry.seq;
+    j["text"] = entry.text;
+    if (entry.is_streaming) {
+        j["streaming"] = true;
+    }
+    std::ofstream file(log_path, std::ios::app);
+    if (file.is_open()) {
+        file << j.dump() << "\n";
+    }
+}
+
+// ── Helper: finalise a streaming entry and log it ────────────────────────
+static void finalize_streaming_entry(ChatUIState& ui) {
+    if (!ui.entries.empty() && ui.entries.back().is_streaming) {
+        ui.entries.back().is_streaming = false;
+        ui.append_chat_log_entry(ui.entries.back());
+    }
+}
 
 namespace {
 
@@ -410,21 +476,23 @@ static void start_chat(AsyncChatState& chat, ChatSession& session, string input)
 }
 
 static void push_entry(ChatUIState& ui, EntryType type, const string& text, bool streaming) {
-    ui.entries.push_back({type, text, streaming, ui.next_seq++});
+    DisplayEntry entry{type, text, streaming, ui.next_seq++};
+    ui.entries.push_back(entry);
+    // Log non-streaming entries immediately; streaming entries are logged
+    // when finalised (see finalize_streaming_entry).
+    if (!streaming) {
+        ui.append_chat_log_entry(entry);
+    }
 }
 
 void drain_pending(ChatUIState& ui, AsyncChatState& chat) {
     std::lock_guard<std::mutex> lock(chat.mutex);
     for (auto& [pending_text, type] : chat.pending) {
         if (type == OutputType::ToolInvocation) {
-            if (!ui.entries.empty() && ui.entries.back().is_streaming) {
-                ui.entries.back().is_streaming = false;
-            }
+            finalize_streaming_entry(ui);
             push_entry(ui, EntryType::ToolCall, pending_text, false);
         } else if (type == OutputType::Continuation) {
-            if (!ui.entries.empty() && ui.entries.back().is_streaming) {
-                ui.entries.back().is_streaming = false;
-            }
+            finalize_streaming_entry(ui);
             push_entry(ui, EntryType::Continuation, pending_text, false);
         } else {
             auto entry_type =
@@ -433,9 +501,7 @@ void drain_pending(ChatUIState& ui, AsyncChatState& chat) {
                 ui.entries.back().type == entry_type) {
                 ui.entries.back().text += pending_text;
             } else {
-                if (!ui.entries.empty() && ui.entries.back().is_streaming) {
-                    ui.entries.back().is_streaming = false;
-                }
+                finalize_streaming_entry(ui);
                 push_entry(ui, entry_type, pending_text, true);
             }
         }
@@ -578,9 +644,7 @@ void render_chat_ui(TabInfo& tab, bool& done) {
 
     // ── finalize streaming entry now that all pending data is incorporated ──
     if (stream_ended) {
-        if (!ui.entries.empty() && ui.entries.back().is_streaming) {
-            ui.entries.back().is_streaming = false;
-        }
+        finalize_streaming_entry(ui);
         if (!result) {
             push_entry(ui, EntryType::Content, "Error: " + result.error(), false);
         }
@@ -761,7 +825,7 @@ void render_chat_ui(TabInfo& tab, bool& done) {
     if (InputTextMultiline("##input", buffer.data(), buffer.size(), inputSize, inputFlags) && !chat.running) {
         string input(trimWhite(buffer.data()));
         if (input.size()) {
-            ui.entries.push_back({EntryType::UserText, input, false, ui.next_seq++});
+            push_entry(ui, EntryType::UserText, input, false);
             start_chat(chat, session, input);
             for (auto it = history.begin(); it != history.end();
                 it = *it == input ? history.erase(it): ++it);
