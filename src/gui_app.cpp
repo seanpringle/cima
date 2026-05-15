@@ -116,31 +116,17 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
     // Shared wiki across all sessions — file-backed via AppSession
     Wiki wiki(app_session->wiki_db_path());
 
-    auto add_tab = [&](const std::string& model_name, const std::string& db_filename = {}) {
+    auto add_tab = [&](const std::string& model_name, const std::string& restore_title = {}) {
         TabInfo tab;
         tab.id = next_tab_id++;
         tab.model_name = model_name;
 
-        // Determine the agent DB filename: if one was given (e.g. from a
-        // resumed session or freshly created session), use it; otherwise
-        // derive one from a new random title.
-        std::string agent_filename;
-        if (!db_filename.empty()) {
-            agent_filename = db_filename;
-            // Derive the display title from the filename stem:
-            // "Gandalf.db" -> "Gandalf"
-            std::string stem = db_filename;
-            if (stem.size() >= 3 && stem.substr(stem.size() - 3) == ".db") {
-                stem = stem.substr(0, stem.size() - 3);
-            }
-            tab.title = stem;
-            // Reserve the name so generate_lotr_name() won't return it
+        if (!restore_title.empty()) {
+            tab.title = restore_title;
             reserve_lotr_name(tab.title);
         } else {
             tab.title = generate_lotr_name();
-            agent_filename = tab.title + ".db";
         }
-        tab.agent_filename = agent_filename;
 
         tab.chat_state = std::make_unique<AsyncChatState>();
         tab.session = std::make_unique<ChatSession>(cfg, tab.chat_state->cancelled);
@@ -157,22 +143,8 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
         // Point to shared config snippets (cima.json)
         tab.snippets = &cfg.snippets;
 
-        // Compute base paths:
-        //   db_path  = <dir>/<name>.db           (SQLite scratch space)
-        //   aux_base = <dir>/<name>              (stem for auxiliary files)
-        std::string db_path = app_session->agent_db_path(agent_filename);
-        std::string stem = agent_filename;
-        if (stem.size() >= 3 && stem.substr(stem.size() - 3) == ".db")
-            stem = stem.substr(0, stem.size() - 3);
-        std::string aux_base = app_session->agent_db_path(stem);
-
-        // Set up session DB persistence via AppSession
-        {
-            tab.session->session_db().set_auto_save_path(db_path);
-            tab.session->session_db().load_from_file(db_path);
-            // Register with app session for manifest tracking
-            app_session->add_agent_db(agent_filename);
-        }
+        // Compute stem for auxiliary files: <session_dir>/<title>
+        std::string aux_base = app_session->session_file_path(tab.title);
 
         // Load conversation from JSON file
         {
@@ -197,33 +169,8 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
         tabs.push_back(std::move(tab));
     };
 
-    // Start tabs based on session state
-    if (!app_session->is_new_session()) {
-        // Resume existing session: create a tab for each agent DB
-        auto agent_dbs = app_session->agent_db_filenames();
-        if (agent_dbs.empty()) {
-            // No agents in manifest — create one default tab
-            add_tab(cfg.model);
-        } else {
-            for (const auto& db_name : agent_dbs) {
-                // Derive agent name from filename: "Gandalf.db" -> "Gandalf"
-                std::string agent_name = db_name;
-                if (agent_name.size() >= 3 &&
-                    agent_name.substr(agent_name.size() - 3) == ".db") {
-                    agent_name = agent_name.substr(0, agent_name.size() - 3);
-                }
-                add_tab(cfg.model, db_name);
-                // Override the auto-generated LOTR name with the stored one
-                tabs.back().title = agent_name;
-                tabs.back().session->set_agent_name(agent_name);
-            }
-        }
-    } else {
-        // New session: start with one default tab (AppSession created agent DB already)
-        auto dbs = app_session->agent_db_filenames();
-        std::string agent_filename = dbs.empty() ? "" : dbs.front();
-        add_tab(cfg.model, agent_filename);
-    }
+    // Start with one default tab (new or resumed session)
+    add_tab(cfg.model);
 
     // Focus the first chat tab
     if (!tabs.empty()) {
@@ -290,33 +237,20 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                     tab.ui_state.models_future.wait();
                 }
 
-                // Capture the agent filename before erase (tab ref is dangling after)
-                std::string agent_filename = tab.agent_filename;
-
-                // Compute auxiliary base path (strip .db from filename)
-                std::string stem = agent_filename;
-                if (stem.size() >= 3 && stem.substr(stem.size() - 3) == ".db")
-                    stem = stem.substr(0, stem.size() - 3);
-                std::string aux_base = app_session->agent_db_path(stem);
+                // Compute auxiliary base path from the agent title
+                std::string aux_base = app_session->session_file_path(tab.title);
 
                 // Save conversation to JSON file before closing
                 {
                     tab.session->conversation().save_to_file(aux_base + ".messages.json");
                 }
 
-                // Remove from AppSession manifest
-                app_session->remove_agent_db(agent_filename);
-
                 free_lotr_name(tab.title);
                 tabs.erase(tabs.begin() + active_tab);
 
-                // Delete files from disk AFTER erase (SessionDB destructor in
-                // ChatSession creates the .db file via save_to_file; deleting
-                // before erase means the file is born after we try to kill it).
+                // Delete auxiliary files from disk
                 {
                     std::error_code ec;
-                    std::string db_path = app_session->agent_db_path(agent_filename);
-                    std::filesystem::remove(db_path, ec);
                     std::filesystem::remove(aux_base + ".messages.json", ec);
                     std::filesystem::remove(aux_base + ".log", ec);
                     std::filesystem::remove(aux_base + ".plan.json", ec);
@@ -401,10 +335,6 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                                     render_notes_tab(tab.session->notes(), mono_font);
                                     EndTabItem();
                                 }
-                                if (BeginTabItem("Database")) {
-                                    render_session_db_view(tab.session->session_db());
-                                    EndTabItem();
-                                }
                                 EndTabBar();
                             }
 
@@ -469,10 +399,7 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
 
     // ── Save all conversation files ──
     for (auto& tab : tabs) {
-        std::string stem = tab.agent_filename;
-        if (stem.size() >= 3 && stem.substr(stem.size() - 3) == ".db")
-            stem = stem.substr(0, stem.size() - 3);
-        std::string conv_path = app_session->agent_db_path(stem) + ".messages.json";
+        std::string conv_path = app_session->session_file_path(tab.title) + ".messages.json";
         tab.session->conversation().save_to_file(conv_path);
     }
 

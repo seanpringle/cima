@@ -14,7 +14,6 @@ struct SessionFolderContents {
 /// Each session folder contains:
 ///   state.json   — manifest (version, last_cwd, file list)
 ///   wiki.db      — Wiki tab SQLite database
-///   <name>.db    — One or more per-agent chat session databases
 ///
 class AppSession {
   public:
@@ -31,19 +30,13 @@ class AppSession {
     // ── Path accessors ──
     const std::filesystem::path& session_dir() const { return session_dir_; }
     std::string wiki_db_path() const;
-    std::vector<std::string> agent_db_filenames() const;
-    std::string agent_db_path(const std::string& filename) const;
+
+    /// Return the full path for a filename within this session directory.
+    std::string session_file_path(const std::string& filename) const;
 
     // ── Manifest data ──
     const std::string& last_cwd() const { return last_cwd_; }
     void set_last_cwd(const std::string& cwd);
-
-    // ── Agent DB management ──
-    /// Add a new agent DB filename to the manifest (e.g. "Gandalf.db").
-    void add_agent_db(const std::string& filename);
-
-    /// Remove an agent DB filename from the manifest.
-    void remove_agent_db(const std::string& filename);
 
     /// Persist state.json to disk.
     void save_manifest();
@@ -75,6 +68,5 @@ class AppSession {
     std::string session_name_;
     std::filesystem::path session_dir_;
     std::string last_cwd_;
-    std::vector<std::string> agent_dbs_; // filenames like "Gandalf.db"
     bool is_new_ = false;
 };

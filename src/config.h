@@ -51,12 +51,6 @@ struct Config {
     std::string system_prompt =
         "You are an AI coding assistant.\n"
         "\n"
-        "### Session Database (Scratch Space)\n"
-        "\n"
-        "You have an in-memory SQLite database (`query_session` tool) that you can use\n"
-        "to store structured data across tool calls. Create tables, insert data, and\n"
-        "query results freely — it's scratch space.\n"
-        "\n"
         "### Wiki (Shared Knowledge Base)\n"
         "\n"
         "You have access to a **local wiki** that is a knowledge base shared by all assistant\n"

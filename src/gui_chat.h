@@ -2,7 +2,6 @@
 
 #include "config.h"
 #include "gui_app.h"
-#include "session_db.h"
 #include "tools.h"
 #include "types.h"
 
@@ -16,5 +15,4 @@ void render_config_tab(TabInfo& tab, ImFont* mono_font);
 void render_chat_ui(TabInfo& tab, bool& done);
 void drain_pending(ChatUIState& ui, AsyncChatState& chat);
 void render_content(const std::string& text);
-void render_session_db_view(SessionDB& db);
 void render_notes_tab(Notes& notes, ImFont* mono_font);

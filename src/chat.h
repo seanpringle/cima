@@ -5,7 +5,6 @@
 #include "conversation.h"
 #include "notes.h"
 #include "plan.h"
-#include "session_db.h"
 #include "tools.h"
 #include "types.h"
 #include "wiki.h"
@@ -53,9 +52,6 @@ class ChatSession {
     const std::string& api_base() const { return api_base_; }
     const std::string& api_key() const { return api_key_; }
 
-    // Each session has its own in-memory SQLite database (scratch space).
-    SessionDB& session_db() { return session_db_; }
-
     // Each session has its own conversation history.
     Conversation& conversation() { return conversation_; }
     const Conversation& conversation() const { return conversation_; }
@@ -93,7 +89,6 @@ class ChatSession {
     std::string system_prompt_;
     PlanBoard plan_;
     Notes notes_;
-    SessionDB session_db_;
     Conversation conversation_;
     ChatClient client_;
     CancellationToken cancelled_;

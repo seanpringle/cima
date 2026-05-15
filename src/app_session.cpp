@@ -1,5 +1,4 @@
 #include "app_session.h"
-#include "ship_name.h"
 
 #include <sqlite3.h>
 
@@ -96,47 +95,8 @@ void AppSession::load_existing(bool force) {
     // Read last_cwd
     last_cwd_ = manifest.value("last_cwd", std::string());
 
-    // Read file list
-    std::vector<std::string> listed_files;
-    if (manifest.contains("files") && manifest["files"].is_array()) {
-        for (const auto& f : manifest["files"]) {
-            if (f.is_string()) {
-                listed_files.push_back(f.get<std::string>());
-            }
-        }
-    }
-
     // Integrity check — may rewrite manifest on disk if force=true
-    bool had_issues = verify_integrity(force);
-
-    // If force corrected the manifest, re-read the file list
-    if (had_issues && force) {
-        listed_files.clear();
-        std::ifstream updated(manifest_path);
-        json updated_manifest;
-        if (updated.is_open()) {
-            try {
-                updated >> updated_manifest;
-            } catch (...) {
-            }
-        }
-        if (updated_manifest.contains("files") && updated_manifest["files"].is_array()) {
-            for (const auto& f : updated_manifest["files"]) {
-                if (f.is_string()) {
-                    listed_files.push_back(f.get<std::string>());
-                }
-            }
-        }
-    }
-
-    // Populate agent DBs (all .db files except wiki.db)
-    agent_dbs_.clear();
-    for (const auto& fname : listed_files) {
-        if (fname != "wiki.db" && fname.size() >= 3 &&
-            fname.substr(fname.size() - 3) == ".db") {
-            agent_dbs_.push_back(fname);
-        }
-    }
+    verify_integrity(force);
 
     // Warn if last_cwd differs from current working directory
     if (!last_cwd_.empty()) {
@@ -167,11 +127,6 @@ void AppSession::create_new() {
     auto cwd = std::filesystem::current_path(ec);
     last_cwd_ = ec ? std::string() : cwd.string();
 
-    // Generate a random agent name for the first tab
-    std::string agent_name = generate_lotr_name();
-    std::string agent_filename = agent_name + ".db";
-    agent_dbs_.push_back(agent_filename);
-
     // Create wiki.db (empty database with tables)
     {
         std::string wiki_path = wiki_db_path();
@@ -201,19 +156,6 @@ void AppSession::create_new() {
             throw std::runtime_error("Failed to initialize wiki.db: " + msg);
         }
         sqlite3_close(wiki_db);
-    }
-
-    // Create the first agent DB (empty, will be populated when ChatSession opens it)
-    {
-        std::string agent_path = agent_db_path(agent_filename);
-        sqlite3* agent_db = nullptr;
-        int rc = sqlite3_open(agent_path.c_str(), &agent_db);
-        if (rc != SQLITE_OK) {
-            std::string msg = sqlite3_errmsg(agent_db);
-            sqlite3_close(agent_db);
-            throw std::runtime_error("Failed to create agent DB " + agent_path + ": " + msg);
-        }
-        sqlite3_close(agent_db);
     }
 
     // Write state.json
@@ -356,11 +298,7 @@ std::string AppSession::wiki_db_path() const {
     return (session_dir_ / "wiki.db").string();
 }
 
-std::vector<std::string> AppSession::agent_db_filenames() const {
-    return agent_dbs_;
-}
-
-std::string AppSession::agent_db_path(const std::string& filename) const {
+std::string AppSession::session_file_path(const std::string& filename) const {
     return (session_dir_ / filename).string();
 }
 
@@ -370,27 +308,6 @@ std::string AppSession::agent_db_path(const std::string& filename) const {
 
 void AppSession::set_last_cwd(const std::string& cwd) {
     last_cwd_ = cwd;
-}
-
-// -----------------------------------------------------------------------
-// Agent DB management
-// -----------------------------------------------------------------------
-
-void AppSession::add_agent_db(const std::string& filename) {
-    // Avoid duplicates
-    for (const auto& existing : agent_dbs_) {
-        if (existing == filename) return;
-    }
-    agent_dbs_.push_back(filename);
-    save_manifest();
-}
-
-void AppSession::remove_agent_db(const std::string& filename) {
-    auto it = std::find(agent_dbs_.begin(), agent_dbs_.end(), filename);
-    if (it != agent_dbs_.end()) {
-        agent_dbs_.erase(it);
-        save_manifest();
-    }
 }
 
 // -----------------------------------------------------------------------
@@ -404,24 +321,6 @@ void AppSession::save_manifest() {
 
     json files = json::array();
     files.push_back("wiki.db");
-    for (const auto& ag : agent_dbs_) {
-        files.push_back(ag);
-        // Auxiliary files that share the same stem (chat log, plan, notes).
-        // Only include files that actually exist on disk so the integrity
-        // check doesn't flag phantom entries as missing.
-        if (ag.size() >= 3 && ag.substr(ag.size() - 3) == ".db") {
-            std::string stem = ag.substr(0, ag.size() - 3);
-            auto try_add = [&](const std::string& name) {
-                if (std::filesystem::exists(session_dir_ / name)) {
-                    files.push_back(name);
-                }
-            };
-            try_add(stem + ".log");
-            try_add(stem + ".plan.json");
-            try_add(stem + ".messages.json");
-            try_add(stem + ".notes.json");
-        }
-    }
     manifest["files"] = std::move(files);
 
     auto manifest_path = session_dir_ / "state.json";
@@ -443,8 +342,7 @@ void AppSession::print_welcome() const {
                   << "  Session directory: " << session_dir_.string() << "\n";
     } else {
         std::cout << "Resuming session '" << session_name_ << "'\n"
-                  << "  Session directory: " << session_dir_.string() << "\n"
-                  << "  Agent tabs: " << agent_dbs_.size() << "\n";
+                  << "  Session directory: " << session_dir_.string() << "\n";
     }
     std::cout << std::flush;
 }
