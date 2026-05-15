@@ -128,6 +128,32 @@ std::string ChatSession::build_notices() {
     return notices;
 }
 
+void ChatSession::restore_last_usage_from_db() {
+    auto read_int = [&](const std::string& key) -> std::optional<int> {
+        auto res = session_db_.execute("SELECT value FROM metadata WHERE key = '" + key + "'");
+        if (!res) return std::nullopt;
+        auto arr = json::parse(*res, nullptr, false);
+        if (!arr.is_array() || arr.empty()) return std::nullopt;
+        auto v = arr[0]["value"];
+        if (v.is_null() || !v.is_string()) return std::nullopt;
+        try { return std::stoi(v.get<std::string>()); }
+        catch (...) { return std::nullopt; }
+    };
+
+    auto total = read_int("last_total_tokens");
+    if (total.has_value()) {
+        last_usage_.total_tokens = *total;
+    }
+    auto prompt = read_int("last_prompt_tokens");
+    if (prompt.has_value()) {
+        last_usage_.prompt_tokens = *prompt;
+    }
+    auto completion = read_int("last_completion_tokens");
+    if (completion.has_value()) {
+        last_usage_.completion_tokens = *completion;
+    }
+}
+
 Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
     // ── Discover context limit (once per model/endpoint) ──
     if (!context_limit_discovered_) {

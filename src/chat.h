@@ -66,6 +66,11 @@ class ChatSession {
     /// message rather than prepending it to tool output.
     std::string build_notices();
 
+    /// Restore last_usage_ from the session DB metadata table.
+    /// Call after load_from_file() so the UI displays the last known token count
+    /// instead of 0 on session resume.
+    void restore_last_usage_from_db();
+
     /// Set/Get the agent's Culture ship name.
     void set_agent_name(const std::string& name) { agent_name_ = name; }
     const std::string& agent_name() const { return agent_name_; }

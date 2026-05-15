@@ -142,6 +142,9 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
             std::string db_path = app_session->agent_db_path(agent_filename);
             tab.session->session_db().set_auto_save_path(db_path);
             tab.session->session_db().load_from_file(db_path);
+            // Restore last token usage from metadata so the UI shows
+            // the last known count instead of 0 on session resume.
+            tab.session->restore_last_usage_from_db();
             // Register with app session for manifest tracking
             app_session->add_agent_db(agent_filename);
         }
