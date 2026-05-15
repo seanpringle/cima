@@ -108,9 +108,11 @@ add_library(cima_core
     src/chat.cpp
     src/conversation.cpp
     src/plan.cpp
+    src/notes.cpp
     src/app_session.cpp
     src/wiki.cpp
     src/tools/factories/wiki.cpp
+    src/tools/factories/notes.cpp
 )
 target_include_directories(cima_core PUBLIC src)
 target_link_libraries(cima_core PUBLIC
@@ -161,6 +163,9 @@ target_link_libraries(test_wiki PRIVATE cima_core Catch2::Catch2WithMain)
 add_executable(test_conversation tests/test_conversation.cpp)
 target_link_libraries(test_conversation PRIVATE cima_core Catch2::Catch2WithMain)
 
+add_executable(test_notes tests/test_notes.cpp)
+target_link_libraries(test_notes PRIVATE cima_core Catch2::Catch2WithMain)
+
 include(CTest)
 include(Catch)
 catch_discover_tests(test_config)
@@ -171,3 +176,4 @@ catch_discover_tests(test_chat)
 catch_discover_tests(test_session_db)
 catch_discover_tests(test_wiki)
 catch_discover_tests(test_conversation)
+catch_discover_tests(test_notes)

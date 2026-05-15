@@ -3,6 +3,7 @@
 #include "client.h"
 #include "config.h"
 #include "conversation.h"
+#include "notes.h"
 #include "plan.h"
 #include "session_db.h"
 #include "tools.h"
@@ -43,6 +44,10 @@ class ChatSession {
     // Each session has its own PlanBoard (not shared across agents).
     PlanBoard& plan() { return plan_; }
     const PlanBoard& plan() const { return plan_; }
+
+    // Each session has its own Notes storage (local to this agent).
+    Notes& notes() { return notes_; }
+    const Notes& notes() const { return notes_; }
 
     // API connection info (for creating temporary clients in background tasks).
     const std::string& api_base() const { return api_base_; }
@@ -87,6 +92,7 @@ class ChatSession {
     int max_iterations_ = 100; // overridden by config.max_tool_iterations
     std::string system_prompt_;
     PlanBoard plan_;
+    Notes notes_;
     SessionDB session_db_;
     Conversation conversation_;
     ChatClient client_;

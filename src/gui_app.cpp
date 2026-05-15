@@ -189,6 +189,11 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
             tab.session->plan().load_from_file(aux_base + ".plan.json");
         }
 
+        // Load notes file (per-agent note storage).
+        {
+            tab.session->notes().load_from_file(aux_base + ".notes.json");
+        }
+
         tabs.push_back(std::move(tab));
     };
 
@@ -315,6 +320,7 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                     std::filesystem::remove(aux_base + ".messages.json", ec);
                     std::filesystem::remove(aux_base + ".log", ec);
                     std::filesystem::remove(aux_base + ".plan.json", ec);
+                    std::filesystem::remove(aux_base + ".notes.json", ec);
                 }
                 if (active_tab >= (int)tabs.size())
                     active_tab = (int)tabs.size() - 1;
@@ -389,6 +395,10 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                                     } else {
                                         TextDisabled("(empty plan)");
                                     }
+                                    EndTabItem();
+                                }
+                                if (BeginTabItem("Notes")) {
+                                    render_notes_tab(tab.session->notes(), mono_font);
                                     EndTabItem();
                                 }
                                 if (BeginTabItem("Database")) {
