@@ -319,8 +319,12 @@ void AppSession::save_manifest() {
     manifest["version"] = 1;
     manifest["last_cwd"] = last_cwd_;
 
+    // Dynamically scan the session directory to capture all files (messages, plan, etc.)
     json files = json::array();
-    files.push_back("wiki.db");
+    auto contents = scan_folder();
+    for (const auto& fname : contents.filenames) {
+        files.push_back(fname);
+    }
     manifest["files"] = std::move(files);
 
     auto manifest_path = session_dir_ / "state.json";
