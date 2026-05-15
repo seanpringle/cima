@@ -97,6 +97,7 @@ size_t estimate_tokens(const Message& msg) {
         t += estimate_tokens(tc.id);
         t += estimate_tokens(tc.name);
         t += estimate_tokens(tc.arguments);
+        t += estimate_tokens(tc.result);
     }
     t += estimate_tokens(msg.tool_call_id);
     // JSON framing overhead per message (~20 tokens for role + surrounding keys)
