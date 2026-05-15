@@ -768,28 +768,7 @@ void render_chat_ui(TabInfo& tab, bool& done) {
             history.push_back(input);
             buffer.front() = 0;
 
-            // ── First user prompt: kick off auto-save ──
-            if (session.session_db().auto_save_path().empty()) {
-                auto now = std::time(nullptr);
-                struct tm local_tm{};
-                localtime_r(&now, &local_tm);
-                char ts[16];
-                std::strftime(ts, sizeof(ts), "%y%m%d%H%M%S", &local_tm);
 
-                const char* home = getenv("HOME");
-                if (!home || !home[0]) {
-                    home = getenv("USERPROFILE");
-                }
-                std::string dir = (home ? home : ".") +
-                    std::string("/.local/state/cima/session");
-                std::error_code ec;
-                std::filesystem::create_directories(dir, ec);
-
-                std::string filename = std::string(ts) + ".db";
-                auto db_path = dir + "/" + filename;
-                session.session_db().set_auto_save_path(db_path);
-                session.session_db().save_to_file(db_path);
-            }
         }
     }
 

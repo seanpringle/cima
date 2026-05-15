@@ -108,6 +108,7 @@ add_library(cima_core
     src/client.cpp
     src/chat.cpp
     src/plan.cpp
+    src/app_session.cpp
     src/wiki.cpp
     src/tools/factories/wiki.cpp
 )

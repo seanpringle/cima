@@ -1,5 +1,6 @@
 #pragma once
 
+#include "app_session.h"
 #include "chat.h"
 #include "config.h"
 #include "ship_name.h"
@@ -60,4 +61,4 @@ struct TabInfo {
     std::string workspace_path;
 };
 
-int gui_main(Config cfg);
+int gui_main(Config cfg, const std::string& session_name = {}, bool force = false);

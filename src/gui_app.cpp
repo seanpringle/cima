@@ -13,7 +13,14 @@ using namespace ImGui;
 #include <algorithm>
 #include <csignal>
 
-int gui_main(Config cfg) {
+int gui_main(Config cfg, const std::string& session_name, bool force) {
+    // ── App session ──
+    std::unique_ptr<AppSession> app_session;
+    if (!session_name.empty()) {
+        app_session = std::make_unique<AppSession>(session_name, force);
+        app_session->print_welcome();
+    }
+
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         SDL_Log("SDL_Init error: %s", SDL_GetError());
         return 1;
@@ -109,10 +116,10 @@ int gui_main(Config cfg) {
     int active_tab = 0;
     int focus_tab_id = -1;
 
-    // Shared wiki across all sessions (in-memory until app persistence is sorted out)
-    Wiki wiki(":memory:");
+    // Shared wiki across all sessions — now file-backed via AppSession
+    Wiki wiki(app_session ? app_session->wiki_db_path() : ":memory:");
 
-    auto add_tab = [&](const std::string& model_name) {
+    auto add_tab = [&](const std::string& model_name, const std::string& db_filename = {}) {
         TabInfo tab;
         tab.id = next_tab_id++;
         tab.model_name = model_name;
@@ -130,13 +137,58 @@ int gui_main(Config cfg) {
 
         tab.session->set_wiki(&wiki);
 
+        // Set up session DB persistence via AppSession if available
+        if (app_session) {
+            std::string agent_filename = db_filename.empty()
+                ? tab.title + ".db"
+                : db_filename;
+            std::string db_path = app_session->agent_db_path(agent_filename);
+            tab.session->session_db().set_auto_save_path(db_path);
+            tab.session->session_db().load_from_file(db_path);
+            // Register with app session for manifest tracking
+            app_session->add_agent_db(agent_filename);
+        }
+
         tabs.push_back(std::move(tab));
     };
 
-    // Start with one default tab
-    add_tab(cfg.model);
-    // Focus the first chat tab instead of the left-most Wiki tab
-    focus_tab_id = tabs.back().id;
+    // Start tabs based on session state
+    if (app_session && !app_session->is_new_session()) {
+        // Resume existing session: create a tab for each agent DB
+        auto agent_dbs = app_session->agent_db_filenames();
+        if (agent_dbs.empty()) {
+            // No agents in manifest — create one default tab
+            add_tab(cfg.model);
+        } else {
+            for (const auto& db_name : agent_dbs) {
+                // Derive agent name from filename: "Gandalf.db" -> "Gandalf"
+                std::string agent_name = db_name;
+                if (agent_name.size() >= 3 &&
+                    agent_name.substr(agent_name.size() - 3) == ".db") {
+                    agent_name = agent_name.substr(0, agent_name.size() - 3);
+                }
+                add_tab(cfg.model, db_name);
+                // Override the auto-generated LOTR name with the stored one
+                tabs.back().title = agent_name;
+                tabs.back().session->set_agent_name(agent_name);
+            }
+        }
+    } else {
+        // New session: start with one default tab (AppSession created agent DB already)
+        std::string agent_filename;
+        if (app_session) {
+            auto dbs = app_session->agent_db_filenames();
+            if (!dbs.empty()) {
+                agent_filename = dbs.front();
+            }
+        }
+        add_tab(cfg.model, agent_filename);
+    }
+
+    // Focus the first chat tab
+    if (!tabs.empty()) {
+        focus_tab_id = tabs.back().id;
+    }
 
     bool done = false;
     while (!done) {
@@ -197,6 +249,13 @@ int gui_main(Config cfg) {
                 if (tab.ui_state.models_future.valid()) {
                     tab.ui_state.models_future.wait();
                 }
+
+                // Remove from AppSession manifest if applicable
+                if (app_session) {
+                    std::string agent_filename = tab.title + ".db";
+                    app_session->remove_agent_db(agent_filename);
+                }
+
                 free_lotr_name(tab.title);
                 tabs.erase(tabs.begin() + active_tab);
                 if (active_tab >= (int)tabs.size())
@@ -332,8 +391,6 @@ int gui_main(Config cfg) {
                     ti++;
                 }
 
-                // (No global group tab)
-
                 EndTabBar();
             }
         }
@@ -365,6 +422,16 @@ int gui_main(Config cfg) {
         if (tab.ui_state.models_future.valid()) {
             tab.ui_state.models_future.wait();
         }
+    }
+
+    // ── Save final AppSession manifest ──
+    if (app_session) {
+        std::error_code ec;
+        auto cwd = std::filesystem::current_path(ec);
+        if (!ec) {
+            app_session->set_last_cwd(cwd.string());
+        }
+        app_session->save_manifest();
     }
 
     ImGui_ImplSDLRenderer3_Shutdown();

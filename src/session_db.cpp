@@ -778,6 +778,40 @@ Result<void> SessionDB::load_from_file(const std::string& path) {
     sqlite3_close(db_);
     db_ = new_db;
 
+    // Ensure conversation tables exist (the loaded file might be empty/new)
+    // We already hold the mutex, so execute the SQL directly.
+    {
+        const char* sql = R"(
+            CREATE TABLE IF NOT EXISTS messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                seq INTEGER NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT,
+                reasoning_content TEXT DEFAULT '',
+                tool_call_id TEXT DEFAULT '',
+                retention TEXT DEFAULT 'preserve',
+                created_at TEXT DEFAULT (datetime('now'))
+            );
+            CREATE TABLE IF NOT EXISTS tool_calls (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+                call_index INTEGER NOT NULL,
+                tool_call_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                arguments TEXT DEFAULT ''
+            );
+            CREATE INDEX IF NOT EXISTS idx_messages_seq ON messages(seq);
+            CREATE INDEX IF NOT EXISTS idx_tool_calls_msg ON tool_calls(message_id);
+            CREATE TABLE IF NOT EXISTS metadata (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            );
+        )";
+        char* err = nullptr;
+        sqlite3_exec(db_, sql, nullptr, nullptr, &err);
+        if (err) sqlite3_free(err);
+    }
+
     // Reset sequence counter from the loaded data
     next_seq_ = 0;
     sqlite3_stmt* stmt = nullptr;
