@@ -134,6 +134,8 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                 stem = stem.substr(0, stem.size() - 3);
             }
             tab.title = stem;
+            // Reserve the name so generate_lotr_name() won't return it
+            reserve_lotr_name(tab.title);
         } else {
             tab.title = generate_lotr_name();
             agent_filename = tab.title + ".db";

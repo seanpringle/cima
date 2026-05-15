@@ -89,6 +89,15 @@ void free_lotr_name(const std::string& name) {
     in_use().erase(name);
 }
 
+bool reserve_lotr_name(const std::string& name) {
+    in_use().insert(name);
+    // Check if it's a known LOTR name (informational for callers)
+    for (const auto& n : kLotrNames) {
+        if (n == name) return true;
+    }
+    return false;
+}
+
 int lotr_name_count() {
     return static_cast<int>(kLotrNames.size());
 }
