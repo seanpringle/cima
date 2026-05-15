@@ -6,6 +6,8 @@
 
 // PlanBoard — per-session plan document storage.
 // Holds a single plan markdown body plus an append-only list of comments.
+// Supports file persistence: set_plan_file_path() + load_from_file() on
+// init; auto-saves on every mutation (write_plan, comment_plan).
 class PlanBoard {
   public:
     PlanBoard() = default;
@@ -24,9 +26,23 @@ class PlanBoard {
     /// Append a comment to the plan.
     Result<void> comment_plan(const std::string& markdown);
 
+    // ── File persistence ──
+
+    /// Set the file path for auto-save.  Load is separate (see load_from_file).
+    void set_plan_file_path(const std::string& path) { plan_file_path_ = path; }
+
+    /// Load plan + comments from a JSON file.  If the file does not exist
+    /// or is corrupt, the plan is left empty (no error — first-run behaviour).
+    Result<void> load_from_file(const std::string& path);
+
+    /// Explicitly persist to the configured path (no-op if path is empty).
+    /// Called automatically on every mutation.
+    Result<void> save();
+
   private:
     std::string plan_;
     std::vector<std::string> comments_;
+    std::string plan_file_path_;
 };
 
 // Tool factory declarations — each takes a PlanBoard reference to operate on.

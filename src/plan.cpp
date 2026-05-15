@@ -1,5 +1,6 @@
 #include "plan.h"
 
+#include <fstream>
 #include <sstream>
 
 // ===================================================================
@@ -10,6 +11,11 @@ Result<void> PlanBoard::write_plan(const std::string& markdown) {
     plan_ = markdown;
     // Clear comments when a new plan is written
     comments_.clear();
+    // Auto-save
+    if (!plan_file_path_.empty()) {
+        auto r = save();
+        if (!r) return r;
+    }
     return {};
 }
 
@@ -39,6 +45,67 @@ Result<void> PlanBoard::comment_plan(const std::string& markdown) {
     }
 
     comments_.push_back(markdown);
+    // Auto-save
+    if (!plan_file_path_.empty()) {
+        auto r = save();
+        if (!r) return r;
+    }
+    return {};
+}
+
+// ===================================================================
+// File persistence
+// ===================================================================
+
+Result<void> PlanBoard::save() {
+    if (plan_file_path_.empty()) {
+        return {};
+    }
+    json j;
+    j["plan"] = plan_;
+    j["comments"] = json::array();
+    for (const auto& c : comments_) {
+        j["comments"].push_back(c);
+    }
+    std::ofstream file(plan_file_path_);
+    if (!file.is_open()) {
+        return std::unexpected("Cannot write plan file: " + plan_file_path_);
+    }
+    file << j.dump(2) << std::endl;
+    return {};
+}
+
+Result<void> PlanBoard::load_from_file(const std::string& path) {
+    plan_file_path_ = path;
+    plan_.clear();
+    comments_.clear();
+
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        // First run — no file yet, that's OK
+        return {};
+    }
+    json j;
+    try {
+        file >> j;
+    } catch (...) {
+        // Corrupt file — start fresh
+        return {};
+    }
+    if (j.is_object()) {
+        auto p = j.find("plan");
+        if (p != j.end() && p->is_string()) {
+            plan_ = p->get<std::string>();
+        }
+        auto c = j.find("comments");
+        if (c != j.end() && c->is_array()) {
+            for (const auto& item : *c) {
+                if (item.is_string()) {
+                    comments_.push_back(item.get<std::string>());
+                }
+            }
+        }
+    }
     return {};
 }
 

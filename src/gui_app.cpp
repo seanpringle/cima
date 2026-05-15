@@ -156,6 +156,15 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
             tab.ui_state.load_chat_log(log_path);
         }
 
+        // Load plan file (plan + comments persisted across sessions).
+        {
+            std::string agent_filename = db_filename.empty()
+                ? tab.title + ".db"
+                : db_filename;
+            std::string plan_path = app_session->agent_db_path(agent_filename) + ".plan.json";
+            tab.session->plan().load_from_file(plan_path);
+        }
+
         tabs.push_back(std::move(tab));
     };
 
@@ -424,6 +433,11 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
         if (tab.ui_state.models_future.valid()) {
             tab.ui_state.models_future.wait();
         }
+    }
+
+    // ── Save all plan files ──
+    for (auto& tab : tabs) {
+        tab.session->plan().save();
     }
 
     // ── Save final AppSession manifest ──
