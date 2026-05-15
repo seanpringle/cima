@@ -18,17 +18,6 @@
 using json = nlohmann::json;
 
 // ---------------------------------------------------------------------------
-// Helper: look up an environment variable for a tool timeout, falling back
-// to a default.  Each tool factory uses this so operators can tune timeouts.
-// ---------------------------------------------------------------------------
-inline int tool_timeout(const char* env_var, int default_sec) {
-    const char* val = std::getenv(env_var);
-    if (!val || !val[0]) return default_sec;
-    int n = std::atoi(val);
-    return (n > 0) ? n : default_sec;
-}
-
-// ---------------------------------------------------------------------------
 // Path sandbox
 // ---------------------------------------------------------------------------
 Result<std::string> resolve_path(const std::string& raw_path,
@@ -63,18 +52,12 @@ class ToolRegistry {
 
     void add(Tool tool);
     void add_defaults(std::shared_ptr<std::string> safe_dir,
-        const std::vector<std::string>& read_only_paths = {},
-        const std::string& search_api_key = {},
-        const std::string& search_engine_id = {},
-        const std::string& search_endpoint = {},
+        const Config& config,
         bool include_write = true);
 
     // Convenience overload: accepts a plain string safe_dir (wraps in shared_ptr internally).
     void add_defaults(const std::string& safe_dir,
-        const std::vector<std::string>& read_only_paths = {},
-        const std::string& search_api_key = {},
-        const std::string& search_engine_id = {},
-        const std::string& search_endpoint = {},
+        const Config& config,
         bool include_write = true);
 
     json to_openai_tools() const;
@@ -161,23 +144,26 @@ Tool make_read_file_tool(
     std::shared_ptr<std::string> safe_dir_ptr, const std::vector<std::string>& read_only_paths);
 Tool make_grep_files_tool(std::shared_ptr<std::string> safe_dir_ptr,
     const std::vector<std::string>& read_only_paths,
+    int timeout,
     CancellationToken cancelled = nullptr);
 Tool make_write_file_tool(std::shared_ptr<std::string> safe_dir_ptr);
 Tool make_edit_file_tool(std::shared_ptr<std::string> safe_dir_ptr);
 Tool make_run_bash_tool(
-    std::shared_ptr<std::string> safe_dir_ptr, CancellationToken cancelled = nullptr);
+    std::shared_ptr<std::string> safe_dir_ptr, int timeout, CancellationToken cancelled = nullptr);
 Tool make_web_search_tool(const std::string& api_key,
     const std::string& engine_id,
     const std::string& endpoint_override,
+    int timeout,
     CancellationToken cancelled = nullptr);
-Tool make_web_fetch_tool(CancellationToken cancelled = nullptr);
-Tool make_git_status_tool(std::shared_ptr<std::string> safe_dir_ptr);
-Tool make_git_diff_tool(std::shared_ptr<std::string> safe_dir_ptr);
-Tool make_git_log_tool(std::shared_ptr<std::string> safe_dir_ptr);
-Tool make_git_add_tool(std::shared_ptr<std::string> safe_dir_ptr);
-Tool make_git_commit_tool(std::shared_ptr<std::string> safe_dir_ptr);
+Tool make_web_fetch_tool(int timeout, CancellationToken cancelled = nullptr);
+Tool make_git_status_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout);
+Tool make_git_diff_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout);
+Tool make_git_log_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout);
+Tool make_git_add_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout);
+Tool make_git_commit_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout);
 Tool make_project_tree_tool(std::shared_ptr<std::string> safe_dir_ptr,
     const std::vector<std::string>& read_only_paths,
+    int timeout,
     CancellationToken cancelled = nullptr);
 Tool make_delete_file_tool(std::shared_ptr<std::string> safe_dir_ptr);
 Tool make_move_file_tool(std::shared_ptr<std::string> safe_dir_ptr);

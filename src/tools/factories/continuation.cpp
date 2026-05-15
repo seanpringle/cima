@@ -9,7 +9,7 @@ Tool make_schedule_continuation_tool(ContinuationSlot& slot, CancellationToken c
         "to break long tasks into manageable turns, perform context compaction, or "
         "continue working after summarizing the conversation history.\n\n"
         "Guard rails:\n"
-        "  - Max continuation steps per request: configurable via LLM_MAX_CONTINUATION_STEPS "
+        "  - Max continuation steps per request: configurable via max_continuation_steps in cima.json "
         "(default 10, 0 = disabled)\n"
         "  - A short delay (default 250ms) is enforced between continuations to prevent "
         "accidental rapid-fire requests\n"

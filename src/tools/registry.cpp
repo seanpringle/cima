@@ -9,22 +9,16 @@
 void ToolRegistry::add(Tool tool) { tools_.push_back(std::move(tool)); }
 
 void ToolRegistry::add_defaults(const std::string& safe_dir,
-    const std::vector<std::string>& read_only_paths,
-    const std::string& search_api_key,
-    const std::string& search_engine_id,
-    const std::string& search_endpoint,
+    const Config& config,
     bool include_write) {
-    add_defaults(std::make_shared<std::string>(safe_dir),
-        read_only_paths, search_api_key, search_engine_id,
-        search_endpoint, include_write);
+    add_defaults(std::make_shared<std::string>(safe_dir), config, include_write);
 }
 
 void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
-    const std::vector<std::string>& read_only_paths,
-    const std::string& search_api_key,
-    const std::string& search_engine_id,
-    const std::string& search_endpoint,
+    const Config& config,
     bool include_write) {
+    const auto& read_only_paths = config.read_only_paths;
+
     // ── Read-only tools (receive whitelist for extra path access) ──
     {
         auto t = make_list_files_tool(safe_dir_ptr, read_only_paths);
@@ -42,37 +36,38 @@ void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
         add(std::move(t));
     }
     {
-        auto t = make_grep_files_tool(safe_dir_ptr, read_only_paths, cancelled_);
+        auto t = make_grep_files_tool(safe_dir_ptr, read_only_paths, config.grep_timeout, cancelled_);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
     {
-        auto t = make_project_tree_tool(safe_dir_ptr, read_only_paths, cancelled_);
+        auto t = make_project_tree_tool(safe_dir_ptr, read_only_paths, config.project_tree_timeout, cancelled_);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
     {
-        auto t = make_web_search_tool(search_api_key, search_engine_id, search_endpoint, cancelled_);
+        auto t = make_web_search_tool(config.search_api_key, config.search_engine_id,
+            config.search_endpoint, config.web_search_timeout, cancelled_);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
     {
-        auto t = make_web_fetch_tool(cancelled_);
+        auto t = make_web_fetch_tool(config.web_fetch_timeout, cancelled_);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
     {
-        auto t = make_git_status_tool(safe_dir_ptr);
+        auto t = make_git_status_tool(safe_dir_ptr, config.git_status_timeout);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
     {
-        auto t = make_git_diff_tool(safe_dir_ptr);
+        auto t = make_git_diff_tool(safe_dir_ptr, config.git_diff_timeout);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
     {
-        auto t = make_git_log_tool(safe_dir_ptr);
+        auto t = make_git_log_tool(safe_dir_ptr, config.git_log_timeout);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
@@ -90,17 +85,17 @@ void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
             add(std::move(t));
         }
         {
-            auto t = make_run_bash_tool(safe_dir_ptr, cancelled_);
+            auto t = make_run_bash_tool(safe_dir_ptr, config.bash_timeout, cancelled_);
             t.permission = ToolPermission::Write;
             add(std::move(t));
         }
         {
-            auto t = make_git_add_tool(safe_dir_ptr);
+            auto t = make_git_add_tool(safe_dir_ptr, config.git_add_timeout);
             t.permission = ToolPermission::Write;
             add(std::move(t));
         }
         {
-            auto t = make_git_commit_tool(safe_dir_ptr);
+            auto t = make_git_commit_tool(safe_dir_ptr, config.git_commit_timeout);
             t.permission = ToolPermission::Write;
             add(std::move(t));
         }

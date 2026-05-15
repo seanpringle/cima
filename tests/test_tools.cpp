@@ -12,6 +12,17 @@ namespace fs = std::filesystem;
 // Helpers
 // ===================================================================
 
+// Helper: create a Config with just the search fields set (others use defaults).
+static Config make_search_config(const std::string& search_api_key = {},
+    const std::string& search_engine_id = {},
+    const std::string& search_endpoint = {}) {
+    Config cfg;
+    cfg.search_api_key = search_api_key;
+    cfg.search_engine_id = search_engine_id;
+    cfg.search_endpoint = search_endpoint;
+    return cfg;
+}
+
 static std::string make_temp_dir() {
     char tmpl[] = "/tmp/cima_test_XXXXXX";
     char* result = mkdtemp(tmpl);
@@ -107,7 +118,7 @@ TEST_CASE("resolve_path safe_dir itself is allowed", "[tools][sandbox]") {
 
 TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
     ToolRegistry reg;
-    reg.add_defaults("/tmp");
+    reg.add_defaults("/tmp", Config{});
 
     json tools = reg.to_openai_tools();
     REQUIRE(tools.is_array());
@@ -136,7 +147,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
 
 TEST_CASE("ToolRegistry without write tools (Planner-style)", "[tools][registry]") {
     ToolRegistry reg;
-    reg.add_defaults("/tmp", {}, "", "", "", /*include_write=*/false);
+    reg.add_defaults("/tmp", Config{}, false);
 
     json tools = reg.to_openai_tools();
     REQUIRE(tools.is_array());
@@ -178,7 +189,7 @@ TEST_CASE("ToolRegistry without write tools (Planner-style)", "[tools][registry]
 TEST_CASE("list_files basic", "[tools][list_files]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // Create some files
     std::ofstream(sd + "/a.txt") << "hello";
@@ -199,7 +210,7 @@ TEST_CASE("list_files basic", "[tools][list_files]") {
 TEST_CASE("list_files path traversal rejected", "[tools][list_files]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     auto result = reg.execute("list_files", R"({"path": "../../etc"})");
     CHECK_FALSE(result);
@@ -215,7 +226,7 @@ TEST_CASE("list_files path traversal rejected", "[tools][list_files]") {
 TEST_CASE("project_tree basic", "[tools][project_tree]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // Create a small directory tree
     fs::create_directories(sd + "/src/util");
@@ -247,7 +258,7 @@ TEST_CASE("project_tree basic", "[tools][project_tree]") {
 TEST_CASE("project_tree max_depth", "[tools][project_tree]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // Create a deep hierarchy: a/b/c/d/e/file.txt (5 levels of dirs + 1 file)
     fs::create_directories(sd + "/a/b/c/d/e");
@@ -278,7 +289,7 @@ TEST_CASE("project_tree max_depth", "[tools][project_tree]") {
 TEST_CASE("project_tree max_lines", "[tools][project_tree]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // Create many files to exceed max_lines
     // Use a flat directory with max_depth=2 so we recurse one level
@@ -299,7 +310,7 @@ TEST_CASE("project_tree max_lines", "[tools][project_tree]") {
 TEST_CASE("project_tree single file path", "[tools][project_tree]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     std::ofstream(sd + "/hello.txt") << "hello\n";
 
@@ -313,7 +324,7 @@ TEST_CASE("project_tree single file path", "[tools][project_tree]") {
 TEST_CASE("project_tree empty directory", "[tools][project_tree]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     auto result = reg.execute("project_tree", R"({"path": "."})");
     REQUIRE(result);
@@ -325,7 +336,7 @@ TEST_CASE("project_tree empty directory", "[tools][project_tree]") {
 TEST_CASE("project_tree path traversal rejected", "[tools][project_tree]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     auto result = reg.execute("project_tree", R"({"path": "../../etc"})");
     CHECK_FALSE(result);
@@ -337,7 +348,7 @@ TEST_CASE("project_tree path traversal rejected", "[tools][project_tree]") {
 TEST_CASE("project_tree available in plan mode", "[tools][project_tree]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
     
 
     fs::create_directories(sd + "/sub");
@@ -354,7 +365,7 @@ TEST_CASE("project_tree available in plan mode", "[tools][project_tree]") {
 TEST_CASE("project_tree default parameters", "[tools][project_tree]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     fs::create_directories(sd + "/sub");
     std::ofstream(sd + "/sub/note.txt") << "note\n";
@@ -376,7 +387,7 @@ TEST_CASE("project_tree default parameters", "[tools][project_tree]") {
 static std::string make_git_repo() {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     auto r = reg.execute("run_bash", R"({"command": "git init"})");
     REQUIRE(r);
@@ -395,7 +406,7 @@ static std::string make_git_repo() {
 TEST_CASE("git_status clean repo", "[tools][git_status]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     auto result = reg.execute("git_status", "{}");
     REQUIRE(result);
@@ -407,7 +418,7 @@ TEST_CASE("git_status clean repo", "[tools][git_status]") {
 TEST_CASE("git_status modified tracked file", "[tools][git_status]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // Modify the tracked file
     std::ofstream(sd + "/README.md") << "# Modified\n";
@@ -422,7 +433,7 @@ TEST_CASE("git_status modified tracked file", "[tools][git_status]") {
 TEST_CASE("git_status staged add", "[tools][git_status]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // Create a new file and stage it
     std::ofstream(sd + "/newfile.txt") << "new\n";
@@ -438,7 +449,7 @@ TEST_CASE("git_status staged add", "[tools][git_status]") {
 TEST_CASE("git_status staged delete", "[tools][git_status]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     reg.execute("run_bash", R"({"command": "git rm README.md"})");
 
@@ -452,7 +463,7 @@ TEST_CASE("git_status staged delete", "[tools][git_status]") {
 TEST_CASE("git_status untracked file", "[tools][git_status]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     std::ofstream(sd + "/untracked.txt") << "hello\n";
 
@@ -466,7 +477,7 @@ TEST_CASE("git_status untracked file", "[tools][git_status]") {
 TEST_CASE("git_status mixed staged and unstaged", "[tools][git_status]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // Stage a modification, then modify again without staging
     std::ofstream(sd + "/README.md") << "# Modified\n";
@@ -484,7 +495,7 @@ TEST_CASE("git_status mixed staged and unstaged", "[tools][git_status]") {
 TEST_CASE("git_status not a git repo", "[tools][git_status]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // sd has no .git directory
     auto result = reg.execute("git_status", "{}");
@@ -497,7 +508,7 @@ TEST_CASE("git_status not a git repo", "[tools][git_status]") {
 TEST_CASE("git_status available in plan mode", "[tools][git_status]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
     
 
     auto result = reg.execute("git_status", "{}");
@@ -514,7 +525,7 @@ TEST_CASE("git_status available in plan mode", "[tools][git_status]") {
 TEST_CASE("git_diff unstaged modifications", "[tools][git_diff]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // Modify tracked file
     std::ofstream(sd + "/README.md") << "# Modified content\n";
@@ -534,7 +545,7 @@ TEST_CASE("git_diff unstaged modifications", "[tools][git_diff]") {
 TEST_CASE("git_diff staged changes", "[tools][git_diff]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // Modify and stage
     std::ofstream(sd + "/README.md") << "# Staged change\n";
@@ -553,7 +564,7 @@ TEST_CASE("git_diff staged changes", "[tools][git_diff]") {
 TEST_CASE("git_diff no unstaged changes", "[tools][git_diff]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     auto result = reg.execute("git_diff", "{}");
     REQUIRE(result);
@@ -565,7 +576,7 @@ TEST_CASE("git_diff no unstaged changes", "[tools][git_diff]") {
 TEST_CASE("git_diff no staged changes", "[tools][git_diff]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     auto result = reg.execute("git_diff", R"({"staged": true})");
     REQUIRE(result);
@@ -577,7 +588,7 @@ TEST_CASE("git_diff no staged changes", "[tools][git_diff]") {
 TEST_CASE("git_diff with path filter", "[tools][git_diff]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // Create a second tracked file
     std::ofstream(sd + "/other.txt") << "original\n";
@@ -603,7 +614,7 @@ TEST_CASE("git_diff with path filter", "[tools][git_diff]") {
 TEST_CASE("git_diff not a git repo", "[tools][git_diff]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     auto result = reg.execute("git_diff", "{}");
     CHECK_FALSE(result);
@@ -615,7 +626,7 @@ TEST_CASE("git_diff not a git repo", "[tools][git_diff]") {
 TEST_CASE("git_diff available in plan mode", "[tools][git_diff]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
     
 
     std::ofstream(sd + "/README.md") << "# Plan mode change\n";
@@ -631,7 +642,7 @@ TEST_CASE("git_diff available in plan mode", "[tools][git_diff]") {
 TEST_CASE("git_diff untracked files not shown by default", "[tools][git_diff]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // Create an untracked file — git diff does NOT show untracked files
     std::ofstream(sd + "/untracked.txt") << "new untracked\n";
@@ -647,7 +658,7 @@ TEST_CASE("git_diff untracked files not shown by default", "[tools][git_diff]") 
 TEST_CASE("git_diff output truncation", "[tools][git_diff]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // Create a tracked file with a single line
     std::ofstream(sd + "/bigfile.txt") << "original line\n";
@@ -676,7 +687,7 @@ TEST_CASE("git_diff output truncation", "[tools][git_diff]") {
 TEST_CASE("git_log basic", "[tools][git_log]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // Add a couple more commits
     std::ofstream(sd + "/a.txt") << "hello\n";
@@ -701,7 +712,7 @@ TEST_CASE("git_log basic", "[tools][git_log]") {
 TEST_CASE("git_log max_count", "[tools][git_log]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // Add 2 more commits
     std::ofstream(sd + "/a.txt") << "hello\n";
@@ -723,7 +734,7 @@ TEST_CASE("git_log max_count", "[tools][git_log]") {
 TEST_CASE("git_log format oneline", "[tools][git_log]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     std::ofstream(sd + "/a.txt") << "hello\n";
     reg.execute("run_bash", R"({"command": "git add a.txt && git commit -m 'add a.txt'"})");
@@ -744,7 +755,7 @@ TEST_CASE("git_log format oneline", "[tools][git_log]") {
 TEST_CASE("git_log format full", "[tools][git_log]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // Commit with a multi-line message (-m for subject, -m for body)
     auto r = reg.execute("run_bash",
@@ -765,7 +776,7 @@ TEST_CASE("git_log format full", "[tools][git_log]") {
 TEST_CASE("git_log max_count cap", "[tools][git_log]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // Add 55 commits (more than the max of 50)
     for (int i = 0; i < 55; i++) {
@@ -797,7 +808,7 @@ TEST_CASE("git_log max_count cap", "[tools][git_log]") {
 TEST_CASE("git_log empty repo", "[tools][git_log]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // Init but no commits
     reg.execute("run_bash", R"({"command": "git init"})");
@@ -813,7 +824,7 @@ TEST_CASE("git_log empty repo", "[tools][git_log]") {
 TEST_CASE("git_log not a git repo", "[tools][git_log]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     auto result = reg.execute("git_log", "{}");
     CHECK_FALSE(result);
@@ -825,7 +836,7 @@ TEST_CASE("git_log not a git repo", "[tools][git_log]") {
 TEST_CASE("git_log invalid branch", "[tools][git_log]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     auto result = reg.execute("git_log", R"({"branch": "nonexistent-branch"})");
     CHECK_FALSE(result);
@@ -837,7 +848,7 @@ TEST_CASE("git_log invalid branch", "[tools][git_log]") {
 TEST_CASE("git_log available in plan mode", "[tools][git_log]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
     
 
     // Should succeed in Plan mode (read-only tool)
@@ -852,7 +863,7 @@ TEST_CASE("git_log available in plan mode", "[tools][git_log]") {
 TEST_CASE("git_log custom branch", "[tools][git_log]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // Add 2 commits
     std::ofstream(sd + "/a.txt") << "hello\n";
@@ -875,7 +886,7 @@ TEST_CASE("git_log custom branch", "[tools][git_log]") {
 TEST_CASE("git_log invalid format", "[tools][git_log]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     auto result = reg.execute("git_log", R"({"format": "invalid"})");
     CHECK_FALSE(result);
@@ -887,7 +898,7 @@ TEST_CASE("git_log invalid format", "[tools][git_log]") {
 TEST_CASE("git_log max_count negative", "[tools][git_log]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // Negative max_count should be clamped to 1
     auto result = reg.execute("git_log", R"({"max_count": -5})");
@@ -905,7 +916,7 @@ TEST_CASE("git_log max_count negative", "[tools][git_log]") {
 TEST_CASE("git_add stage tracked file", "[tools][git_add]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // Modify a tracked file
     std::ofstream(sd + "/README.md") << "# Modified\n";
@@ -927,7 +938,7 @@ TEST_CASE("git_add stage tracked file", "[tools][git_add]") {
 TEST_CASE("git_add stage untracked file", "[tools][git_add]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // Create a new untracked file
     std::ofstream(sd + "/new.txt") << "new content\n";
@@ -948,7 +959,7 @@ TEST_CASE("git_add stage untracked file", "[tools][git_add]") {
 TEST_CASE("git_add all stages everything", "[tools][git_add]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // Create multiple changes
     std::ofstream(sd + "/README.md") << "# Modified\n";
@@ -974,7 +985,7 @@ TEST_CASE("git_add all stages everything", "[tools][git_add]") {
 TEST_CASE("git_add not a git repo", "[tools][git_add]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     auto result = reg.execute("git_add", R"({"path": "."})");
     CHECK_FALSE(result);
@@ -986,7 +997,7 @@ TEST_CASE("git_add not a git repo", "[tools][git_add]") {
 TEST_CASE("git_add path traversal rejected", "[tools][git_add]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     auto result = reg.execute("git_add", R"({"path": "../../etc/passwd"})");
     CHECK_FALSE(result);
@@ -1002,7 +1013,7 @@ TEST_CASE("git_add path traversal rejected", "[tools][git_add]") {
 TEST_CASE("git_commit basic", "[tools][git_commit]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // Stage a change
     std::ofstream(sd + "/README.md") << "# Modified for commit\n";
@@ -1027,7 +1038,7 @@ TEST_CASE("git_commit basic", "[tools][git_commit]") {
 TEST_CASE("git_commit with all", "[tools][git_commit]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // Modify a tracked file WITHOUT pre-staging — use --all
     std::ofstream(sd + "/README.md") << "# Committed with --all\n";
@@ -1054,7 +1065,7 @@ TEST_CASE("git_commit with all", "[tools][git_commit]") {
 TEST_CASE("git_commit empty message rejected", "[tools][git_commit]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     auto result = reg.execute("git_commit", R"({"message": ""})");
     CHECK_FALSE(result);
@@ -1066,7 +1077,7 @@ TEST_CASE("git_commit empty message rejected", "[tools][git_commit]") {
 TEST_CASE("git_commit no staged changes", "[tools][git_commit]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // No changes made — nothing to commit
     auto result = reg.execute("git_commit", R"({"message": "should fail"})");
@@ -1079,7 +1090,7 @@ TEST_CASE("git_commit no staged changes", "[tools][git_commit]") {
 TEST_CASE("git_commit not a git repo", "[tools][git_commit]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     auto result = reg.execute("git_commit", R"({"message": "test"})");
     CHECK_FALSE(result);
@@ -1095,7 +1106,7 @@ TEST_CASE("git_commit not a git repo", "[tools][git_commit]") {
 TEST_CASE("read_file basic", "[tools][read_file]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     std::ofstream(sd + "/hello.txt") << "Hello, World!\n";
     auto result = reg.execute("read_file", R"({"path": "hello.txt"})");
@@ -1109,7 +1120,7 @@ TEST_CASE("read_file basic", "[tools][read_file]") {
 TEST_CASE("read_file respects max_lines", "[tools][read_file]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // Create a file with many lines
     std::ofstream ofs(sd + "/many.txt");
@@ -1129,7 +1140,7 @@ TEST_CASE("read_file respects max_lines", "[tools][read_file]") {
 TEST_CASE("read_file path traversal rejected", "[tools][read_file]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     auto result = reg.execute("read_file", R"({"path": "../../etc/passwd"})");
     CHECK_FALSE(result);
@@ -1144,7 +1155,7 @@ TEST_CASE("read_file path traversal rejected", "[tools][read_file]") {
 TEST_CASE("read_file_lines basic", "[tools][read_file_lines]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // Create a file with known content
     std::ofstream ofs(sd + "/lines.txt");
@@ -1172,7 +1183,7 @@ TEST_CASE("read_file_lines basic", "[tools][read_file_lines]") {
 TEST_CASE("read_file_lines read to exact EOF", "[tools][read_file_lines]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // Create a file with exactly 5 lines
     std::ofstream ofs(sd + "/exact.txt");
@@ -1198,7 +1209,7 @@ TEST_CASE("read_file_lines read to exact EOF", "[tools][read_file_lines]") {
 TEST_CASE("read_file_lines start_line offset", "[tools][read_file_lines]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     std::ofstream ofs(sd + "/lines.txt");
     for (int i = 1; i <= 50; i++) {
@@ -1226,7 +1237,7 @@ TEST_CASE("read_file_lines start_line offset", "[tools][read_file_lines]") {
 TEST_CASE("read_file_lines end_line beyond EOF", "[tools][read_file_lines]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     std::ofstream ofs(sd + "/short.txt");
     for (int i = 1; i <= 5; i++) {
@@ -1251,7 +1262,7 @@ TEST_CASE("read_file_lines end_line beyond EOF", "[tools][read_file_lines]") {
 TEST_CASE("read_file_lines end_line omitted", "[tools][read_file_lines]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     std::ofstream ofs(sd + "/many.txt");
     for (int i = 1; i <= 50; i++) {
@@ -1276,7 +1287,7 @@ TEST_CASE("read_file_lines end_line omitted", "[tools][read_file_lines]") {
 TEST_CASE("read_file_lines max_lines cap", "[tools][read_file_lines]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     std::ofstream ofs(sd + "/long.txt");
     for (int i = 1; i <= 500; i++) {
@@ -1302,7 +1313,7 @@ TEST_CASE("read_file_lines max_lines cap", "[tools][read_file_lines]") {
 TEST_CASE("read_file_lines start_line < 1", "[tools][read_file_lines]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
     std::ofstream(sd + "/dummy.txt") << "hello\n";
 
     auto result = reg.execute("read_file_lines",
@@ -1316,7 +1327,7 @@ TEST_CASE("read_file_lines start_line < 1", "[tools][read_file_lines]") {
 TEST_CASE("read_file_lines end_line < start_line", "[tools][read_file_lines]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
     std::ofstream(sd + "/dummy.txt") << "hello\n";
 
     auto result = reg.execute("read_file_lines",
@@ -1330,7 +1341,7 @@ TEST_CASE("read_file_lines end_line < start_line", "[tools][read_file_lines]") {
 TEST_CASE("read_file_lines file not found", "[tools][read_file_lines]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     auto result = reg.execute("read_file_lines",
                               R"({"path": "nonexistent.txt", "start_line": 1})");
@@ -1343,7 +1354,7 @@ TEST_CASE("read_file_lines file not found", "[tools][read_file_lines]") {
 TEST_CASE("read_file_lines path traversal rejected", "[tools][read_file_lines]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     auto result = reg.execute("read_file_lines",
                               R"({"path": "../../etc/passwd"})");
@@ -1355,7 +1366,7 @@ TEST_CASE("read_file_lines path traversal rejected", "[tools][read_file_lines]")
 TEST_CASE("read_file_lines empty file", "[tools][read_file_lines]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // Create empty file
     std::ofstream(sd + "/empty.txt");
@@ -1373,7 +1384,7 @@ TEST_CASE("read_file_lines empty file", "[tools][read_file_lines]") {
 TEST_CASE("read_file_lines start_line beyond EOF", "[tools][read_file_lines]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     std::ofstream(sd + "/few.txt") << "line1\nline2\nline3\n";
 
@@ -1388,7 +1399,7 @@ TEST_CASE("read_file_lines start_line beyond EOF", "[tools][read_file_lines]") {
 TEST_CASE("read_file_lines single line", "[tools][read_file_lines]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     std::ofstream(sd + "/single.txt") << "only line\n";
 
@@ -1404,7 +1415,7 @@ TEST_CASE("read_file_lines single line", "[tools][read_file_lines]") {
 TEST_CASE("read_file_lines max_lines clamped", "[tools][read_file_lines]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     std::ofstream ofs(sd + "/big.txt");
     for (int i = 1; i <= 600; i++) {
@@ -1430,7 +1441,7 @@ TEST_CASE("read_file_lines max_lines clamped", "[tools][read_file_lines]") {
 TEST_CASE("write_file basic", "[tools][write_file]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     auto result =
         reg.execute("write_file",
@@ -1452,7 +1463,7 @@ TEST_CASE("write_file basic", "[tools][write_file]") {
 TEST_CASE("write_file creates parent directories", "[tools][write_file]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     auto result = reg.execute(
         "write_file",
@@ -1466,7 +1477,7 @@ TEST_CASE("write_file creates parent directories", "[tools][write_file]") {
 TEST_CASE("write_file path traversal rejected", "[tools][write_file]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     auto result = reg.execute(
         "write_file",
@@ -1483,7 +1494,7 @@ TEST_CASE("write_file path traversal rejected", "[tools][write_file]") {
 TEST_CASE("edit_file basic search and replace", "[tools][edit_file]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // Create a file with content to edit
     std::ofstream(sd + "/hello.txt") << "Hello, World!\nHow are you?\n";
@@ -1505,7 +1516,7 @@ TEST_CASE("edit_file basic search and replace", "[tools][edit_file]") {
 TEST_CASE("edit_file search string not found", "[tools][edit_file]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     std::ofstream(sd + "/hello.txt") << "Hello, World!\n";
     auto result = reg.execute("edit_file",
@@ -1519,7 +1530,7 @@ TEST_CASE("edit_file search string not found", "[tools][edit_file]") {
 TEST_CASE("edit_file multiple matches rejected", "[tools][edit_file]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     std::ofstream(sd + "/hello.txt") << "hello\nhello\nworld\n";
     auto result = reg.execute("edit_file",
@@ -1533,7 +1544,7 @@ TEST_CASE("edit_file multiple matches rejected", "[tools][edit_file]") {
 TEST_CASE("edit_file empty search rejected", "[tools][edit_file]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     std::ofstream(sd + "/hello.txt") << "Hello, World!\n";
     auto result = reg.execute("edit_file",
@@ -1546,7 +1557,7 @@ TEST_CASE("edit_file empty search rejected", "[tools][edit_file]") {
 TEST_CASE("edit_file path traversal rejected", "[tools][edit_file]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     auto result = reg.execute("edit_file",
                               R"({"path": "../../etc/passwd", "search": "root", "replace": "xxx"})");
@@ -1559,7 +1570,7 @@ TEST_CASE("edit_file path traversal rejected", "[tools][edit_file]") {
 TEST_CASE("edit_file preserves rest of file", "[tools][edit_file]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     std::ofstream(sd + "/hello.txt") << "line one\nline two\nline three\n";
     auto result = reg.execute("edit_file",
@@ -1578,7 +1589,7 @@ TEST_CASE("edit_file preserves rest of file", "[tools][edit_file]") {
 TEST_CASE("edit_file multiline search and replace", "[tools][edit_file]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     std::ofstream(sd + "/hello.txt") << "line one\nline two\nline three\n";
     auto result = reg.execute("edit_file",
@@ -1601,7 +1612,7 @@ TEST_CASE("edit_file multiline search and replace", "[tools][edit_file]") {
 TEST_CASE("grep_files basic match", "[tools][grep_files]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     std::ofstream(sd + "/test.txt") << "hello world\nfoo bar\nbaz hello\n";
     std::ofstream(sd + "/other.txt") << "no match here\n";
@@ -1619,7 +1630,7 @@ TEST_CASE("grep_files basic match", "[tools][grep_files]") {
 TEST_CASE("grep_files no match", "[tools][grep_files]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     std::ofstream(sd + "/test.txt") << "hello world\n";
 
@@ -1634,7 +1645,7 @@ TEST_CASE("grep_files no match", "[tools][grep_files]") {
 TEST_CASE("grep_files path traversal rejected", "[tools][grep_files]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     auto result =
         reg.execute("grep_files",
@@ -1647,7 +1658,7 @@ TEST_CASE("grep_files path traversal rejected", "[tools][grep_files]") {
 TEST_CASE("grep_files ignores gitignored files", "[tools][grep_files]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // Create a git repo and an initial commit (required for gitignore to work)
     auto r = reg.execute("run_bash", R"({"command": "git init"})");
@@ -1683,7 +1694,7 @@ TEST_CASE("grep_files ignores gitignored files", "[tools][grep_files]") {
 TEST_CASE("grep_files without gitignore still works", "[tools][grep_files]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     std::ofstream(sd + "/hello.txt") << "hello world\n";
     std::ofstream(sd + "/trace.log") << "hello from log\n";
@@ -1705,7 +1716,7 @@ TEST_CASE("grep_files without gitignore still works", "[tools][grep_files]") {
 TEST_CASE("run_bash basic command", "[tools][run_bash]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     std::ofstream(sd + "/hello.txt") << "world\n";
 
@@ -1719,7 +1730,7 @@ TEST_CASE("run_bash basic command", "[tools][run_bash]") {
 TEST_CASE("run_bash command failure returns stderr", "[tools][run_bash]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     auto result =
         reg.execute("run_bash", R"({"command": "ls nonexistent_file"})");
@@ -1732,15 +1743,15 @@ TEST_CASE("run_bash command failure returns stderr", "[tools][run_bash]") {
 
 TEST_CASE("run_bash timeout kills process", "[tools][run_bash]") {
     auto sd = make_temp_dir();
+    Config cfg;
+    cfg.bash_timeout = 2; // 2 second timeout
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, cfg);
 
-    setenv("LLM_BASH_TIMEOUT", "2", 1);
     auto start = std::chrono::steady_clock::now();
     auto result = reg.execute("run_bash",
                               R"({"command": "sleep 10 && echo done"})");
     auto elapsed = std::chrono::steady_clock::now() - start;
-    unsetenv("LLM_BASH_TIMEOUT");
 
     REQUIRE(result);
     // Should NOT take 10 seconds — the 2s timeout should kill the process
@@ -1754,7 +1765,7 @@ TEST_CASE("run_bash timeout kills process", "[tools][run_bash]") {
 TEST_CASE("run_bash output line truncation", "[tools][run_bash]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // Generate 600 lines (exceeds new 500-line limit)
     auto result = reg.execute(
@@ -1776,7 +1787,7 @@ TEST_CASE("run_bash output line truncation", "[tools][run_bash]") {
 TEST_CASE("run_bash output size truncation", "[tools][run_bash]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // Generate output larger than 16000 chars
     auto result = reg.execute(
@@ -1792,7 +1803,7 @@ TEST_CASE("run_bash output size truncation", "[tools][run_bash]") {
 TEST_CASE("run_bash path traversal rejected", "[tools][run_bash]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     auto result = reg.execute(
         "run_bash", R"({"command": "cat ../../etc/passwd"})");
@@ -1889,7 +1900,7 @@ struct MockHttpServer {
 TEST_CASE("web_search always registered", "[tools][web_search]") {
     // web_search is always registered now, even without API key
     ToolRegistry reg;
-    reg.add_defaults("/tmp");
+    reg.add_defaults("/tmp", Config{});
     // Should not return "unknown tool"
     auto result = reg.execute("web_search", R"({"query": "hello"})");
     REQUIRE(result);
@@ -1902,7 +1913,7 @@ TEST_CASE("web_search always registered", "[tools][web_search]") {
 TEST_CASE("web_search falls back to duckduckgo when no engine/endpoint", "[tools][web_search]") {
     // With only api_key (no engine_id, no endpoint), falls back to DuckDuckGo
     ToolRegistry reg;
-    reg.add_defaults("/tmp", {}, "my-api-key", "", "");
+    reg.add_defaults("/tmp", make_search_config("my-api-key"));
     auto result = reg.execute("web_search", R"({"query": "hello"})");
     // Should succeed via DuckDuckGo fallback
     REQUIRE(result);
@@ -1914,7 +1925,7 @@ TEST_CASE("web_search falls back to duckduckgo when no engine/endpoint", "[tools
 
 TEST_CASE("web_search empty query rejected", "[tools][web_search]") {
     ToolRegistry reg;
-    reg.add_defaults("/tmp", {}, "key", "cx", "");
+    reg.add_defaults("/tmp", make_search_config("key", "cx"));
     auto result = reg.execute("web_search", R"({"query": ""})");
     CHECK_FALSE(result);
     CHECK(result.error() == "query is required");
@@ -1932,7 +1943,7 @@ TEST_CASE("web_search custom endpoint basic", "[tools][web_search]") {
     std::this_thread::sleep_for(std::chrono::milliseconds(50)); // let server start
 
     ToolRegistry reg;
-    reg.add_defaults("/tmp", {}, "test-key", "", server.url());
+    reg.add_defaults("/tmp", make_search_config("test-key", "", server.url()));
     auto result = reg.execute("web_search", R"({"query": "test query"})");
     REQUIRE(result);
 
@@ -1951,7 +1962,7 @@ TEST_CASE("web_search custom endpoint no results", "[tools][web_search]") {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     ToolRegistry reg;
-    reg.add_defaults("/tmp", {}, "test-key", "", server.url());
+    reg.add_defaults("/tmp", make_search_config("test-key", "", server.url()));
     auto result = reg.execute("web_search", R"({"query": "nonexistent"})");
     REQUIRE(result);
     CHECK(*result == "(no results found)");
@@ -1963,7 +1974,7 @@ TEST_CASE("web_search custom endpoint http error", "[tools][web_search]") {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     ToolRegistry reg;
-    reg.add_defaults("/tmp", {}, "test-key", "", server.url());
+    reg.add_defaults("/tmp", make_search_config("test-key", "", server.url()));
     auto result = reg.execute("web_search", R"({"query": "test"})");
     CHECK_FALSE(result);
     CHECK(result.error().find("HTTP 429") != std::string::npos);
@@ -1981,7 +1992,7 @@ TEST_CASE("web_search custom endpoint connection refused", "[tools][web_search]"
     // (race condition: something else could grab the port)
     // Instead, test with an obviously unreachable port
     ToolRegistry reg;
-    reg.add_defaults("/tmp", {}, "test-key", "", "http://127.0.0.1:1/search?q={query}");
+    reg.add_defaults("/tmp", make_search_config("test-key", "", "http://127.0.0.1:1/search?q={query}"));
     auto result = reg.execute("web_search", R"({"query": "test"})");
     CHECK_FALSE(result);
     CHECK(result.error().find("curl error") != std::string::npos);
@@ -1993,7 +2004,7 @@ TEST_CASE("web_search timeout", "[tools][web_search]") {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     ToolRegistry reg;
-    reg.add_defaults("/tmp", {}, "test-key", "", server.url());
+    reg.add_defaults("/tmp", make_search_config("test-key", "", server.url()));
     auto start = std::chrono::steady_clock::now();
     auto result = reg.execute("web_search", R"({"query": "test"})");
     auto elapsed = std::chrono::steady_clock::now() - start;
@@ -2009,7 +2020,7 @@ TEST_CASE("web_search available in plan mode", "[tools][web_search]") {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     ToolRegistry reg;
-    reg.add_defaults("/tmp", {}, "test-key", "", server.url());
+    reg.add_defaults("/tmp", make_search_config("test-key", "", server.url()));
     
 
     auto result = reg.execute("web_search", R"({"query": "test"})");
@@ -2023,7 +2034,7 @@ TEST_CASE("web_search respects max query length", "[tools][web_search]") {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     ToolRegistry reg;
-    reg.add_defaults("/tmp", {}, "test-key", "", server.url());
+    reg.add_defaults("/tmp", make_search_config("test-key", "", server.url()));
     // 250 character query is below the 500-char limit, so no truncation
     std::string long_query(250, 'x');
     auto result = reg.execute("web_search",
@@ -2043,7 +2054,7 @@ TEST_CASE("web_fetch basic", "[tools][web_fetch]") {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     ToolRegistry reg;
-    reg.add_defaults("/tmp");
+    reg.add_defaults("/tmp", Config{});
     std::string fetch_url = server.url().substr(0, server.url().find("?q="));
     auto result = reg.execute("web_fetch",
         R"({"url": ")" + fetch_url + R"("})");
@@ -2055,7 +2066,7 @@ TEST_CASE("web_fetch basic", "[tools][web_fetch]") {
 
 TEST_CASE("web_fetch empty URL rejected", "[tools][web_fetch]") {
     ToolRegistry reg;
-    reg.add_defaults("/tmp");
+    reg.add_defaults("/tmp", Config{});
     auto result = reg.execute("web_fetch", R"({"url": ""})");
     CHECK_FALSE(result);
     CHECK(result.error() == "url is required");
@@ -2066,7 +2077,7 @@ TEST_CASE("web_fetch http error", "[tools][web_fetch]") {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     ToolRegistry reg;
-    reg.add_defaults("/tmp");
+    reg.add_defaults("/tmp", Config{});
     auto result = reg.execute("web_fetch",
         R"({"url": ")" + server.url().substr(0, server.url().find("?q=")) + R"("})");
     CHECK_FALSE(result);
@@ -2075,7 +2086,7 @@ TEST_CASE("web_fetch http error", "[tools][web_fetch]") {
 
 TEST_CASE("web_fetch connection refused", "[tools][web_fetch]") {
     ToolRegistry reg;
-    reg.add_defaults("/tmp");
+    reg.add_defaults("/tmp", Config{});
     auto result = reg.execute("web_fetch", R"({"url": "http://127.0.0.1:1/test"})");
     CHECK_FALSE(result);
     CHECK(result.error().find("curl error") != std::string::npos);
@@ -2083,7 +2094,7 @@ TEST_CASE("web_fetch connection refused", "[tools][web_fetch]") {
 
 TEST_CASE("web_fetch unsupported scheme rejected", "[tools][web_fetch]") {
     ToolRegistry reg;
-    reg.add_defaults("/tmp");
+    reg.add_defaults("/tmp", Config{});
     auto result = reg.execute("web_fetch", R"({"url": "ftp://example.com/file"})");
     CHECK_FALSE(result);
     CHECK(result.error().find("only http and https") != std::string::npos);
@@ -2091,7 +2102,7 @@ TEST_CASE("web_fetch unsupported scheme rejected", "[tools][web_fetch]") {
 
 TEST_CASE("web_fetch file scheme rejected", "[tools][web_fetch]") {
     ToolRegistry reg;
-    reg.add_defaults("/tmp");
+    reg.add_defaults("/tmp", Config{});
     auto result = reg.execute("web_fetch", R"({"url": "file:///etc/passwd"})");
     CHECK_FALSE(result);
     CHECK(result.error().find("only http and https") != std::string::npos);
@@ -2099,7 +2110,7 @@ TEST_CASE("web_fetch file scheme rejected", "[tools][web_fetch]") {
 
 TEST_CASE("web_fetch data scheme rejected", "[tools][web_fetch]") {
     ToolRegistry reg;
-    reg.add_defaults("/tmp");
+    reg.add_defaults("/tmp", Config{});
     auto result = reg.execute("web_fetch", R"({"url": "data:text/plain,hello"})");
     CHECK_FALSE(result);
     CHECK(result.error().find("only http and https") != std::string::npos);
@@ -2112,7 +2123,7 @@ TEST_CASE("web_fetch truncates large content", "[tools][web_fetch]") {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     ToolRegistry reg;
-    reg.add_defaults("/tmp");
+    reg.add_defaults("/tmp", Config{});
     std::string fetch_url = server.url().substr(0, server.url().find("?q="));
     auto result = reg.execute("web_fetch",
         R"({"url": ")" + fetch_url + R"("})");
@@ -2129,7 +2140,7 @@ TEST_CASE("web_fetch available in plan mode", "[tools][web_fetch]") {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     ToolRegistry reg;
-    reg.add_defaults("/tmp");
+    reg.add_defaults("/tmp", Config{});
     
     std::string fetch_url = server.url().substr(0, server.url().find("?q="));
     auto result = reg.execute("web_fetch",
@@ -2153,7 +2164,7 @@ TEST_CASE("web_fetch caching returns same content", "[tools][web_fetch]") {
         "http://127.0.0.1:" + std::to_string(server.port.load()) + "/cached_test";
 
     ToolRegistry reg;
-    reg.add_defaults("/tmp");
+    reg.add_defaults("/tmp", Config{});
 
     // First fetch should succeed
     auto r1 = reg.execute("web_fetch", R"({"url": ")" + mock_url + R"("})");
@@ -2182,7 +2193,7 @@ TEST_CASE("web_fetch binary content-type rejected", "[tools][web_fetch]") {
 TEST_CASE("delete_file basic", "[tools][delete_file]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     // Create a file to delete
     std::ofstream(sd + "/to_delete.txt") << "delete me";
@@ -2201,7 +2212,7 @@ TEST_CASE("delete_file basic", "[tools][delete_file]") {
 TEST_CASE("delete_file file not found", "[tools][delete_file]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     auto result = reg.execute("delete_file", R"({"path": "nonexistent.txt"})");
     CHECK_FALSE(result);
@@ -2213,7 +2224,7 @@ TEST_CASE("delete_file file not found", "[tools][delete_file]") {
 TEST_CASE("delete_file directory rejected", "[tools][delete_file]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     fs::create_directories(sd + "/mydir");
 
@@ -2230,7 +2241,7 @@ TEST_CASE("delete_file directory rejected", "[tools][delete_file]") {
 TEST_CASE("delete_file path traversal rejected", "[tools][delete_file]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     auto result = reg.execute("delete_file", R"({"path": "../../etc/passwd"})");
     CHECK_FALSE(result);
@@ -2241,7 +2252,7 @@ TEST_CASE("delete_file path traversal rejected", "[tools][delete_file]") {
 TEST_CASE("delete_file absolute path inside safe_dir", "[tools][delete_file]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     std::ofstream(sd + "/absfile.txt") << "absolute path test";
 
@@ -2256,7 +2267,7 @@ TEST_CASE("delete_file absolute path inside safe_dir", "[tools][delete_file]") {
 TEST_CASE("delete_file in subdirectory", "[tools][delete_file]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     fs::create_directories(sd + "/subdir");
     std::ofstream(sd + "/subdir/nested.txt") << "nested";
@@ -2277,7 +2288,7 @@ TEST_CASE("delete_file in subdirectory", "[tools][delete_file]") {
 TEST_CASE("move_file basic rename", "[tools][move_file]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     std::ofstream(sd + "/old.txt") << "content";
 
@@ -2300,7 +2311,7 @@ TEST_CASE("move_file basic rename", "[tools][move_file]") {
 TEST_CASE("move_file to different directory", "[tools][move_file]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     fs::create_directories(sd + "/subdir");
     std::ofstream(sd + "/source.txt") << "move me";
@@ -2318,7 +2329,7 @@ TEST_CASE("move_file to different directory", "[tools][move_file]") {
 TEST_CASE("move_file source not found", "[tools][move_file]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     auto result = reg.execute("move_file",
         R"({"source": "nonexistent.txt", "destination": "new.txt"})");
@@ -2331,7 +2342,7 @@ TEST_CASE("move_file source not found", "[tools][move_file]") {
 TEST_CASE("move_file destination already exists", "[tools][move_file]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     std::ofstream(sd + "/src.txt") << "source";
     std::ofstream(sd + "/dst.txt") << "destination";
@@ -2351,7 +2362,7 @@ TEST_CASE("move_file destination already exists", "[tools][move_file]") {
 TEST_CASE("move_file path traversal rejected", "[tools][move_file]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     std::ofstream(sd + "/safe.txt") << "safe";
 
@@ -2365,7 +2376,7 @@ TEST_CASE("move_file path traversal rejected", "[tools][move_file]") {
 TEST_CASE("move_file creates parent directories", "[tools][move_file]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     std::ofstream(sd + "/source.txt") << "content";
 
@@ -2382,7 +2393,7 @@ TEST_CASE("move_file creates parent directories", "[tools][move_file]") {
 TEST_CASE("move_file absolute path inside safe_dir", "[tools][move_file]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     std::ofstream(sd + "/source.txt") << "content";
     auto dst = sd + "/dest.txt";
@@ -2404,7 +2415,7 @@ TEST_CASE("move_file absolute path inside safe_dir", "[tools][move_file]") {
 TEST_CASE("rename_file basic", "[tools][rename_file]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     std::ofstream(sd + "/old_name.txt") << "content";
 
@@ -2423,7 +2434,7 @@ TEST_CASE("rename_file basic", "[tools][rename_file]") {
 TEST_CASE("rename_file with path separators rejected", "[tools][rename_file]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     std::ofstream(sd + "/test.txt") << "content";
 
@@ -2441,7 +2452,7 @@ TEST_CASE("rename_file with path separators rejected", "[tools][rename_file]") {
 TEST_CASE("rename_file not found", "[tools][rename_file]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     auto result = reg.execute("rename_file",
         R"({"path": "nonexistent.txt", "new_name": "new.txt"})");
@@ -2454,7 +2465,7 @@ TEST_CASE("rename_file not found", "[tools][rename_file]") {
 TEST_CASE("rename_file destination already exists", "[tools][rename_file]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     std::ofstream(sd + "/source.txt") << "source";
     std::ofstream(sd + "/existing.txt") << "existing";
@@ -2474,7 +2485,7 @@ TEST_CASE("rename_file destination already exists", "[tools][rename_file]") {
 TEST_CASE("rename_file path traversal in source", "[tools][rename_file]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     auto result = reg.execute("rename_file",
         R"({"path": "../../etc/passwd", "new_name": "safe.txt"})");
@@ -2486,7 +2497,7 @@ TEST_CASE("rename_file path traversal in source", "[tools][rename_file]") {
 TEST_CASE("rename_file directory rejected", "[tools][rename_file]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     fs::create_directories(sd + "/mydir");
 
@@ -2518,7 +2529,7 @@ TEST_CASE("project_tree interrupted by cancelled token", "[tools][cancellation]"
 
     ToolRegistry reg;
     reg.set_cancelled(token);
-    reg.add_defaults(sd);
+    reg.add_defaults(sd, Config{});
 
     auto result = reg.execute("project_tree", R"({"path": ".", "max_depth": 10})");
     REQUIRE(result);
@@ -2532,7 +2543,7 @@ TEST_CASE("project_tree interrupted by cancelled token", "[tools][cancellation]"
 TEST_CASE("run_bash chdir failure is caught", "[tools][run_bash][sandbox]") {
     // Use a non-existent directory as safe_dir — chdir in the child will fail.
     ToolRegistry reg;
-    reg.add_defaults("/nonexistent_safe_dir_12345");
+    reg.add_defaults("/nonexistent_safe_dir_12345", Config{});
 
     // If chdir fails, the child should _exit(1) before executing the command.
     // The error message "error: chdir() to safe directory failed\n" will be

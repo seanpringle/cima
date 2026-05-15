@@ -9,6 +9,7 @@
 Tool make_web_search_tool(const std::string& api_key,
     const std::string& engine_id,
     const std::string& endpoint_override,
+    int timeout,
     CancellationToken cancelled) {
     Tool t;
     t.name = "web_search";
@@ -17,7 +18,7 @@ Tool make_web_search_tool(const std::string& api_key,
         "By default uses the DuckDuckGo Instant Answer API (no key required). "
         "To use Google Custom Search, set SEARCH_API_KEY + SEARCH_ENGINE_ID. "
         "For a custom endpoint, set SEARCH_ENDPOINT with a {query} placeholder.";
-    t.timeout_sec = tool_timeout("LLM_WEB_SEARCH_TIMEOUT", 15);
+    t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},
         {"properties",
             {{"query",
@@ -276,7 +277,7 @@ Tool make_web_search_tool(const std::string& api_key,
     return t;
 }
 
-Tool make_web_fetch_tool(CancellationToken cancelled) {
+Tool make_web_fetch_tool(int timeout, CancellationToken cancelled) {
     Tool t;
     t.name = "web_fetch";
     t.description =
@@ -284,7 +285,7 @@ Tool make_web_fetch_tool(CancellationToken cancelled) {
         "Max 100,000 characters. "
         "Use this to read documentation, API references, or web pages. "
         "Only returns the raw response body; for search results use web_search.";
-    t.timeout_sec = tool_timeout("LLM_WEB_FETCH_TIMEOUT", 15);
+    t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},
         {"properties",
             {{"url",

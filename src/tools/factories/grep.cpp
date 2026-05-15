@@ -12,11 +12,12 @@
 
 Tool make_grep_files_tool(std::shared_ptr<std::string> safe_dir_ptr,
     const std::vector<std::string>& read_only_paths,
+    int timeout,
     CancellationToken cancelled) {
     Tool t;
     t.name = "grep_files";
     t.description = "Search file contents using a regex pattern (max 200 results)";
-    t.timeout_sec = tool_timeout("LLM_GREP_TIMEOUT", 10);
+    t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},
         {"properties",
             {{"pattern", {{"type", "string"}, {"description", "Regex pattern to search for"}}},

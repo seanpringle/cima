@@ -38,6 +38,16 @@ json Config::to_json() const {
     j["continuation_delay_ms"] = continuation_delay_ms;
     j["context_limit"] = context_limit;
     j["snippets"] = snippets;
+    j["bash_timeout"] = bash_timeout;
+    j["project_tree_timeout"] = project_tree_timeout;
+    j["git_status_timeout"] = git_status_timeout;
+    j["git_diff_timeout"] = git_diff_timeout;
+    j["git_log_timeout"] = git_log_timeout;
+    j["git_add_timeout"] = git_add_timeout;
+    j["git_commit_timeout"] = git_commit_timeout;
+    j["grep_timeout"] = grep_timeout;
+    j["web_search_timeout"] = web_search_timeout;
+    j["web_fetch_timeout"] = web_fetch_timeout;
     return j;
 }
 
@@ -112,6 +122,24 @@ Config Config::load() {
             int n = j["context_limit"].get<int>();
             if (n > 0) cfg.context_limit = n;
         }
+
+        // Tool timeouts (int, >= 0)
+        auto load_timeout = [&](const std::string& key, int& field) {
+            if (j.contains(key) && j[key].is_number_integer()) {
+                int n = j[key].get<int>();
+                if (n >= 0) field = n;
+            }
+        };
+        load_timeout("bash_timeout", cfg.bash_timeout);
+        load_timeout("project_tree_timeout", cfg.project_tree_timeout);
+        load_timeout("git_status_timeout", cfg.git_status_timeout);
+        load_timeout("git_diff_timeout", cfg.git_diff_timeout);
+        load_timeout("git_log_timeout", cfg.git_log_timeout);
+        load_timeout("git_add_timeout", cfg.git_add_timeout);
+        load_timeout("git_commit_timeout", cfg.git_commit_timeout);
+        load_timeout("grep_timeout", cfg.grep_timeout);
+        load_timeout("web_search_timeout", cfg.web_search_timeout);
+        load_timeout("web_fetch_timeout", cfg.web_fetch_timeout);
 
         if (j.contains("read_only_paths") && j["read_only_paths"].is_array()) {
             cfg.read_only_paths.clear();

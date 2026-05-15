@@ -22,12 +22,7 @@ ChatSession::ChatSession(Config config, CancellationToken cancelled)
     tools_.set_cancelled(cancelled_);
     client_.set_cancelled(cancelled_);
 
-    tools_.add_defaults(safe_dir_,
-        config.read_only_paths,
-        config.search_api_key,
-        config.search_engine_id,
-        config.search_endpoint,
-        /*include_write=*/true);
+    tools_.add_defaults(safe_dir_, config, /*include_write=*/true);
 
     // Each session gets its own plan tools tied to its PlanBoard
     tools_.add(make_write_plan_tool(plan_));

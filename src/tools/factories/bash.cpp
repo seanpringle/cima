@@ -11,7 +11,7 @@
 #include <unistd.h>
 
 Tool make_run_bash_tool(std::shared_ptr<std::string> safe_dir_ptr,
-    CancellationToken cancelled) {
+    int timeout, CancellationToken cancelled) {
     Tool t;
     t.name = "run_bash";
     t.description = "Run a bash command in the project directory "
@@ -21,7 +21,7 @@ Tool make_run_bash_tool(std::shared_ptr<std::string> safe_dir_ptr,
         {"properties",
             {{"command", {{"type", "string"}, {"description", "Shell command to execute"}}}}},
         {"required", {"command"}}};
-    t.execute = [safe_dir_ptr, cancelled](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr, timeout, cancelled](const json& args) -> Result<std::string> {
         auto command = args.value("command", std::string());
         if (command.empty()) {
             return std::unexpected(std::string("command is required"));
@@ -74,10 +74,7 @@ Tool make_run_bash_tool(std::shared_ptr<std::string> safe_dir_ptr,
 
         std::string output;
         char buf[4096];
-        const int timeout_secs = [&] {
-            const char* e = std::getenv("LLM_BASH_TIMEOUT");
-            return e ? std::atoi(e) : 30;
-        }();
+        const int timeout_secs = timeout;
         auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout_secs);
 
         // Set read end to non-blocking
