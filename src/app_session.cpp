@@ -1,7 +1,5 @@
 #include "app_session.h"
 
-#include <sqlite3.h>
-
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
@@ -114,12 +112,12 @@ void AppSession::load_existing(bool force) {
                 }
             }
         } else {
-            // No files array — scan directory for .json files excluding state.json and wiki.db
+            // No files array — scan directory for .json files excluding state.json
             assistant_files_.clear();
             for (const auto& entry : std::filesystem::directory_iterator(session_dir_)) {
                 if (entry.is_regular_file()) {
                     std::string fname = entry.path().filename().string();
-                    if (fname != "state.json" && fname != "wiki.db" &&
+                    if (fname != "state.json" &&
                         fname.size() > 5 && fname.substr(fname.size() - 5) == ".json") {
                         assistant_files_.push_back(fname);
                     }
@@ -160,34 +158,6 @@ void AppSession::create_new() {
     auto cwd = std::filesystem::current_path(ec);
     last_cwd_ = ec ? std::string() : cwd.string();
 
-    // Create wiki.db (empty database with tables)
-    {
-        std::string wiki_path = wiki_db_path();
-        sqlite3* wiki_db = nullptr;
-        int rc = sqlite3_open(wiki_path.c_str(), &wiki_db);
-        if (rc != SQLITE_OK) {
-            std::string msg = sqlite3_errmsg(wiki_db);
-            sqlite3_close(wiki_db);
-            throw std::runtime_error("Failed to create wiki.db: " + msg);
-        }
-        const char* sql = R"(
-            CREATE TABLE IF NOT EXISTS wiki_pages (
-                title      TEXT PRIMARY KEY,
-                body       TEXT NOT NULL DEFAULT '',
-                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-            )
-        )";
-        char* err = nullptr;
-        rc = sqlite3_exec(wiki_db, sql, nullptr, nullptr, &err);
-        if (rc != SQLITE_OK) {
-            std::string msg = err ? err : "unknown";
-            sqlite3_free(err);
-            sqlite3_close(wiki_db);
-            throw std::runtime_error("Failed to initialize wiki.db: " + msg);
-        }
-        sqlite3_close(wiki_db);
-    }
-
     // Write state.json
     save_manifest();
 
@@ -218,8 +188,8 @@ void AppSession::remove_assistant_file(const std::string& filename) {
 // Path accessors
 // -----------------------------------------------------------------------
 
-std::string AppSession::wiki_db_path() const {
-    return (session_dir_ / "wiki.db").string();
+std::string AppSession::wiki_dir_path() const {
+    return (session_dir_ / "wiki").string();
 }
 
 std::string AppSession::session_file_path(const std::string& filename) const {

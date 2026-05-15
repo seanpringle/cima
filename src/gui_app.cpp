@@ -250,7 +250,7 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
     int focus_tab_id = -1;
 
     // Shared wiki across all sessions — file-backed via AppSession
-    Wiki wiki(app_session->wiki_db_path());
+    Wiki wiki(app_session->wiki_dir_path());
 
     // Save a reference to cfg.providers for lambda capture (lifetime: gui_main)
     const auto& providers = cfg.providers;

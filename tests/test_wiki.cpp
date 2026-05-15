@@ -2,24 +2,40 @@
 #include "tools.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <filesystem>
+#include <random>
 #include <string>
 #include <vector>
 
 using json = nlohmann::json;
+
+// ── Helper: create an isolated wiki directory for each test ──
+static std::string make_wiki_dir() {
+    // Use a random suffix to avoid collisions between tests
+    static std::random_device rd;
+    static std::mt19937 gen(rd());
+    static std::uniform_int_distribution<uint64_t> dis;
+
+    auto base = std::filesystem::temp_directory_path() /
+        ("cima_wiki_test_" + std::to_string(dis(gen)));
+    auto path = base / "wiki";
+    std::filesystem::create_directories(path);
+    return path.string();
+}
 
 // ========================================================================
 // Wiki CRUD basics
 // ========================================================================
 
 TEST_CASE("Wiki empty page list on fresh database", "[wiki]") {
-    Wiki wiki(":memory:");
+    Wiki wiki(make_wiki_dir());
     auto pages = wiki.list_pages();
     REQUIRE(pages);
     CHECK(pages->empty());
 }
 
 TEST_CASE("Wiki write and list pages", "[wiki]") {
-    Wiki wiki(":memory:");
+    Wiki wiki(make_wiki_dir());
 
     auto w = wiki.write_page("Home", "Welcome to the wiki");
     REQUIRE(w);
@@ -35,7 +51,7 @@ TEST_CASE("Wiki write and list pages", "[wiki]") {
 }
 
 TEST_CASE("Wiki read_page returns body", "[wiki]") {
-    Wiki wiki(":memory:");
+    Wiki wiki(make_wiki_dir());
     wiki.write_page("TestPage", "Hello, world!");
 
     auto body = wiki.read_page("TestPage");
@@ -44,14 +60,14 @@ TEST_CASE("Wiki read_page returns body", "[wiki]") {
 }
 
 TEST_CASE("Wiki read_page returns error for missing page", "[wiki]") {
-    Wiki wiki(":memory:");
+    Wiki wiki(make_wiki_dir());
     auto body = wiki.read_page("NonExistent");
     CHECK(!body);
     CHECK(body.error().find("no such page") != std::string::npos);
 }
 
 TEST_CASE("Wiki write_page overwrites existing page", "[wiki]") {
-    Wiki wiki(":memory:");
+    Wiki wiki(make_wiki_dir());
     wiki.write_page("Page", "version 1");
     wiki.write_page("Page", "version 2");
 
@@ -61,7 +77,7 @@ TEST_CASE("Wiki write_page overwrites existing page", "[wiki]") {
 }
 
 TEST_CASE("Wiki delete_page removes a page", "[wiki]") {
-    Wiki wiki(":memory:");
+    Wiki wiki(make_wiki_dir());
     wiki.write_page("Page", "some content");
 
     auto r = wiki.delete_page("Page");
@@ -73,14 +89,14 @@ TEST_CASE("Wiki delete_page removes a page", "[wiki]") {
 }
 
 TEST_CASE("Wiki delete_page returns error for missing page", "[wiki]") {
-    Wiki wiki(":memory:");
+    Wiki wiki(make_wiki_dir());
     auto r = wiki.delete_page("NonExistent");
     CHECK(!r);
     CHECK(r.error().find("no such page") != std::string::npos);
 }
 
 TEST_CASE("Wiki edit_page exact match once", "[wiki]") {
-    Wiki wiki(":memory:");
+    Wiki wiki(make_wiki_dir());
     wiki.write_page("Page", "Hello world, hello universe");
 
     auto r = wiki.edit_page("Page", "world", "earth");
@@ -93,7 +109,7 @@ TEST_CASE("Wiki edit_page exact match once", "[wiki]") {
 }
 
 TEST_CASE("Wiki edit_page returns error for zero matches", "[wiki]") {
-    Wiki wiki(":memory:");
+    Wiki wiki(make_wiki_dir());
     wiki.write_page("Page", "Hello world");
 
     auto r = wiki.edit_page("Page", "mars", "venus");
@@ -102,7 +118,7 @@ TEST_CASE("Wiki edit_page returns error for zero matches", "[wiki]") {
 }
 
 TEST_CASE("Wiki edit_page returns error for multiple matches", "[wiki]") {
-    Wiki wiki(":memory:");
+    Wiki wiki(make_wiki_dir());
     wiki.write_page("Page", "foo foo foo");
 
     auto r = wiki.edit_page("Page", "foo", "bar");
@@ -111,14 +127,14 @@ TEST_CASE("Wiki edit_page returns error for multiple matches", "[wiki]") {
 }
 
 TEST_CASE("Wiki edit_page returns error for missing page", "[wiki]") {
-    Wiki wiki(":memory:");
+    Wiki wiki(make_wiki_dir());
     auto r = wiki.edit_page("NonExistent", "foo", "bar");
     CHECK(!r);
     CHECK(r.error().find("no such page") != std::string::npos);
 }
 
 TEST_CASE("Wiki empty body allowed", "[wiki]") {
-    Wiki wiki(":memory:");
+    Wiki wiki(make_wiki_dir());
     wiki.write_page("Empty", "");
 
     auto body = wiki.read_page("Empty");
@@ -127,7 +143,7 @@ TEST_CASE("Wiki empty body allowed", "[wiki]") {
 }
 
 TEST_CASE("Wiki page titles are case-sensitive", "[wiki]") {
-    Wiki wiki(":memory:");
+    Wiki wiki(make_wiki_dir());
     wiki.write_page("Page", "content");
 
     // Different case = different page
@@ -141,7 +157,7 @@ TEST_CASE("Wiki page titles are case-sensitive", "[wiki]") {
 // ========================================================================
 
 TEST_CASE("Wiki tool list_wiki_pages returns JSON array", "[wiki][tools]") {
-    Wiki wiki(":memory:");
+    Wiki wiki(make_wiki_dir());
     wiki.write_page("A", "aaa");
     wiki.write_page("B", "bbb");
 
@@ -158,7 +174,7 @@ TEST_CASE("Wiki tool list_wiki_pages returns JSON array", "[wiki][tools]") {
 }
 
 TEST_CASE("Wiki tool list_wiki_pages empty properties", "[wiki][tools]") {
-    Wiki wiki(":memory:");
+    Wiki wiki(make_wiki_dir());
 
     auto tool = make_list_wiki_pages_tool(wiki);
     // Verify the parameters schema has an empty properties object (not null)
@@ -179,7 +195,7 @@ TEST_CASE("Wiki tool list_wiki_pages empty properties", "[wiki][tools]") {
 }
 
 TEST_CASE("Wiki tool read_wiki_page returns page body", "[wiki][tools]") {
-    Wiki wiki(":memory:");
+    Wiki wiki(make_wiki_dir());
     wiki.write_page("Test", "line1\nline2\nline3");
 
     auto tool = make_read_wiki_page_tool(wiki);
@@ -192,7 +208,7 @@ TEST_CASE("Wiki tool read_wiki_page returns page body", "[wiki][tools]") {
 }
 
 TEST_CASE("Wiki tool read_wiki_page with offset and max_lines", "[wiki][tools]") {
-    Wiki wiki(":memory:");
+    Wiki wiki(make_wiki_dir());
     wiki.write_page("Test", "line1\nline2\nline3\nline4\nline5");
 
     auto tool = make_read_wiki_page_tool(wiki);
@@ -208,7 +224,7 @@ TEST_CASE("Wiki tool read_wiki_page with offset and max_lines", "[wiki][tools]")
 }
 
 TEST_CASE("Wiki tool write_wiki_page creates and overwrites", "[wiki][tools]") {
-    Wiki wiki(":memory:");
+    Wiki wiki(make_wiki_dir());
 
     auto tool = make_write_wiki_page_tool(wiki);
     json args = {{"page_title", "Page"}, {"page_body", "hello"}};
@@ -228,7 +244,7 @@ TEST_CASE("Wiki tool write_wiki_page creates and overwrites", "[wiki][tools]") {
 }
 
 TEST_CASE("Wiki tool edit_wiki_page exact match", "[wiki][tools]") {
-    Wiki wiki(":memory:");
+    Wiki wiki(make_wiki_dir());
     wiki.write_page("Page", "hello world");
 
     auto tool = make_edit_wiki_page_tool(wiki);
@@ -243,7 +259,7 @@ TEST_CASE("Wiki tool edit_wiki_page exact match", "[wiki][tools]") {
 }
 
 TEST_CASE("Wiki tool delete_wiki_page returns ok or no such page", "[wiki][tools]") {
-    Wiki wiki(":memory:");
+    Wiki wiki(make_wiki_dir());
     wiki.write_page("Page", "content");
 
     auto tool = make_delete_wiki_page_tool(wiki);
@@ -261,7 +277,7 @@ TEST_CASE("Wiki tool delete_wiki_page returns ok or no such page", "[wiki][tools
 }
 
 TEST_CASE("Wiki tool write_wiki_page requires page_title", "[wiki][tools]") {
-    Wiki wiki(":memory:");
+    Wiki wiki(make_wiki_dir());
 
     auto tool = make_write_wiki_page_tool(wiki);
     json args = {{"page_body", "hello"}};
@@ -270,7 +286,7 @@ TEST_CASE("Wiki tool write_wiki_page requires page_title", "[wiki][tools]") {
 }
 
 TEST_CASE("Wiki tool read_wiki_page requires page_title", "[wiki][tools]") {
-    Wiki wiki(":memory:");
+    Wiki wiki(make_wiki_dir());
 
     auto tool = make_read_wiki_page_tool(wiki);
     json args = json::object();
@@ -279,7 +295,7 @@ TEST_CASE("Wiki tool read_wiki_page requires page_title", "[wiki][tools]") {
 }
 
 TEST_CASE("Wiki tool delete_wiki_page requires page_title", "[wiki][tools]") {
-    Wiki wiki(":memory:");
+    Wiki wiki(make_wiki_dir());
 
     auto tool = make_delete_wiki_page_tool(wiki);
     json args = json::object();
@@ -288,7 +304,7 @@ TEST_CASE("Wiki tool delete_wiki_page requires page_title", "[wiki][tools]") {
 }
 
 TEST_CASE("Wiki tool edit_wiki_page requires all params", "[wiki][tools]") {
-    Wiki wiki(":memory:");
+    Wiki wiki(make_wiki_dir());
     wiki.write_page("Page", "content");
 
     auto tool = make_edit_wiki_page_tool(wiki);
@@ -305,7 +321,7 @@ TEST_CASE("Wiki tool edit_wiki_page requires all params", "[wiki][tools]") {
 }
 
 TEST_CASE("Wiki tool edit_wiki_page empty search rejected", "[wiki][tools]") {
-    Wiki wiki(":memory:");
+    Wiki wiki(make_wiki_dir());
     wiki.write_page("Page", "content");
 
     auto tool = make_edit_wiki_page_tool(wiki);

@@ -9,7 +9,7 @@
 /// Each session folder contains:
 ///   state.json   — JSON array of assistant filenames (e.g. ["Fingolfin.json"])
 ///                   Optionally also contains top-level "last_cwd" string.
-///   wiki.db      — Wiki tab SQLite database
+///   wiki/        — Folder of markdown files (one per wiki page)
 ///   <name>.json  — One JSON file per assistant tab (consolidated data)
 ///
 class AppSession {
@@ -26,7 +26,7 @@ class AppSession {
 
     // ── Path accessors ──
     const std::filesystem::path& session_dir() const { return session_dir_; }
-    std::string wiki_db_path() const;
+    std::string wiki_dir_path() const;
 
     /// Return the full path for a filename within this session directory.
     std::string session_file_path(const std::string& filename) const;

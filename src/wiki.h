@@ -3,17 +3,19 @@
 #include "config.h"
 #include "types.h"
 
+#include <filesystem>
 #include <mutex>
 #include <string>
 #include <vector>
 
-struct sqlite3;
-
-/// Persistent, thread-safe wiki store backed by a single SQLite database file.
+/// Persistent, thread-safe wiki store backed by a folder of markdown files.
+/// Each page is stored as <title>.md under the wiki directory.
 /// Shared across all ChatSession instances so that all agents see the same pages.
 class Wiki {
   public:
-    explicit Wiki(const std::string& db_path);
+    /// @param wiki_dir  Path to the wiki/ directory.  The directory is created
+    ///                  lazily on the first write operation.
+    explicit Wiki(const std::string& wiki_dir);
     ~Wiki();
 
     Wiki(const Wiki&) = delete;
@@ -21,7 +23,7 @@ class Wiki {
     Wiki(Wiki&&) = delete;
     Wiki& operator=(Wiki&&) = delete;
 
-    /// Return the titles of all wiki pages, sorted alphabetically.
+    /// Return the titles of all wiki pages, sorted alphabetically (case-insensitive).
     Result<std::vector<std::string>> list_pages();
 
     /// Read the full body of a page.
@@ -44,11 +46,10 @@ class Wiki {
     Result<void> delete_page(const std::string& title);
 
   private:
-    sqlite3* db_ = nullptr;
+    std::string wiki_dir_;
     mutable std::mutex mutex_;
-    std::string db_path_;
 
-    void init_tables();
+    /// Return the full file path for a given page title.
+    /// Validates the title (rejects '/' and '\0').
+    Result<std::filesystem::path> page_path(const std::string& title) const;
 };
-
-

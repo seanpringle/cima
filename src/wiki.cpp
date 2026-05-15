@@ -1,189 +1,136 @@
 #include "wiki.h"
 
-#include <sqlite3.h>
 #include <algorithm>
+#include <cerrno>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <sstream>
 
-Wiki::Wiki(const std::string& db_path) : db_path_(db_path) {
-    // Ensure parent directory exists
+Wiki::Wiki(const std::string& wiki_dir) : wiki_dir_(wiki_dir) {
+    // Ensure the parent of wiki_dir_ exists (typically the session directory).
+    // The wiki_dir_ itself is created lazily on first write.
     std::error_code ec;
-    std::filesystem::path dir = std::filesystem::path(db_path).parent_path();
-    if (!dir.empty() && !std::filesystem::exists(dir, ec)) {
-        std::filesystem::create_directories(dir, ec);
-    }
-
-    int rc = sqlite3_open(db_path.c_str(), &db_);
-    if (rc != SQLITE_OK) {
-        std::cerr << "Wiki: failed to open database at " << db_path
-                  << ": " << sqlite3_errmsg(db_) << std::endl;
-        sqlite3_close(db_);
-        db_ = nullptr;
-        return;
-    }
-
-    init_tables();
-}
-
-Wiki::~Wiki() {
-    if (db_) {
-        sqlite3_close(db_);
-        db_ = nullptr;
+    auto parent = std::filesystem::path(wiki_dir_).parent_path();
+    if (!parent.empty() && !std::filesystem::exists(parent, ec)) {
+        std::filesystem::create_directories(parent, ec);
     }
 }
 
-void Wiki::init_tables() {
-    const char* sql = R"(
-        CREATE TABLE IF NOT EXISTS wiki_pages (
-            title      TEXT PRIMARY KEY,
-            body       TEXT NOT NULL DEFAULT '',
-            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        )
-    )";
-    char* err = nullptr;
-    int rc = sqlite3_exec(db_, sql, nullptr, nullptr, &err);
-    if (rc != SQLITE_OK) {
-        std::cerr << "Wiki: failed to create table: " << (err ? err : "unknown") << std::endl;
-        sqlite3_free(err);
+Wiki::~Wiki() = default;
+
+// ── Helper: validate title and return the file path ──
+
+Result<std::filesystem::path> Wiki::page_path(const std::string& title) const {
+    if (title.empty()) {
+        return std::unexpected("page title must not be empty");
     }
+    if (title.find('/') != std::string::npos) {
+        return std::unexpected("page title must not contain '/'");
+    }
+    if (title.find('\0') != std::string::npos) {
+        return std::unexpected("page title must not contain null bytes");
+    }
+    return std::filesystem::path(wiki_dir_) / (title + ".md");
 }
 
-// ── Helper: execute a query and return rows as JSON (for SELECT) ──
-// Returns nullopt if no rows, or error string.
-namespace {
-
-struct QueryResult {
-    std::vector<std::vector<std::string>> rows;
-    std::vector<std::string> columns;
-};
-
-std::optional<std::string> exec_query(sqlite3* db, const std::string& sql, QueryResult& out) {
-    sqlite3_stmt* stmt = nullptr;
-    int rc = sqlite3_prepare_v2(db, sql.c_str(), (int)sql.size(), &stmt, nullptr);
-    if (rc != SQLITE_OK) {
-        return std::string(sqlite3_errmsg(db));
-    }
-
-    // Get column count and names
-    int col_count = sqlite3_column_count(stmt);
-    out.columns.clear();
-    for (int i = 0; i < col_count; i++) {
-        out.columns.push_back(sqlite3_column_name(stmt, i));
-    }
-
-    out.rows.clear();
-    while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
-        std::vector<std::string> row;
-        row.reserve(col_count);
-        for (int i = 0; i < col_count; i++) {
-            const char* text = (const char*)sqlite3_column_text(stmt, i);
-            row.push_back(text ? text : "");
-        }
-        out.rows.push_back(std::move(row));
-    }
-
-    if (rc != SQLITE_DONE) {
-        std::string err = sqlite3_errmsg(db);
-        sqlite3_finalize(stmt);
-        return err;
-    }
-
-    sqlite3_finalize(stmt);
-    return std::nullopt; // no error
-}
-
-} // anonymous namespace
+// ── list_pages ──
 
 Result<std::vector<std::string>> Wiki::list_pages() {
     std::lock_guard<std::mutex> lock(mutex_);
 
-    if (!db_) {
-        return std::unexpected("wiki database not available");
-    }
-
-    QueryResult qr;
-    auto err = exec_query(db_, "SELECT title FROM wiki_pages ORDER BY title COLLATE NOCASE", qr);
-    if (err) {
-        return std::unexpected("wiki: " + *err);
-    }
-
     std::vector<std::string> titles;
-    titles.reserve(qr.rows.size());
-    for (const auto& row : qr.rows) {
-        if (!row.empty()) {
-            titles.push_back(row[0]);
-        }
+
+    std::error_code ec;
+    if (!std::filesystem::is_directory(wiki_dir_, ec)) {
+        // Directory doesn't exist yet — no pages
+        return titles;
     }
+
+    for (const auto& entry : std::filesystem::directory_iterator(wiki_dir_, ec)) {
+        if (!entry.is_regular_file()) continue;
+        auto path = entry.path();
+        if (path.extension() != ".md") continue;
+
+        auto stem = path.filename().string();
+        // Remove the trailing .md
+        if (stem.size() >= 3) {
+            stem.erase(stem.size() - 3);
+        }
+        titles.push_back(std::move(stem));
+    }
+
+    // Sort case-insensitively (same behaviour as the old SQLite COLLATE NOCASE)
+    std::sort(titles.begin(), titles.end(), [](const std::string& a, const std::string& b) {
+        return std::lexicographical_compare(
+            a.begin(), a.end(), b.begin(), b.end(),
+            [](unsigned char ca, unsigned char cb) {
+                return std::tolower(ca) < std::tolower(cb);
+            });
+    });
+
     return titles;
 }
+
+// ── read_page ──
 
 Result<std::string> Wiki::read_page(const std::string& title) {
     std::lock_guard<std::mutex> lock(mutex_);
 
-    if (!db_) {
-        return std::unexpected("wiki database not available");
-    }
+    auto path_res = page_path(title);
+    if (!path_res) return std::unexpected(path_res.error());
 
-    sqlite3_stmt* stmt = nullptr;
-    std::string sql = "SELECT body FROM wiki_pages WHERE title = ?";
-    int rc = sqlite3_prepare_v2(db_, sql.c_str(), (int)sql.size(), &stmt, nullptr);
-    if (rc != SQLITE_OK) {
-        return std::unexpected(std::string(sqlite3_errmsg(db_)));
-    }
+    const auto& path = *path_res;
 
-    sqlite3_bind_text(stmt, 1, title.c_str(), (int)title.size(), SQLITE_TRANSIENT);
-
-    rc = sqlite3_step(stmt);
-    if (rc == SQLITE_ROW) {
-        const char* body = (const char*)sqlite3_column_text(stmt, 0);
-        std::string result = body ? body : "";
-        sqlite3_finalize(stmt);
-        return result;
-    }
-
-    sqlite3_finalize(stmt);
-
-    if (rc == SQLITE_DONE) {
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec)) {
         return std::unexpected("no such page: " + title);
     }
 
-    return std::unexpected(std::string(sqlite3_errmsg(db_)));
+    std::ifstream file(path, std::ios::in | std::ios::binary);
+    if (!file.is_open()) {
+        return std::unexpected("failed to open page: " + title);
+    }
+
+    std::stringstream ss;
+    ss << file.rdbuf();
+    return ss.str();
 }
+
+// ── write_page ──
 
 Result<void> Wiki::write_page(const std::string& title, const std::string& body) {
     std::lock_guard<std::mutex> lock(mutex_);
 
-    if (!db_) {
-        return std::unexpected("wiki database not available");
+    auto path_res = page_path(title);
+    if (!path_res) return std::unexpected(path_res.error());
+
+    const auto& path = *path_res;
+
+    // Ensure wiki directory exists (lazy creation)
+    std::error_code ec;
+    if (!std::filesystem::is_directory(wiki_dir_, ec)) {
+        std::filesystem::create_directories(wiki_dir_, ec);
+        if (ec) {
+            return std::unexpected("failed to create wiki directory: " + ec.message());
+        }
     }
 
-    sqlite3_stmt* stmt = nullptr;
-    std::string sql = R"(
-        INSERT INTO wiki_pages (title, body, updated_at)
-        VALUES (?, ?, datetime('now'))
-        ON CONFLICT(title) DO UPDATE SET
-            body = excluded.body,
-            updated_at = datetime('now')
-    )";
-    int rc = sqlite3_prepare_v2(db_, sql.c_str(), (int)sql.size(), &stmt, nullptr);
-    if (rc != SQLITE_OK) {
-        return std::unexpected(std::string(sqlite3_errmsg(db_)));
+    std::ofstream file(path, std::ios::out | std::ios::binary | std::ios::trunc);
+    if (!file.is_open()) {
+        return std::unexpected("failed to write page: " + title);
     }
+    file.write(body.data(), static_cast<std::streamsize>(body.size()));
 
-    sqlite3_bind_text(stmt, 1, title.c_str(), (int)title.size(), SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 2, body.c_str(), (int)body.size(), SQLITE_TRANSIENT);
-
-    rc = sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
-
-    if (rc != SQLITE_DONE) {
-        return std::unexpected(std::string(sqlite3_errmsg(db_)));
+    if (!file) {
+        return std::unexpected("failed to write page (disk full?): " + title);
     }
 
     return Result<void>();
 }
+
+// ── edit_page ──
 
 Result<void> Wiki::edit_page(const std::string& title,
     const std::string& search,
@@ -194,32 +141,24 @@ Result<void> Wiki::edit_page(const std::string& title,
 
     std::lock_guard<std::mutex> lock(mutex_);
 
-    if (!db_) {
-        return std::unexpected("wiki database not available");
+    auto path_res = page_path(title);
+    if (!path_res) return std::unexpected(path_res.error());
+
+    const auto& path = *path_res;
+
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec)) {
+        return std::unexpected("no such page: " + title);
     }
 
     // Read current body
-    sqlite3_stmt* stmt = nullptr;
-    std::string sql = "SELECT body FROM wiki_pages WHERE title = ?";
-    int rc = sqlite3_prepare_v2(db_, sql.c_str(), (int)sql.size(), &stmt, nullptr);
-    if (rc != SQLITE_OK) {
-        return std::unexpected(std::string(sqlite3_errmsg(db_)));
+    std::ifstream infile(path, std::ios::in | std::ios::binary);
+    if (!infile.is_open()) {
+        return std::unexpected("failed to open page: " + title);
     }
-
-    sqlite3_bind_text(stmt, 1, title.c_str(), (int)title.size(), SQLITE_TRANSIENT);
-    rc = sqlite3_step(stmt);
-
-    if (rc != SQLITE_ROW) {
-        sqlite3_finalize(stmt);
-        if (rc == SQLITE_DONE) {
-            return std::unexpected("no such page: " + title);
-        }
-        return std::unexpected(std::string(sqlite3_errmsg(db_)));
-    }
-
-    const char* body_cstr = (const char*)sqlite3_column_text(stmt, 0);
-    std::string body = body_cstr ? body_cstr : "";
-    sqlite3_finalize(stmt);
+    std::stringstream ss;
+    ss << infile.rdbuf();
+    std::string body = ss.str();
 
     // Count occurrences of search string
     size_t count = 0;
@@ -239,60 +178,43 @@ Result<void> Wiki::edit_page(const std::string& title,
                                "Include more surrounding context in the search string.");
     }
 
-    // Find the unique occurrence
+    // Find the unique occurrence and replace
     pos = body.find(search);
     body.replace(pos, search.size(), replace);
 
     // Write back
-    stmt = nullptr;
-    sql = "UPDATE wiki_pages SET body = ?, updated_at = datetime('now') WHERE title = ?";
-    rc = sqlite3_prepare_v2(db_, sql.c_str(), (int)sql.size(), &stmt, nullptr);
-    if (rc != SQLITE_OK) {
-        return std::unexpected(std::string(sqlite3_errmsg(db_)));
+    std::ofstream outfile(path, std::ios::out | std::ios::binary | std::ios::trunc);
+    if (!outfile.is_open()) {
+        return std::unexpected("failed to write page: " + title);
     }
+    outfile.write(body.data(), static_cast<std::streamsize>(body.size()));
 
-    sqlite3_bind_text(stmt, 1, body.c_str(), (int)body.size(), SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt, 2, title.c_str(), (int)title.size(), SQLITE_TRANSIENT);
-
-    rc = sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
-
-    if (rc != SQLITE_DONE) {
-        return std::unexpected(std::string(sqlite3_errmsg(db_)));
+    if (!outfile) {
+        return std::unexpected("failed to write page (disk full?): " + title);
     }
 
     return Result<void>();
 }
+
+// ── delete_page ──
 
 Result<void> Wiki::delete_page(const std::string& title) {
     std::lock_guard<std::mutex> lock(mutex_);
 
-    if (!db_) {
-        return std::unexpected("wiki database not available");
-    }
+    auto path_res = page_path(title);
+    if (!path_res) return std::unexpected(path_res.error());
 
-    sqlite3_stmt* stmt = nullptr;
-    std::string sql = "DELETE FROM wiki_pages WHERE title = ?";
-    int rc = sqlite3_prepare_v2(db_, sql.c_str(), (int)sql.size(), &stmt, nullptr);
-    if (rc != SQLITE_OK) {
-        return std::unexpected(std::string(sqlite3_errmsg(db_)));
-    }
+    const auto& path = *path_res;
 
-    sqlite3_bind_text(stmt, 1, title.c_str(), (int)title.size(), SQLITE_TRANSIENT);
-
-    rc = sqlite3_step(stmt);
-    sqlite3_finalize(stmt);
-
-    if (rc != SQLITE_DONE) {
-        return std::unexpected(std::string(sqlite3_errmsg(db_)));
-    }
-
-    int changes = sqlite3_changes(db_);
-    if (changes == 0) {
+    std::error_code ec;
+    if (!std::filesystem::exists(path, ec)) {
         return std::unexpected("no such page: " + title);
+    }
+
+    bool removed = std::filesystem::remove(path, ec);
+    if (!removed || ec) {
+        return std::unexpected("failed to delete page: " + title);
     }
 
     return Result<void>();
 }
-
-
