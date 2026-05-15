@@ -84,6 +84,13 @@ void ChatUIState::append_chat_log_entry(const DisplayEntry& entry) {
     }
 }
 
+// ── InputText callback: track cursor position for insert-at-cursor ──────
+static int InputTextCallback(ImGuiInputTextCallbackData* data) {
+    auto* pos = static_cast<int*>(data->UserData);
+    *pos = data->CursorPos;
+    return 0;
+}
+
 // ── Helper: finalise a streaming entry and log it ────────────────────────
 static void finalize_streaming_entry(ChatUIState& ui) {
     if (!ui.entries.empty() && ui.entries.back().is_streaming) {
@@ -808,12 +815,49 @@ void render_chat_ui(TabInfo& tab, bool& done) {
     // ── input area ──
     Separator();
 
+    // ── Wiki page reference combo (inserts page name at cursor) ──
+    {
+        auto wiki = tab.session->wiki();
+        if (wiki) {
+            auto pages_result = wiki->list_pages();
+            if (pages_result && !pages_result->empty()) {
+                static string selected_page;
+                string preview = selected_page.empty() ? "Wiki@..." : selected_page;
+                SetNextItemWidth(GetContentRegionAvail().x);
+                if (BeginCombo("##wiki-ref", preview.c_str())) {
+                    for (const auto& page : *pages_result) {
+                        bool is_selected = (page == selected_page);
+                        if (Selectable(page.c_str(), is_selected)) {
+                            selected_page = page;
+                            // Insert page name at cursor position (no trailing space)
+                            auto& buf = ui.input_buffer;
+                            int pos = ui.cursor_pos;
+                            if (pos < 0 || (size_t)pos > strlen(buf.data()))
+                                pos = (int)strlen(buf.data()); // append
+                            // Make room and insert into buffer
+                            size_t room = buf.size() - strlen(buf.data()) - 1;
+                            size_t insert_len = page.size();
+                            if (insert_len > room) insert_len = room;
+                            memmove(buf.data() + pos + insert_len,
+                                    buf.data() + pos,
+                                    strlen(buf.data()) - pos + 1);
+                            memcpy(buf.data() + pos, page.data(), insert_len);
+                            ui.cursor_pos = pos + (int)insert_len;
+                        }
+                    }
+                    EndCombo();
+                }
+            }
+        }
+    }
+
     SetNextItemWidth(GetContentRegionAvail().x);
 
     PushFont(ui.mono_font);
 
     uint32_t inputFlags = ImGuiInputTextFlags_CtrlEnterForNewLine |
-        ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_WordWrap;
+        ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_WordWrap |
+        ImGuiInputTextFlags_CallbackAlways;
 
     ImVec2 inputSize(0, std::max(GetFrameHeightWithSpacing() * 3, GetContentRegionAvail().y - 4));
 
@@ -863,7 +907,7 @@ void render_chat_ui(TabInfo& tab, bool& done) {
         SetKeyboardFocusHere();
     }
 
-    if (InputTextMultiline("##input", buffer.data(), buffer.size(), inputSize, inputFlags) && !chat.running) {
+    if (InputTextMultiline("##input", buffer.data(), buffer.size(), inputSize, inputFlags, InputTextCallback, &ui.cursor_pos) && !chat.running) {
         string input(trimWhite(buffer.data()));
         if (input.size()) {
             push_entry(ui, EntryType::UserText, input, false);

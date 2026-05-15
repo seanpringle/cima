@@ -56,6 +56,7 @@ struct ChatUIState {
 
     std::deque<std::string> input_history;
     std::vector<char> input_buffer = {0};
+    int cursor_pos = 0; // tracked by InputText callback for insert-at-cursor
 };
 
 struct TabInfo {
