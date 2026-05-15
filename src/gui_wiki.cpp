@@ -185,26 +185,32 @@ void render_wiki_tab(Wiki& wiki, ImFont* mono_font) {
                 if (selected_snippet.empty()) {
                     TextDisabled("Select a snippet from the left panel");
                 } else {
-                    // Name (single-line, save on Enter or focus loss)
+                    // Name (plain text buffer, no auto-save)
                     PushID("snippet-name");
                     Text("Name:");
                     SameLine();
-                    auto do_rename = [&] {
+                    InputText("##name", snippet_name_buf, sizeof(snippet_name_buf));
+
+                    // Save button (blue-green, explicit persist)
+                    SameLine();
+                    PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.45f, 0.35f, 1.0f));
+                    PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.2f, 0.55f, 0.45f, 1.0f));
+                    PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.1f, 0.35f, 0.25f, 1.0f));
+                    if (SmallButton("Save")) {
                         std::string new_name(snippet_name_buf);
-                        if (!new_name.empty() && new_name != selected_snippet) {
-                            wiki.write_snippet(new_name, std::string(snippet_content_buf));
-                            wiki.delete_snippet(selected_snippet);
-                            selected_snippet = new_name;
+                        if (!new_name.empty()) {
+                            if (new_name != selected_snippet) {
+                                // Rename: write under new name, delete old
+                                wiki.write_snippet(new_name, std::string(snippet_content_buf));
+                                wiki.delete_snippet(selected_snippet);
+                                selected_snippet = new_name;
+                            } else {
+                                // Same name: just update content
+                                wiki.write_snippet(selected_snippet, std::string(snippet_content_buf));
+                            }
                         }
-                    };
-                    if (InputText("##name", snippet_name_buf, sizeof(snippet_name_buf),
-                            ImGuiInputTextFlags_EnterReturnsTrue))
-                    {
-                        do_rename();
                     }
-                    if (IsItemDeactivatedAfterEdit()) {
-                        do_rename();
-                    }
+                    PopStyleColor(3);
 
                     // Delete button (red, destructive)
                     SameLine();
@@ -221,15 +227,12 @@ void render_wiki_tab(Wiki& wiki, ImFont* mono_font) {
 
                     PopID();
 
-                    // Content (multi-line, auto-save on every change)
+                    // Content (multi-line, saved only via Save button)
                     PushID("snippet-content");
                     Text("Content:");
-                    if (InputTextMultiline("##content", snippet_content_buf, sizeof(snippet_content_buf),
-                            ImVec2(-1, GetContentRegionAvail().y - 4),
-                            ImGuiInputTextFlags_AllowTabInput))
-                    {
-                        wiki.write_snippet(selected_snippet, std::string(snippet_content_buf));
-                    }
+                    InputTextMultiline("##content", snippet_content_buf, sizeof(snippet_content_buf),
+                        ImVec2(-1, GetContentRegionAvail().y - 4),
+                        ImGuiInputTextFlags_AllowTabInput);
                     PopID();
                 }
             }
