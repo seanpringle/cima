@@ -15,11 +15,8 @@ using namespace ImGui;
 
 int gui_main(Config cfg, const std::string& session_name, bool force) {
     // ── App session ──
-    std::unique_ptr<AppSession> app_session;
-    if (!session_name.empty()) {
-        app_session = std::make_unique<AppSession>(session_name, force);
-        app_session->print_welcome();
-    }
+    auto app_session = std::make_unique<AppSession>(session_name, force);
+    app_session->print_welcome();
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         SDL_Log("SDL_Init error: %s", SDL_GetError());
@@ -116,8 +113,8 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
     int active_tab = 0;
     int focus_tab_id = -1;
 
-    // Shared wiki across all sessions — now file-backed via AppSession
-    Wiki wiki(app_session ? app_session->wiki_db_path() : ":memory:");
+    // Shared wiki across all sessions — file-backed via AppSession
+    Wiki wiki(app_session->wiki_db_path());
 
     auto add_tab = [&](const std::string& model_name, const std::string& db_filename = {}) {
         TabInfo tab;
@@ -137,8 +134,8 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
 
         tab.session->set_wiki(&wiki);
 
-        // Set up session DB persistence via AppSession if available
-        if (app_session) {
+        // Set up session DB persistence via AppSession
+        {
             std::string agent_filename = db_filename.empty()
                 ? tab.title + ".db"
                 : db_filename;
@@ -153,7 +150,7 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
     };
 
     // Start tabs based on session state
-    if (app_session && !app_session->is_new_session()) {
+    if (!app_session->is_new_session()) {
         // Resume existing session: create a tab for each agent DB
         auto agent_dbs = app_session->agent_db_filenames();
         if (agent_dbs.empty()) {
@@ -175,13 +172,8 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
         }
     } else {
         // New session: start with one default tab (AppSession created agent DB already)
-        std::string agent_filename;
-        if (app_session) {
-            auto dbs = app_session->agent_db_filenames();
-            if (!dbs.empty()) {
-                agent_filename = dbs.front();
-            }
-        }
+        auto dbs = app_session->agent_db_filenames();
+        std::string agent_filename = dbs.empty() ? "" : dbs.front();
         add_tab(cfg.model, agent_filename);
     }
 
@@ -250,8 +242,8 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                     tab.ui_state.models_future.wait();
                 }
 
-                // Remove from AppSession manifest if applicable
-                if (app_session) {
+                // Remove from AppSession manifest
+                {
                     std::string agent_filename = tab.title + ".db";
                     app_session->remove_agent_db(agent_filename);
                 }
@@ -425,7 +417,7 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
     }
 
     // ── Save final AppSession manifest ──
-    if (app_session) {
+    {
         std::error_code ec;
         auto cwd = std::filesystem::current_path(ec);
         if (!ec) {

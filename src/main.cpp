@@ -8,7 +8,7 @@
 
 static void print_usage() {
     std::cout
-        << "Usage: cima [--model <name>] [--api-base <url>] [--force] [<session>]\n\n"
+        << "Usage: cima [--model <name>] [--api-base <url>] [--force] <session>\n\n"
         << "Arguments:\n"
         << "  <session>           Session name (resume or create a new one)\n"
         << "                      Stored in ~/.local/state/cima/<session>/\n\n"
@@ -37,7 +37,7 @@ int main(int argc, char* argv[]) {
     // Must be called once before any other libcurl function.
     curl_global_init(CURL_GLOBAL_ALL);
 
-    std::string session_name; // empty = no session (legacy mode)
+    std::string session_name;
     bool force = false;
 
     for (int i = 1; i < argc; i++) {
@@ -64,6 +64,12 @@ int main(int argc, char* argv[]) {
             print_usage();
             return 1;
         }
+    }
+
+    if (session_name.empty()) {
+        std::cerr << "Error: <session> argument is required.\n\n";
+        print_usage();
+        return 1;
     }
 
     int exit_code = 0;

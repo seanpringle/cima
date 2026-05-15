@@ -61,4 +61,4 @@ struct TabInfo {
     std::string workspace_path;
 };
 
-int gui_main(Config cfg, const std::string& session_name = {}, bool force = false);
+int gui_main(Config cfg, const std::string& session_name, bool force = false);
