@@ -39,9 +39,6 @@ json Config::to_json() const {
         prov_arr.push_back(std::move(pj));
     }
     j["providers"] = std::move(prov_arr);
-    j["search_api_key"] = search_api_key;
-    j["search_engine_id"] = search_engine_id;
-    j["search_endpoint"] = search_endpoint;
     j["read_only_paths"] = read_only_paths;
     j["max_tool_iterations"] = max_tool_iterations;
     j["snippets"] = snippets;
@@ -143,10 +140,6 @@ Config Config::load() {
         }
 
         // ── Other top-level fields ──
-        if (j.contains("search_api_key"))   cfg.search_api_key = j["search_api_key"].get<std::string>();
-        if (j.contains("search_engine_id")) cfg.search_engine_id = j["search_engine_id"].get<std::string>();
-        if (j.contains("search_endpoint"))  cfg.search_endpoint = j["search_endpoint"].get<std::string>();
-
         if (j.contains("max_tool_iterations") && j["max_tool_iterations"].is_number_integer()) {
             int n = j["max_tool_iterations"].get<int>();
             if (n > 0) cfg.max_tool_iterations = n;

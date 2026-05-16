@@ -134,10 +134,29 @@ bool is_valid_fetch_scheme(const std::string& url);
 extern std::chrono::steady_clock::time_point g_last_ddg_request;
 extern std::mutex g_ddg_mutex;
 inline constexpr std::chrono::milliseconds DDG_MIN_INTERVAL = std::chrono::milliseconds(1000);
+inline constexpr std::chrono::milliseconds DDG_JITTER_MAX = std::chrono::milliseconds(500);
 
 // ── web_fetch cache globals ──
 extern std::mutex g_fetch_cache_mutex;
 extern std::unordered_map<std::string, std::string> g_fetch_cache;
+
+// ── DDG HTML search interface ──
+
+/// HTTP POST with URL-encoded form data (used for DDG HTML search).
+Result<std::pair<std::string, long>> http_post_form(
+    const std::string& url,
+    const std::string& form_data,
+    int timeout_sec,
+    std::atomic<bool>* cancelled);
+
+/// Parse DuckDuckGo HTML search results and return a formatted numbered list
+/// of titles, snippets, and URLs.
+Result<std::string> ddg_html_parse(const std::string& html);
+
+/// Extract the real destination URL from a DDG redirect URL
+/// (//duckduckgo.com/l/?uddg=<url-encoded>&rut=...).
+/// Returns the decoded URL, or empty if parsing fails.
+std::string extract_uddg_url(const std::string& ddg_url);
 
 // ---------------------------------------------------------------------------
 // Tool factory declarations (used by ToolRegistry::add_defaults)
@@ -158,11 +177,7 @@ Tool make_edit_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
     FileModifiedCallback on_file_modified = nullptr);
 Tool make_run_bash_tool(
     std::shared_ptr<std::string> safe_dir_ptr, int timeout, CancellationToken cancelled = nullptr);
-Tool make_web_search_tool(const std::string& api_key,
-    const std::string& engine_id,
-    const std::string& endpoint_override,
-    int timeout,
-    CancellationToken cancelled = nullptr);
+Tool make_web_search_tool(int timeout, CancellationToken cancelled = nullptr);
 Tool make_web_fetch_tool(int timeout, CancellationToken cancelled = nullptr);
 Tool make_git_status_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout);
 Tool make_git_diff_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout);

@@ -48,8 +48,7 @@ void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
         add(std::move(t));
     }
     {
-        auto t = make_web_search_tool(config.search_api_key, config.search_engine_id,
-            config.search_endpoint, config.web_search_timeout, cancelled_);
+        auto t = make_web_search_tool(config.web_search_timeout, cancelled_);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }

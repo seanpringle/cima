@@ -34,9 +34,6 @@ TEST_CASE("Config to_json / round-trip", "[config]") {
     p.context_limit = 64000;
     cfg.providers.push_back(p);
 
-    cfg.search_api_key = "search-key";
-    cfg.search_engine_id = "engine-id";
-    cfg.search_endpoint = "https://custom.search";
     cfg.read_only_paths = {"/custom/path"};
     cfg.max_tool_iterations = 50;
 
@@ -61,9 +58,6 @@ TEST_CASE("Config to_json / round-trip", "[config]") {
         }
     }
 
-    if (j.contains("search_api_key"))   loaded.search_api_key = j["search_api_key"].get<std::string>();
-    if (j.contains("search_engine_id")) loaded.search_engine_id = j["search_engine_id"].get<std::string>();
-    if (j.contains("search_endpoint"))  loaded.search_endpoint = j["search_endpoint"].get<std::string>();
     if (j.contains("read_only_paths") && j["read_only_paths"].is_array()) {
         loaded.read_only_paths.clear();
         for (const auto& p : j["read_only_paths"])
@@ -79,9 +73,6 @@ TEST_CASE("Config to_json / round-trip", "[config]") {
     REQUIRE(loaded.providers[0].model == "gpt-4");
     REQUIRE(loaded.providers[0].reasoning_effort == "low");
     REQUIRE(loaded.providers[0].context_limit == 64000);
-    REQUIRE(loaded.search_api_key == "search-key");
-    REQUIRE(loaded.search_engine_id == "engine-id");
-    REQUIRE(loaded.search_endpoint == "https://custom.search");
     // read_only_paths was replaced; load() will add defaults back, but our
     // manual overlay didn't — just check the JSON value was read
     REQUIRE(loaded.read_only_paths.size() == 1);

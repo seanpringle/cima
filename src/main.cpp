@@ -2,6 +2,8 @@
 #include "gui_app.h"
 
 #include <curl/curl.h>
+#include <cstdlib>
+#include <ctime>
 #include <iostream>
 #include <string>
 
@@ -23,6 +25,9 @@ static void print_usage() {
 int main(int argc, char* argv[]) {
     // Must be called once before any other libcurl function.
     curl_global_init(CURL_GLOBAL_ALL);
+
+    // Seed RNG for DDG rate-limit jitter
+    std::srand(static_cast<unsigned>(std::time(nullptr)));
 
     std::string session_name;
     bool force = false;
