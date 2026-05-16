@@ -64,10 +64,13 @@ TEST_CASE("Conversation with tool calls", "[conversation]") {
     tc.name = "list_files";
     tc.arguments = R"({"path": "/tmp"})";
 
-    conv.add_assistant("", "Need to list /tmp contents.", {tc});
+    auto mid = conv.add_assistant("", "Need to list /tmp contents.", {tc});
+    // Every tool_call must have a corresponding tool result (even if empty).
+    conv.add_tool(mid, "call_abc123", "");
 
     json msgs = conv.build_openai_payload("You are helpful.");
-    REQUIRE(msgs.size() == 3);
+    // system + user + assistant + tool(empty result)
+    REQUIRE(msgs.size() == 4);
 
     CHECK(msgs[2]["role"] == "assistant");
     CHECK(msgs[2]["content"] == nullptr);
@@ -103,6 +106,60 @@ TEST_CASE("Conversation with tool result", "[conversation]") {
     CHECK(msgs[3]["role"] == "tool");
     CHECK(msgs[3]["tool_call_id"] == "call_req1");
     CHECK(msgs[3]["content"] == "file1.txt\nfile2.txt");
+}
+
+TEST_CASE("Conversation empty tool result is still emitted", "[conversation]") {
+    Conversation conv;
+
+    conv.add_user("Run a silent command");
+
+    ToolCall tc;
+    tc.id = "call_empty";
+    tc.name = "run_bash";
+    tc.arguments = R"({"command": "true"})";
+    auto mid = conv.add_assistant("", "", {tc});
+    conv.add_tool(mid, "call_empty", "");  // empty result
+
+    json msgs = conv.build_openai_payload("test");
+    // system + user + assistant + tool
+    REQUIRE(msgs.size() == 4);
+
+    CHECK(msgs[3]["role"] == "tool");
+    CHECK(msgs[3]["tool_call_id"] == "call_empty");
+    // Empty string, not missing — the API requires a tool message for every
+    // tool_call_id, even when the result is empty.
+    CHECK(msgs[3]["content"] == "");
+}
+
+TEST_CASE("Conversation mixed empty and non-empty tool results", "[conversation]") {
+    Conversation conv;
+
+    conv.add_user("Do two things");
+
+    ToolCall tc1;
+    tc1.id = "empty_call";
+    tc1.name = "run_bash";
+    tc1.arguments = R"({"command": "true"})";
+    ToolCall tc2;
+    tc2.id = "full_call";
+    tc2.name = "read_file";
+    tc2.arguments = R"({"path": "foo.txt"})";
+
+    auto mid = conv.add_assistant("", "", {tc1, tc2});
+    conv.add_tool(mid, "empty_call", "");        // empty result
+    conv.add_tool(mid, "full_call", "contents");  // non-empty result
+
+    json msgs = conv.build_openai_payload("test");
+    // system + user + assistant + tool(empty) + tool(full)
+    REQUIRE(msgs.size() == 5);
+
+    CHECK(msgs[3]["role"] == "tool");
+    CHECK(msgs[3]["tool_call_id"] == "empty_call");
+    CHECK(msgs[3]["content"] == "");
+
+    CHECK(msgs[4]["role"] == "tool");
+    CHECK(msgs[4]["tool_call_id"] == "full_call");
+    CHECK(msgs[4]["content"] == "contents");
 }
 
 TEST_CASE("Conversation empty content for tool_call message is null", "[conversation]") {
@@ -190,10 +247,14 @@ TEST_CASE("Conversation multiple tool calls in one message", "[conversation]") {
         calls.push_back(tc2);
     }
 
-    conv.add_assistant("", "Need to do both.", calls);
+    auto mid = conv.add_assistant("", "Need to do both.", calls);
+    // Every tool_call must have a corresponding tool result (even if empty).
+    conv.add_tool(mid, "call_1", "");
+    conv.add_tool(mid, "call_2", "");
 
     json msgs = conv.build_openai_payload("test");
-    REQUIRE(msgs.size() == 3);
+    // system + user + assistant + tool(empty) + tool(empty)
+    REQUIRE(msgs.size() == 5);
 
     auto tcs = msgs[2]["tool_calls"];
     REQUIRE(tcs.is_array());

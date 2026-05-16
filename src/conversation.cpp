@@ -109,9 +109,8 @@ json Conversation::build_openai_payload(const std::string& system_prompt) const 
             j["tool_calls"] = std::move(tc_arr);
             arr.push_back(std::move(j));
 
-            // Emit tool result messages for entries with non-empty results
+            // Emit tool result messages for every tool_call (even empty results).
             for (const auto& tc : msg.tool_calls) {
-                if (tc.result.empty()) continue;
                 json tr;
                 tr["role"] = "tool";
                 tr["tool_call_id"] = tc.id;
