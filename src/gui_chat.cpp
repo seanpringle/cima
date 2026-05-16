@@ -715,6 +715,45 @@ void render_config_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
     }
     PopFont();
 
+    // ── LSP status ──
+    {
+        Separator();
+        Text("LSP / clangd:");
+        SameLine();
+
+        auto* lsp = session.lsp_client();
+        if (!cfg.lsp_enabled) {
+            PushStyleColor(ImGuiCol_Text, IM_COL32(128, 128, 128, 255));
+            TextUnformatted("disabled (set \"lsp_enabled\": true in cima.json)");
+            PopStyleColor();
+        } else if (!lsp) {
+            PushStyleColor(ImGuiCol_Text, IM_COL32(255, 100, 100, 255));
+            TextUnformatted("failed to start");
+            PopStyleColor();
+        } else if (lsp->is_running()) {
+            PushStyleColor(ImGuiCol_Text, IM_COL32(100, 255, 100, 255));
+            TextUnformatted("\xE2\x97\x89 running"); // ◉
+            PopStyleColor();
+            if (IsItemHovered()) {
+                BeginTooltip();
+                Text("clangd path: %s",
+                    cfg.clangd_path.empty() ? "clangd (from PATH)" : cfg.clangd_path.c_str());
+                Text("project root: %s", session.safe_dir().c_str());
+                Text("timeout: %ds", cfg.lsp_timeout);
+                EndTooltip();
+            }
+        } else {
+            PushStyleColor(ImGuiCol_Text, IM_COL32(255, 200, 0, 255));
+            TextUnformatted("\xE2\x97\x8B crashed"); // ○
+            PopStyleColor();
+            if (IsItemHovered()) {
+                BeginTooltip();
+                TextUnformatted("clangd exited unexpectedly.\nIt will restart automatically on the next LSP query.");
+                EndTooltip();
+            }
+        }
+    }
+
     Separator();
 
     // ── Raw checkbox ──
