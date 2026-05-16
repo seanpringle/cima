@@ -41,6 +41,17 @@ ChatSession::ChatSession(const Config& config, const Provider& provider,
     tools_.add(make_write_note_tool(notes_));
     tools_.add(make_delete_note_tool(notes_));
 
+    // LSP tools — always registered; they check *lsp_ptr (lsp_client_) at call time.
+    tools_.add(make_get_lsp_diagnostics_tool(&lsp_client_));
+    tools_.add(make_get_lsp_hover_tool(&lsp_client_));
+    tools_.add(make_get_lsp_definition_tool(&lsp_client_));
+    tools_.add(make_get_lsp_completion_tool(&lsp_client_));
+    tools_.add(make_get_lsp_code_actions_tool(&lsp_client_));
+    tools_.add(make_get_lsp_rename_tool(&lsp_client_));
+    tools_.add(make_get_lsp_format_tool(&lsp_client_));
+    tools_.add(make_get_lsp_references_tool(&lsp_client_));
+    tools_.add(make_get_lsp_document_symbols_tool(&lsp_client_));
+
 }
 
 void ChatSession::set_provider(const Provider& provider) {
@@ -85,15 +96,6 @@ void ChatSession::set_lsp_client(LspClient* lsp) {
             }
         };
 
-        tools_.add(make_get_lsp_diagnostics_tool(*lsp_client_));
-        tools_.add(make_get_lsp_hover_tool(*lsp_client_));
-        tools_.add(make_get_lsp_definition_tool(*lsp_client_));
-        tools_.add(make_get_lsp_completion_tool(*lsp_client_));
-        tools_.add(make_get_lsp_code_actions_tool(*lsp_client_));
-        tools_.add(make_get_lsp_rename_tool(*lsp_client_));
-        tools_.add(make_get_lsp_format_tool(*lsp_client_));
-        tools_.add(make_get_lsp_references_tool(*lsp_client_));
-        tools_.add(make_get_lsp_document_symbols_tool(*lsp_client_));
     }
 }
 

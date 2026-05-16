@@ -81,7 +81,7 @@ struct Config {
         "\n"
         "## LSP tools\n"
         "\n"
-        "Access the language server with `get_lsp_diagnostics`, `get_lsp_hover`,"
+        "Access the language server (clangd) with `get_lsp_diagnostics`, `get_lsp_hover`,"
         " `get_lsp_definition`, `get_lsp_completion`, `get_lsp_code_actions`,"
         " `get_lsp_references`, `get_lsp_document_symbols`, `get_lsp_rename`, and"
         " `get_lsp_format` tools.\n"

@@ -16,7 +16,7 @@
 // get_lsp_diagnostics
 // ===================================================================
 
-Tool make_get_lsp_diagnostics_tool(LspClient& lsp) {
+Tool make_get_lsp_diagnostics_tool(LspClient** lsp_ptr) {
     Tool t;
     t.name = "get_lsp_diagnostics";
     t.description =
@@ -24,7 +24,7 @@ Tool make_get_lsp_diagnostics_tool(LspClient& lsp) {
         "(clangd) language server.\n"
         "The file must already exist on disk. Returns diagnostics "
         "with severity, message, file, line, and column.\n"
-        "Start clangd from the Config tab (LSP / clangd: Start LSP button) to use this tool.";
+        "LSP must be started from the application UI to use this tool.";
     t.permission = ToolPermission::ReadOnly;
     t.timeout_sec = 15;
     t.parameters = {{"type", "object"},
@@ -33,11 +33,10 @@ Tool make_get_lsp_diagnostics_tool(LspClient& lsp) {
                 {{"type", "string"},
                     {"description", "Path to the source file to check"}}}}},
         {"required", {"path"}}};
-    t.execute = [&lsp](const json& args) -> Result<std::string> {
-        if (!lsp.is_running()) {
-            return std::unexpected(
-                std::string("LSP server is not running. "
-                            "Click Start LSP in the Config tab to enable this tool."));
+    t.execute = [lsp_ptr](const json& args) -> Result<std::string> {
+        auto* lsp = *lsp_ptr;
+        if (!lsp || !lsp || !lsp->is_running()) {
+            return std::unexpected("LSP server is not running.");
         }
 
         auto raw_path = args.value("path", std::string());
@@ -65,7 +64,7 @@ Tool make_get_lsp_diagnostics_tool(LspClient& lsp) {
 
         // Sync the file with the LSP server
         auto lang = LspClient::language_id_from_extension(raw_path);
-        auto sync = lsp.ensure_file_synced(uri, lang, content);
+        auto sync = lsp->ensure_file_synced(uri, lang, content);
         if (!sync) {
             return std::unexpected(
                 std::string("Failed to sync file with LSP server: ") +
@@ -73,7 +72,7 @@ Tool make_get_lsp_diagnostics_tool(LspClient& lsp) {
         }
 
         // Request diagnostics (LSP 3.17 pull diagnostics)
-        auto resp = lsp.request("textDocument/diagnostic",
+        auto resp = lsp->request("textDocument/diagnostic",
             {{"textDocument", {{"uri", uri}}}},
             15);
 
@@ -266,7 +265,7 @@ static void format_location(std::string& output, const json& loc) {
 // get_lsp_hover
 // ===================================================================
 
-Tool make_get_lsp_hover_tool(LspClient& lsp) {
+Tool make_get_lsp_hover_tool(LspClient** lsp_ptr) {
     Tool t;
     t.name = "get_lsp_hover";
     t.description =
@@ -288,8 +287,9 @@ Tool make_get_lsp_hover_tool(LspClient& lsp) {
                 {{"type", "integer"},
                     {"description", "0-based column offset (in UTF-16 code units)"}}}}},
         {"required", {"path", "line", "character"}}};
-    t.execute = [&lsp](const json& args) -> Result<std::string> {
-        if (!lsp.is_running()) {
+    t.execute = [lsp_ptr](const json& args) -> Result<std::string> {
+        auto* lsp = *lsp_ptr;
+        if (!lsp || !lsp->is_running()) {
             return std::unexpected(
                 std::string("LSP server is not running. "
                             "Click Start LSP in the Config tab to enable this tool."));
@@ -322,14 +322,14 @@ Tool make_get_lsp_hover_tool(LspClient& lsp) {
         file.read(content.data(), size);
 
         auto lang = LspClient::language_id_from_extension(raw_path);
-        auto sync = lsp.ensure_file_synced(uri, lang, content);
+        auto sync = lsp->ensure_file_synced(uri, lang, content);
         if (!sync) {
             return std::unexpected(
                 "Failed to sync file with LSP server: " + sync.error());
         }
 
         // Request hover
-        auto resp = lsp.request("textDocument/hover", {
+        auto resp = lsp->request("textDocument/hover", {
             {"textDocument", {{"uri", uri}}},
             {"position", {{"line", line}, {"character", character}}}
         }, 10);
@@ -386,7 +386,7 @@ Tool make_get_lsp_hover_tool(LspClient& lsp) {
 // get_lsp_definition
 // ===================================================================
 
-Tool make_get_lsp_definition_tool(LspClient& lsp) {
+Tool make_get_lsp_definition_tool(LspClient** lsp_ptr) {
     Tool t;
     t.name = "get_lsp_definition";
     t.description =
@@ -408,8 +408,9 @@ Tool make_get_lsp_definition_tool(LspClient& lsp) {
                 {{"type", "integer"},
                     {"description", "0-based column offset (in UTF-16 code units)"}}}}},
         {"required", {"path", "line", "character"}}};
-    t.execute = [&lsp](const json& args) -> Result<std::string> {
-        if (!lsp.is_running()) {
+    t.execute = [lsp_ptr](const json& args) -> Result<std::string> {
+        auto* lsp = *lsp_ptr;
+        if (!lsp || !lsp->is_running()) {
             return std::unexpected(
                 std::string("LSP server is not running. "
                             "Click Start LSP in the Config tab to enable this tool."));
@@ -442,14 +443,14 @@ Tool make_get_lsp_definition_tool(LspClient& lsp) {
         file.read(content.data(), size);
 
         auto lang = LspClient::language_id_from_extension(raw_path);
-        auto sync = lsp.ensure_file_synced(uri, lang, content);
+        auto sync = lsp->ensure_file_synced(uri, lang, content);
         if (!sync) {
             return std::unexpected(
                 "Failed to sync file with LSP server: " + sync.error());
         }
 
         // Request definition
-        auto resp = lsp.request("textDocument/definition", {
+        auto resp = lsp->request("textDocument/definition", {
             {"textDocument", {{"uri", uri}}},
             {"position", {{"line", line}, {"character", character}}}
         }, 10);
@@ -545,7 +546,7 @@ static std::string completion_kind_name(int kind) {
 // get_lsp_completion
 // ===================================================================
 
-Tool make_get_lsp_completion_tool(LspClient& lsp) {
+Tool make_get_lsp_completion_tool(LspClient** lsp_ptr) {
     Tool t;
     t.name = "get_lsp_completion";
     t.description =
@@ -570,8 +571,9 @@ Tool make_get_lsp_completion_tool(LspClient& lsp) {
                 {{"type", "integer"},
                     {"description", "Maximum number of items to return (default 20)"}}}}},
         {"required", {"path", "line", "character"}}};
-    t.execute = [&lsp](const json& args) -> Result<std::string> {
-        if (!lsp.is_running()) {
+    t.execute = [lsp_ptr](const json& args) -> Result<std::string> {
+        auto* lsp = *lsp_ptr;
+        if (!lsp || !lsp->is_running()) {
             return std::unexpected(
                 std::string("LSP server is not running. "
                             "Click Start LSP in the Config tab to enable this tool."));
@@ -604,14 +606,14 @@ Tool make_get_lsp_completion_tool(LspClient& lsp) {
         file.read(content.data(), size);
 
         auto lang = LspClient::language_id_from_extension(raw_path);
-        auto sync = lsp.ensure_file_synced(uri, lang, content);
+        auto sync = lsp->ensure_file_synced(uri, lang, content);
         if (!sync) {
             return std::unexpected(
                 "Failed to sync file with LSP server: " + sync.error());
         }
 
         // Request completion
-        auto resp = lsp.request("textDocument/completion", {
+        auto resp = lsp->request("textDocument/completion", {
             {"textDocument", {{"uri", uri}}},
             {"position", {{"line", line}, {"character", character}}}
         }, 10);
@@ -716,7 +718,7 @@ Tool make_get_lsp_completion_tool(LspClient& lsp) {
 // get_lsp_code_actions
 // ===================================================================
 
-Tool make_get_lsp_code_actions_tool(LspClient& lsp) {
+Tool make_get_lsp_code_actions_tool(LspClient** lsp_ptr) {
     Tool t;
     t.name = "get_lsp_code_actions";
     t.description =
@@ -741,8 +743,9 @@ Tool make_get_lsp_code_actions_tool(LspClient& lsp) {
                 {{"type", "integer"},
                     {"description", "If set, scope actions to the diagnostic at this index (0-based)"}}}}},
         {"required", {"path", "line", "character"}}};
-    t.execute = [&lsp](const json& args) -> Result<std::string> {
-        if (!lsp.is_running()) {
+    t.execute = [lsp_ptr](const json& args) -> Result<std::string> {
+        auto* lsp = *lsp_ptr;
+        if (!lsp || !lsp->is_running()) {
             return std::unexpected(
                 std::string("LSP server is not running. "
                             "Click Start LSP in the Config tab to enable this tool."));
@@ -773,14 +776,14 @@ Tool make_get_lsp_code_actions_tool(LspClient& lsp) {
         file.read(content.data(), size);
 
         auto lang = LspClient::language_id_from_extension(raw_path);
-        auto sync = lsp.ensure_file_synced(uri, lang, content);
+        auto sync = lsp->ensure_file_synced(uri, lang, content);
         if (!sync) {
             return std::unexpected(
                 "Failed to sync file with LSP server: " + sync.error());
         }
 
         // First, get diagnostics to provide context for code actions
-        auto diag_resp = lsp.request("textDocument/pullDiagnostics", {
+        auto diag_resp = lsp->request("textDocument/pullDiagnostics", {
             {"textDocument", {{"uri", uri}}}
         }, 10);
 
@@ -810,7 +813,7 @@ Tool make_get_lsp_code_actions_tool(LspClient& lsp) {
         }
 
         // Request code actions
-        auto resp = lsp.request("textDocument/codeAction", {
+        auto resp = lsp->request("textDocument/codeAction", {
             {"textDocument", {{"uri", uri}}},
             {"range", {
                 {"start", {{"line", line}, {"character", character}}},
@@ -1024,7 +1027,7 @@ static Result<std::map<std::string, int>> apply_workspace_edit(
 // get_lsp_rename
 // ===================================================================
 
-Tool make_get_lsp_rename_tool(LspClient& lsp) {
+Tool make_get_lsp_rename_tool(LspClient** lsp_ptr) {
     Tool t;
     t.name = "get_lsp_rename";
     t.description =
@@ -1051,8 +1054,9 @@ Tool make_get_lsp_rename_tool(LspClient& lsp) {
                     {"description", "The new name for the symbol"}}}}},
         {"required", {"path", "line", "character", "new_name"}}};
     int timeout = t.timeout_sec;
-    t.execute = [&lsp, timeout](const json& args) -> Result<std::string> {
-        if (!lsp.is_running()) {
+    t.execute = [lsp_ptr, timeout](const json& args) -> Result<std::string> {
+        auto* lsp = *lsp_ptr;
+        if (!lsp || !lsp->is_running()) {
             return std::unexpected(
                 std::string("LSP server is not running. "
                             "Click Start LSP in the Config tab to enable this tool."));
@@ -1089,14 +1093,14 @@ Tool make_get_lsp_rename_tool(LspClient& lsp) {
         file.read(content.data(), size);
 
         auto lang = LspClient::language_id_from_extension(raw_path);
-        auto sync = lsp.ensure_file_synced(uri, lang, content);
+        auto sync = lsp->ensure_file_synced(uri, lang, content);
         if (!sync) {
             return std::unexpected(
                 "Failed to sync file with LSP server: " + sync.error());
         }
 
         // First, check if the symbol is renameable via prepareRename
-        auto prepare = lsp.request("textDocument/prepareRename", {
+        auto prepare = lsp->request("textDocument/prepareRename", {
             {"textDocument", {{"uri", uri}}},
             {"position", {{"line", line}, {"character", character}}}
         }, timeout);
@@ -1130,7 +1134,7 @@ Tool make_get_lsp_rename_tool(LspClient& lsp) {
         }
 
         // Symbol is renameable — execute the rename
-        auto resp = lsp.request("textDocument/rename", {
+        auto resp = lsp->request("textDocument/rename", {
             {"textDocument", {{"uri", uri}}},
             {"position", {{"line", line}, {"character", character}}},
             {"newName", new_name}
@@ -1156,7 +1160,7 @@ Tool make_get_lsp_rename_tool(LspClient& lsp) {
         auto& workspace_edit = response["result"];
 
         // Apply the workspace edit to disk
-        auto apply_result = apply_workspace_edit(lsp, workspace_edit);
+        auto apply_result = apply_workspace_edit(*lsp, workspace_edit);
         if (!apply_result) {
             return std::unexpected(
                 std::string("Failed to apply rename edits: ") +
@@ -1191,7 +1195,7 @@ Tool make_get_lsp_rename_tool(LspClient& lsp) {
 // get_lsp_format
 // ===================================================================
 
-Tool make_get_lsp_format_tool(LspClient& lsp) {
+Tool make_get_lsp_format_tool(LspClient** lsp_ptr) {
     Tool t;
     t.name = "get_lsp_format";
     t.description =
@@ -1217,8 +1221,9 @@ Tool make_get_lsp_format_tool(LspClient& lsp) {
                     {"description",
                         "Optional: 0-based end line for range formatting (exclusive)"}}}}},
         {"required", {"path"}}};
-    t.execute = [&lsp, timeout](const json& args) -> Result<std::string> {
-        if (!lsp.is_running()) {
+    t.execute = [lsp_ptr, timeout](const json& args) -> Result<std::string> {
+        auto* lsp = *lsp_ptr;
+        if (!lsp || !lsp->is_running()) {
             return std::unexpected(
                 std::string("LSP server is not running. "
                             "Click Start LSP in the Config tab to enable this tool."));
@@ -1260,7 +1265,7 @@ Tool make_get_lsp_format_tool(LspClient& lsp) {
         file.read(content.data(), size);
 
         auto lang = LspClient::language_id_from_extension(raw_path);
-        auto sync = lsp.ensure_file_synced(uri, lang, content);
+        auto sync = lsp->ensure_file_synced(uri, lang, content);
         if (!sync) {
             return std::unexpected(
                 "Failed to sync file with LSP server: " + sync.error());
@@ -1293,7 +1298,7 @@ Tool make_get_lsp_format_tool(LspClient& lsp) {
             };
         }
 
-        auto resp = lsp.request(method, params, timeout);
+        auto resp = lsp->request(method, params, timeout);
         if (!resp) {
             // Check if the error is MethodNotFound (older clangd without clang-format)
             if (resp.error().find("MethodNotFound") != std::string::npos) {
@@ -1328,7 +1333,7 @@ Tool make_get_lsp_format_tool(LspClient& lsp) {
         }
 
         // Apply edits to the file
-        auto apply = apply_text_edits_to_file(lsp, uri, edits);
+        auto apply = apply_text_edits_to_file(*lsp, uri, edits);
         if (!apply) {
             return std::unexpected(
                 "Failed to apply formatting edits: " + apply.error());
@@ -1423,7 +1428,7 @@ static void format_document_symbol(const json& symbol, std::string& output,
 // get_lsp_references
 // ===================================================================
 
-Tool make_get_lsp_references_tool(LspClient& lsp) {
+Tool make_get_lsp_references_tool(LspClient** lsp_ptr) {
     Tool t;
     t.name = "get_lsp_references";
     t.description =
@@ -1452,8 +1457,9 @@ Tool make_get_lsp_references_tool(LspClient& lsp) {
                     {"description", "Maximum number of references to return (default 200)"}}}}},
         {"required", {"path", "line", "character"}}};
     int timeout = t.timeout_sec;
-    t.execute = [&lsp, timeout](const json& args) -> Result<std::string> {
-        if (!lsp.is_running()) {
+    t.execute = [lsp_ptr, timeout](const json& args) -> Result<std::string> {
+        auto* lsp = *lsp_ptr;
+        if (!lsp || !lsp->is_running()) {
             return std::unexpected(
                 std::string("LSP server is not running. "
                             "Click Start LSP in the Config tab to enable this tool."));
@@ -1489,14 +1495,14 @@ Tool make_get_lsp_references_tool(LspClient& lsp) {
         file.read(content.data(), size);
 
         auto lang = LspClient::language_id_from_extension(raw_path);
-        auto sync = lsp.ensure_file_synced(uri, lang, content);
+        auto sync = lsp->ensure_file_synced(uri, lang, content);
         if (!sync) {
             return std::unexpected(
                 "Failed to sync file with LSP server: " + sync.error());
         }
 
         // Request references
-        auto resp = lsp.request("textDocument/references", {
+        auto resp = lsp->request("textDocument/references", {
             {"textDocument", {{"uri", uri}}},
             {"position", {{"line", line}, {"character", character}}},
             {"context", {{"includeDeclaration", include_declaration}}}
@@ -1581,7 +1587,7 @@ Tool make_get_lsp_references_tool(LspClient& lsp) {
 // get_lsp_document_symbols
 // ===================================================================
 
-Tool make_get_lsp_document_symbols_tool(LspClient& lsp) {
+Tool make_get_lsp_document_symbols_tool(LspClient** lsp_ptr) {
     Tool t;
     t.name = "get_lsp_document_symbols";
     t.description =
@@ -1602,8 +1608,9 @@ Tool make_get_lsp_document_symbols_tool(LspClient& lsp) {
                     {"description", "Maximum nesting depth for the symbol tree (default 5)"}}}}},
         {"required", {"path"}}};
     int timeout = t.timeout_sec;
-    t.execute = [&lsp, timeout](const json& args) -> Result<std::string> {
-        if (!lsp.is_running()) {
+    t.execute = [lsp_ptr, timeout](const json& args) -> Result<std::string> {
+        auto* lsp = *lsp_ptr;
+        if (!lsp || !lsp->is_running()) {
             return std::unexpected(
                 std::string("LSP server is not running. "
                             "Click Start LSP in the Config tab to enable this tool."));
@@ -1631,14 +1638,14 @@ Tool make_get_lsp_document_symbols_tool(LspClient& lsp) {
         file.read(content.data(), size);
 
         auto lang = LspClient::language_id_from_extension(raw_path);
-        auto sync = lsp.ensure_file_synced(uri, lang, content);
+        auto sync = lsp->ensure_file_synced(uri, lang, content);
         if (!sync) {
             return std::unexpected(
                 "Failed to sync file with LSP server: " + sync.error());
         }
 
         // Request document symbols
-        auto resp = lsp.request("textDocument/documentSymbol", {
+        auto resp = lsp->request("textDocument/documentSymbol", {
             {"textDocument", {{"uri", uri}}}
         }, timeout);
 

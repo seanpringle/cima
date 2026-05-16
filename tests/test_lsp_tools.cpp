@@ -21,11 +21,14 @@ static std::string make_temp_dir() {
     return result;
 }
 
-// Helper: create a ToolRegistry with get_lsp_diagnostics registered,
+// Helper: create a ToolRegistry with LSP tools registered,
 // wired to a real LspClient connected to a MockLspServer.
+// The tool lambdas capture a pointer-to-pointer to the LspClient
+// so they see the current value at call time.
 struct LspToolFixture {
     MockLspServer mock;
     LspClient client;
+    LspClient* client_ptr = &client; // pointer-to-pointer target
     ToolRegistry reg;
     std::string dir;
 
@@ -38,10 +41,18 @@ struct LspToolFixture {
             return false;
         if (!client.connect(mock.child_stdout(), mock.child_stdin()))
             return false;
-        
-        // Set a safe_dir (needed by resolve_path in other tools)
-        // For LSP tools, we just use a dummy
-        reg.add(make_get_lsp_diagnostics_tool(client));
+
+        // Register LSP tools with a pointer to client_ptr.
+        // Each tool captures &client_ptr so it dereferences to get the current LspClient.
+        reg.add(make_get_lsp_diagnostics_tool(&client_ptr));
+        reg.add(make_get_lsp_hover_tool(&client_ptr));
+        reg.add(make_get_lsp_definition_tool(&client_ptr));
+        reg.add(make_get_lsp_completion_tool(&client_ptr));
+        reg.add(make_get_lsp_code_actions_tool(&client_ptr));
+        reg.add(make_get_lsp_rename_tool(&client_ptr));
+        reg.add(make_get_lsp_format_tool(&client_ptr));
+        reg.add(make_get_lsp_references_tool(&client_ptr));
+        reg.add(make_get_lsp_document_symbols_tool(&client_ptr));
         return true;
     }
 
@@ -244,7 +255,8 @@ TEST_CASE("get_lsp_diagnostics LSP server not running", "[lsp][tool]") {
     ToolRegistry reg;
     // Create a client but don't connect it
     LspClient client;
-    reg.add(make_get_lsp_diagnostics_tool(client));
+    LspClient* client_ptr = &client;
+    reg.add(make_get_lsp_diagnostics_tool(&client_ptr));
     
     auto result = reg.execute("get_lsp_diagnostics",
         R"({"path": "/tmp/test.cc"})");
@@ -271,7 +283,7 @@ TEST_CASE("get_lsp_hover formats type + docs", "[lsp][tool]") {
     std::ofstream(path) << "int main() { foo(\"hi\"); }\n";
 
     // Register the hover tool
-    fix.reg.add(make_get_lsp_hover_tool(fix.client));
+    fix.reg.add(make_get_lsp_hover_tool(&fix.client_ptr));
 
     auto result = fix.reg.execute("get_lsp_hover",
         json({{"path", path}, {"line", 0}, {"character", 12}}).dump());
@@ -289,7 +301,7 @@ TEST_CASE("get_lsp_hover no info", "[lsp][tool]") {
     auto path = fix.dir + "/test.cc";
     std::ofstream(path) << "int main() { return 0; }\n";
 
-    fix.reg.add(make_get_lsp_hover_tool(fix.client));
+    fix.reg.add(make_get_lsp_hover_tool(&fix.client_ptr));
 
     auto result = fix.reg.execute("get_lsp_hover",
         json({{"path", path}, {"line", 0}, {"character", 0}}).dump());
@@ -308,7 +320,7 @@ TEST_CASE("get_lsp_hover with plain string contents", "[lsp][tool]") {
     auto path = fix.dir + "/test.cc";
     std::ofstream(path) << "int x = 42;\n";
 
-    fix.reg.add(make_get_lsp_hover_tool(fix.client));
+    fix.reg.add(make_get_lsp_hover_tool(&fix.client_ptr));
 
     auto result = fix.reg.execute("get_lsp_hover",
         json({{"path", path}, {"line", 0}, {"character", 4}}).dump());
@@ -320,7 +332,7 @@ TEST_CASE("get_lsp_hover validates negative line", "[lsp][tool]") {
     LspToolFixture fix;
     REQUIRE(fix.setup());
 
-    fix.reg.add(make_get_lsp_hover_tool(fix.client));
+    fix.reg.add(make_get_lsp_hover_tool(&fix.client_ptr));
 
     auto result = fix.reg.execute("get_lsp_hover",
         R"({"path": "/tmp/test.cc", "line": -1, "character": 0})");
@@ -332,7 +344,7 @@ TEST_CASE("get_lsp_hover validates negative character", "[lsp][tool]") {
     LspToolFixture fix;
     REQUIRE(fix.setup());
 
-    fix.reg.add(make_get_lsp_hover_tool(fix.client));
+    fix.reg.add(make_get_lsp_hover_tool(&fix.client_ptr));
 
     auto result = fix.reg.execute("get_lsp_hover",
         R"({"path": "/tmp/test.cc", "line": 0, "character": -1})");
@@ -344,7 +356,7 @@ TEST_CASE("get_lsp_hover missing file", "[lsp][tool]") {
     LspToolFixture fix;
     REQUIRE(fix.setup());
 
-    fix.reg.add(make_get_lsp_hover_tool(fix.client));
+    fix.reg.add(make_get_lsp_hover_tool(&fix.client_ptr));
 
     auto result = fix.reg.execute("get_lsp_hover",
         R"({"path": "/nonexistent.cc", "line": 0, "character": 0})");
@@ -369,7 +381,7 @@ TEST_CASE("get_lsp_definition single location", "[lsp][tool]") {
     auto path = fix.dir + "/test.cc";
     std::ofstream(path) << "int main() { foo(); }\n";
 
-    fix.reg.add(make_get_lsp_definition_tool(fix.client));
+    fix.reg.add(make_get_lsp_definition_tool(&fix.client_ptr));
 
     auto result = fix.reg.execute("get_lsp_definition",
         json({{"path", path}, {"line", 0}, {"character", 12}}).dump());
@@ -402,7 +414,7 @@ TEST_CASE("get_lsp_definition multiple locations", "[lsp][tool]") {
     auto path = fix.dir + "/test.cc";
     std::ofstream(path) << "int main() { foo(); }\n";
 
-    fix.reg.add(make_get_lsp_definition_tool(fix.client));
+    fix.reg.add(make_get_lsp_definition_tool(&fix.client_ptr));
 
     auto result = fix.reg.execute("get_lsp_definition",
         json({{"path", path}, {"line", 0}, {"character", 12}}).dump());
@@ -420,7 +432,7 @@ TEST_CASE("get_lsp_definition no result", "[lsp][tool]") {
     auto path = fix.dir + "/test.cc";
     std::ofstream(path) << "int main() { return 0; }\n";
 
-    fix.reg.add(make_get_lsp_definition_tool(fix.client));
+    fix.reg.add(make_get_lsp_definition_tool(&fix.client_ptr));
 
     auto result = fix.reg.execute("get_lsp_definition",
         json({{"path", path}, {"line", 0}, {"character", 0}}).dump());
@@ -431,7 +443,8 @@ TEST_CASE("get_lsp_definition no result", "[lsp][tool]") {
 TEST_CASE("get_lsp_definition LSP server not running", "[lsp][tool]") {
     ToolRegistry reg;
     LspClient client;
-    reg.add(make_get_lsp_definition_tool(client));
+    LspClient* client_ptr = &client;
+    reg.add(make_get_lsp_definition_tool(&client_ptr));
 
     auto result = reg.execute("get_lsp_definition",
         R"({"path": "/tmp/test.cc", "line": 0, "character": 0})");
@@ -471,7 +484,7 @@ TEST_CASE("get_lsp_completion formats list", "[lsp][tool]") {
     auto path = fix.dir + "/test.cc";
     std::ofstream(path) << "int main() { pri}\n";
 
-    fix.reg.add(make_get_lsp_completion_tool(fix.client));
+    fix.reg.add(make_get_lsp_completion_tool(&fix.client_ptr));
 
     auto result = fix.reg.execute("get_lsp_completion",
         json({{"path", path}, {"line", 0}, {"character", 14}}).dump());
@@ -501,7 +514,7 @@ TEST_CASE("get_lsp_completion respects max_items", "[lsp][tool]") {
     auto path = fix.dir + "/test.cc";
     std::ofstream(path) << "int x;\n";
 
-    fix.reg.add(make_get_lsp_completion_tool(fix.client));
+    fix.reg.add(make_get_lsp_completion_tool(&fix.client_ptr));
 
     auto result = fix.reg.execute("get_lsp_completion",
         json({{"path", path}, {"line", 0}, {"character", 5}, {"max_items", 5}}).dump());
@@ -526,7 +539,7 @@ TEST_CASE("get_lsp_completion empty", "[lsp][tool]") {
     auto path = fix.dir + "/test.cc";
     std::ofstream(path) << "int main() {}\n";
 
-    fix.reg.add(make_get_lsp_completion_tool(fix.client));
+    fix.reg.add(make_get_lsp_completion_tool(&fix.client_ptr));
 
     auto result = fix.reg.execute("get_lsp_completion",
         json({{"path", path}, {"line", 0}, {"character", 5}}).dump());
@@ -542,7 +555,7 @@ TEST_CASE("get_lsp_completion null result", "[lsp][tool]") {
     auto path = fix.dir + "/test.cc";
     std::ofstream(path) << "int x;\n";
 
-    fix.reg.add(make_get_lsp_completion_tool(fix.client));
+    fix.reg.add(make_get_lsp_completion_tool(&fix.client_ptr));
 
     auto result = fix.reg.execute("get_lsp_completion",
         json({{"path", path}, {"line", 0}, {"character", 0}}).dump());
@@ -554,7 +567,7 @@ TEST_CASE("get_lsp_completion validates params", "[lsp][tool]") {
     LspToolFixture fix;
     REQUIRE(fix.setup());
 
-    fix.reg.add(make_get_lsp_completion_tool(fix.client));
+    fix.reg.add(make_get_lsp_completion_tool(&fix.client_ptr));
 
     // Missing line
     auto result = fix.reg.execute("get_lsp_completion",
@@ -614,7 +627,7 @@ TEST_CASE("get_lsp_code_actions formats list", "[lsp][tool]") {
     auto path = fix.dir + "/test.cc";
     std::ofstream(path) << "int x;\nint y;\nint z;\nint a;\nint b;\n  foo;\n";
 
-    fix.reg.add(make_get_lsp_code_actions_tool(fix.client));
+    fix.reg.add(make_get_lsp_code_actions_tool(&fix.client_ptr));
 
     auto result = fix.reg.execute("get_lsp_code_actions",
         json({{"path", path}, {"line", 5}, {"character", 5}}).dump());
@@ -633,7 +646,7 @@ TEST_CASE("get_lsp_code_actions empty", "[lsp][tool]") {
     auto path = fix.dir + "/clean.cc";
     std::ofstream(path) << "int main() {}\n";
 
-    fix.reg.add(make_get_lsp_code_actions_tool(fix.client));
+    fix.reg.add(make_get_lsp_code_actions_tool(&fix.client_ptr));
 
     auto result = fix.reg.execute("get_lsp_code_actions",
         json({{"path", path}, {"line", 0}, {"character", 0}}).dump());
@@ -674,7 +687,7 @@ TEST_CASE("get_lsp_code_actions with diagnostic_index", "[lsp][tool]") {
     auto path = fix.dir + "/test.cc";
     std::ofstream(path) << "line0\nline1\nline2\nline3\nline4\n error\nline6\nline7\nline8\nline9\n warn\n";
 
-    fix.reg.add(make_get_lsp_code_actions_tool(fix.client));
+    fix.reg.add(make_get_lsp_code_actions_tool(&fix.client_ptr));
 
     auto result = fix.reg.execute("get_lsp_code_actions",
         json({{"path", path}, {"line", 5}, {"character", 5}, {"diagnostic_index", 0}}).dump());
@@ -689,6 +702,7 @@ TEST_CASE("get_lsp_code_actions with diagnostic_index", "[lsp][tool]") {
 struct HookFixture {
     MockLspServer mock;
     LspClient client;
+    LspClient* client_ptr = &client;
     ToolRegistry reg;
     std::string dir;
     std::vector<std::string> modified_files; // tracks callback invocations
@@ -775,7 +789,7 @@ TEST_CASE("write_file syncs with LspClient", "[lsp][hook]") {
     REQUIRE(fix.setup());
 
     auto path = fix.dir + "/test.cc";
-    fix.reg.add(make_get_lsp_diagnostics_tool(fix.client));
+    fix.reg.add(make_get_lsp_diagnostics_tool(&fix.client_ptr));
 
     // Register write_file with an LSP-syncing callback
     auto safe_dir = std::make_shared<std::string>(fix.dir);
@@ -828,7 +842,7 @@ TEST_CASE("notify_file_modified called on write", "[lsp][hook][ChatSession]") {
     REQUIRE(fix.setup());
 
     auto path = fix.dir + "/test.cc";
-    fix.reg.add(make_get_lsp_diagnostics_tool(fix.client));
+    fix.reg.add(make_get_lsp_diagnostics_tool(&fix.client_ptr));
 
     // Register a write_file tool with an LSP-syncing callback (simulating
     // what ChatSession does when LSP is enabled)
@@ -906,7 +920,7 @@ TEST_CASE("get_lsp_code_actions null result", "[lsp][tool]") {
     auto path = fix.dir + "/test.cc";
     std::ofstream(path) << "error\n";
 
-    fix.reg.add(make_get_lsp_code_actions_tool(fix.client));
+    fix.reg.add(make_get_lsp_code_actions_tool(&fix.client_ptr));
 
     auto result = fix.reg.execute("get_lsp_code_actions",
         json({{"path", path}, {"line", 0}, {"character", 0}}).dump());
@@ -921,6 +935,7 @@ TEST_CASE("get_lsp_code_actions null result", "[lsp][tool]") {
 struct RenameFormatFixture {
     MockLspServer mock;
     LspClient client;
+    LspClient* client_ptr = &client;
     ToolRegistry reg;
     std::string dir;
 
@@ -933,8 +948,8 @@ struct RenameFormatFixture {
             return false;
         if (!client.connect(mock.child_stdout(), mock.child_stdin()))
             return false;
-        reg.add(make_get_lsp_rename_tool(client));
-        reg.add(make_get_lsp_format_tool(client));
+        reg.add(make_get_lsp_rename_tool(&client_ptr));
+        reg.add(make_get_lsp_format_tool(&client_ptr));
         return true;
     }
 
@@ -1182,6 +1197,7 @@ TEST_CASE("get_lsp_format validates range", "[lsp][tool]") {
 struct NavFixture {
     MockLspServer mock;
     LspClient client;
+    LspClient* client_ptr = &client;
     ToolRegistry reg;
     std::string dir;
 
@@ -1194,8 +1210,8 @@ struct NavFixture {
             return false;
         if (!client.connect(mock.child_stdout(), mock.child_stdin()))
             return false;
-        reg.add(make_get_lsp_references_tool(client));
-        reg.add(make_get_lsp_document_symbols_tool(client));
+        reg.add(make_get_lsp_references_tool(&client_ptr));
+        reg.add(make_get_lsp_document_symbols_tool(&client_ptr));
         return true;
     }
 

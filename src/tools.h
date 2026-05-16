@@ -188,14 +188,14 @@ Tool make_edit_wiki_page_tool(Wiki& wiki);
 Tool make_delete_wiki_page_tool(Wiki& wiki);
 
 // ── LSP tools ──
-Tool make_get_lsp_diagnostics_tool(LspClient& lsp);
-Tool make_get_lsp_hover_tool(LspClient& lsp);
-Tool make_get_lsp_definition_tool(LspClient& lsp);
-Tool make_get_lsp_completion_tool(LspClient& lsp);
-Tool make_get_lsp_code_actions_tool(LspClient& lsp);
-Tool make_get_lsp_rename_tool(LspClient& lsp);
-Tool make_get_lsp_format_tool(LspClient& lsp);
-Tool make_get_lsp_references_tool(LspClient& lsp);
-Tool make_get_lsp_document_symbols_tool(LspClient& lsp);
+Tool make_get_lsp_diagnostics_tool(LspClient** lsp_ptr);
+Tool make_get_lsp_hover_tool(LspClient** lsp_ptr);
+Tool make_get_lsp_definition_tool(LspClient** lsp_ptr);
+Tool make_get_lsp_completion_tool(LspClient** lsp_ptr);
+Tool make_get_lsp_code_actions_tool(LspClient** lsp_ptr);
+Tool make_get_lsp_rename_tool(LspClient** lsp_ptr);
+Tool make_get_lsp_format_tool(LspClient** lsp_ptr);
+Tool make_get_lsp_references_tool(LspClient** lsp_ptr);
+Tool make_get_lsp_document_symbols_tool(LspClient** lsp_ptr);
 
 
