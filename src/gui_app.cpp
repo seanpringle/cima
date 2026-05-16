@@ -1,8 +1,10 @@
 #include "gui_app.h"
+#include "app_session.h"
 #include "assistant_data.h"
 #include "gui_chat.h"
 #include "gui_wiki.h"
 #include "plan.h"
+#include "ship_name.h"
 #include "wiki.h"
 
 #include "imgui.h"

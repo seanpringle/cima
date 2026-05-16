@@ -1141,15 +1141,16 @@ void render_notes_tab(Notes& notes, ImFont* mono_font) {
         return;
     }
     for (int id : *ids_result) {
-        Text("Note #%d", id);
-        Separator();
-        auto body_result = notes.read_note(id);
-        if (body_result) {
-            PushFont(mono_font);
-            TextUnformatted(body_result->c_str());
-            PopFont();
+        if (ImGui::CollapsingHeader(
+                ("Note #" + std::to_string(id)).c_str(),
+                ImGuiTreeNodeFlags_DefaultOpen)) {
+            auto body_result = notes.read_note(id);
+            if (body_result) {
+                PushFont(mono_font);
+                render_content(*body_result);
+                PopFont();
+            }
         }
-        Separator();
     }
 }
 
