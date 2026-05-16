@@ -212,6 +212,7 @@ Tool make_get_lsp_rename_tool(LspClient** lsp_ptr);
 Tool make_get_lsp_format_tool(LspClient** lsp_ptr);
 Tool make_get_lsp_references_tool(LspClient** lsp_ptr);
 Tool make_get_lsp_document_symbols_tool(LspClient** lsp_ptr);
+Tool make_apply_lsp_code_action_tool(LspClient** lsp_ptr);
 
 // ── CMake tools ──
 Tool make_cmake_configure_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout,

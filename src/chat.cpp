@@ -75,6 +75,7 @@ ChatSession::ChatSession(const Config& config, const Provider& provider,
     tools_.add(make_get_lsp_format_tool(&lsp_client_));
     tools_.add(make_get_lsp_references_tool(&lsp_client_));
     tools_.add(make_get_lsp_document_symbols_tool(&lsp_client_));
+    tools_.add(make_apply_lsp_code_action_tool(&lsp_client_));
 
     // CMake tools — always registered; conditionally published in run_once().
     tools_.add(make_cmake_configure_tool(safe_dir_, config.cmake_configure_timeout, cancelled_));

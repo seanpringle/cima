@@ -167,7 +167,9 @@ Tool make_cmake_configure_tool(std::shared_ptr<std::string> safe_dir_ptr,
         "to configure the project into a build/ folder and enable "
         "generating compile commands.\n"
         "Returns raw combined stdout/stderr.\n"
-        "If H is 0, omit head step. If T is 0, omit tail step.";
+        "If H is 0, omit head step. If T is 0, omit tail step.\n"
+        "Use `flags` array for additional cmake -D flags, "
+        "e.g. flags=[\"-DCMAKE_BUILD_TYPE=Debug\", \"-DBUILD_TESTS=OFF\"].";
     t.permission = ToolPermission::Write;
     t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},
@@ -177,13 +179,40 @@ Tool make_cmake_configure_tool(std::shared_ptr<std::string> safe_dir_ptr,
                     {"description", "Take first N lines (0 = no head filter, default 0)"}}},
              {"tail",
                 {{"type", "integer"},
-                    {"description", "Take last N lines (0 = no tail filter, default 0)"}}}}},
+                    {"description", "Take last N lines (0 = no tail filter, default 0)"}}},
+             {"flags",
+                {{"type", "array", "items", {{"type", "string"}}},
+                    {"description",
+                        "Optional array of additional flags, e.g. "
+                        "[\"-DCMAKE_BUILD_TYPE=Debug\"]"}}}}},
         {"required", json::array()}};
     t.execute = [safe_dir_ptr, timeout, cancelled](const json& args) -> Result<std::string> {
         int head = args.value("head", 0);
         int tail = args.value("tail", 0);
-        std::string cmd = build_cmd(
-            "cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON", head, tail);
+        std::string base = "cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON";
+
+        auto flags = args.value("flags", json::array());
+        if (!flags.is_null() && flags.is_array()) {
+            for (const auto& f : flags) {
+                if (!f.is_string())
+                    continue;
+                std::string s = f.get<std::string>();
+                // Shell-escape: allow only flag-safe characters
+                for (char c : s) {
+                    if (!std::isalnum(static_cast<unsigned char>(c)) && c != '-' && c != '_' &&
+                        c != '.' && c != '/' && c != '=' && c != ':' && c != '+' && c != '%' &&
+                        c != ',' && c != '@' && c != '$' && c != '(' && c != ')' && c != ' ' &&
+                        c != '\\') {
+                        return std::unexpected(
+                            std::string("Invalid character in flag: '") + c +
+                            "'. Only flag-safe characters are allowed.");
+                    }
+                }
+                base += " " + s;
+            }
+        }
+
+        std::string cmd = build_cmd(base, head, tail);
         return run_cmake_command(cmd, safe_dir_ptr, timeout, cancelled);
     };
     return t;
@@ -200,7 +229,11 @@ Tool make_cmake_build_tool(std::shared_ptr<std::string> safe_dir_ptr,
     t.description =
         "Run `cmake --build build/ -j$(nproc)` to build the project.\n"
         "Returns raw combined stdout/stderr.\n"
-        "If H is 0, omit head step. If T is 0, omit tail step.";
+        "If H is 0, omit head step. If T is 0, omit tail step.\n"
+        "Use `target` to build only a specific target, "
+        "e.g. target=\"test_tools\".\n"
+        "Use `clean` to clean before building, "
+        "e.g. clean=true (implies rebuild).";
     t.permission = ToolPermission::Write;
     t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},
@@ -210,12 +243,50 @@ Tool make_cmake_build_tool(std::shared_ptr<std::string> safe_dir_ptr,
                     {"description", "Take first N lines (0 = no head filter, default 0)"}}},
              {"tail",
                 {{"type", "integer"},
-                    {"description", "Take last N lines (0 = no tail filter, default 0)"}}}}},
+                    {"description", "Take last N lines (0 = no tail filter, default 0)"}}},
+             {"target",
+                {{"type", "string"},
+                    {"description",
+                        "Optional CMake target to build, e.g. \"test_tools\", "
+                        "\"cima\", \"cima_core\". Empty builds all."}}},
+             {"clean",
+                {{"type", "boolean"},
+                    {"description",
+                        "If true, clean the target first (runs cmake --build "
+                        "--target clean before building)."}}}}},
         {"required", json::array()}};
     t.execute = [safe_dir_ptr, timeout, cancelled](const json& args) -> Result<std::string> {
         int head = args.value("head", 0);
         int tail = args.value("tail", 0);
-        std::string cmd = build_cmd("cmake --build build/ -j$(nproc)", head, tail);
+        bool clean = args.value("clean", false);
+        std::string target = args.value("target", std::string());
+
+        // Shell-escape target name
+        if (!target.empty()) {
+            for (char c : target) {
+                if (!std::isalnum(static_cast<unsigned char>(c)) && c != '-' && c != '_' &&
+                    c != '.' && c != '/' && c != '+' && c != ':') {
+                    return std::unexpected(
+                        std::string("Invalid character in target name: '") + c +
+                        "'. Only alphanumeric and -_. characters are allowed.");
+                }
+            }
+        }
+
+        std::string cmake_cmd = "cmake --build build/ -j$(nproc)";
+        if (!target.empty()) {
+            cmake_cmd += " --target " + target;
+        }
+
+        std::string full_cmd;
+        if (clean) {
+            full_cmd = "cmake --build build/ --target clean";
+            full_cmd += " && " + cmake_cmd;
+        } else {
+            full_cmd = cmake_cmd;
+        }
+
+        std::string cmd = build_cmd(full_cmd, head, tail);
         return run_cmake_command(cmd, safe_dir_ptr, timeout, cancelled);
     };
     return t;
@@ -233,7 +304,18 @@ Tool make_cmake_ctest_tool(std::shared_ptr<std::string> safe_dir_ptr,
         "Run `ctest --test-dir build --output-on-failure -j$(nproc)` "
         "to run the test suite.\n"
         "Returns raw combined stdout/stderr.\n"
-        "If H is 0, omit head step. If T is 0, omit tail step.";
+        "If H is 0, omit head step. If T is 0, omit tail step.\n"
+        "Use `test_regex` to filter which tests run. "
+        "This is passed directly to `ctest -R` as a regex "
+        "(see `man ctest` for regex rules).\n"
+        "Test names are the Catch2 TEST_CASE descriptions "
+        "(free-form text like `\"Config defaults\"` or "
+        "`\"SSEParser single complete event\"`), "
+        "not source filenames.\n"
+        "Use `|` for multiple patterns, "
+        "e.g. test_regex=\"Config|SSEParser\" "
+        "runs all Config and SSEParser tests.\n"
+        "Example: test_regex=\"Config\" runs all config tests.";
     t.permission = ToolPermission::ReadOnly;
     t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},
@@ -243,13 +325,39 @@ Tool make_cmake_ctest_tool(std::shared_ptr<std::string> safe_dir_ptr,
                     {"description", "Take first N lines (0 = no head filter, default 0)"}}},
              {"tail",
                 {{"type", "integer"},
-                    {"description", "Take last N lines (0 = no tail filter, default 0)"}}}}},
+                    {"description", "Take last N lines (0 = no tail filter, default 0)"}}},
+             {"test_regex",
+                {{"type", "string"},
+                    {"description",
+                        "Optional regex pattern to filter which tests run "
+                        "(passed to `ctest -R`). "
+                        "Use `|` for multiple patterns, "
+                        "e.g. \"Config|LspClient\". "
+                        "Test names are Catch2 TEST_CASE descriptions "
+                        "(free-form text like \"Config defaults\"), "
+                        "not filenames."}}}}},
         {"required", json::array()}};
     t.execute = [safe_dir_ptr, timeout, cancelled](const json& args) -> Result<std::string> {
         int head = args.value("head", 0);
         int tail = args.value("tail", 0);
-        std::string cmd = build_cmd(
-            "ctest --test-dir build --output-on-failure -j$(nproc)", head, tail);
+        std::string base = "ctest --test-dir build --output-on-failure -j$(nproc)";
+        auto test_regex = args.value("test_regex", std::string());
+        if (!test_regex.empty()) {
+            // Shell-escape: reject anything that could break out of the -R argument.
+            // Allow regex-safe characters: word chars, common regex metacharacters.
+            for (char c : test_regex) {
+                if (!std::isalnum(static_cast<unsigned char>(c)) && c != '-' && c != '_' &&
+                    c != '.' && c != ',' && c != ' ' && c != '*' && c != '?' && c != '/' &&
+                    c != '|' && c != '^' && c != '$' && c != '(' && c != ')' && c != '[' &&
+                    c != ']' && c != '\\') {
+                    return std::unexpected(
+                        std::string("Invalid character in test_regex filter: '") + c +
+                        "'. Only regex-safe characters are allowed.");
+                }
+            }
+            base += " -R \"" + test_regex + "\"";
+        }
+        std::string cmd = build_cmd(base, head, tail);
         return run_cmake_command(cmd, safe_dir_ptr, timeout, cancelled);
     };
     return t;

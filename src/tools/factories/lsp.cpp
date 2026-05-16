@@ -1723,3 +1723,194 @@ Tool make_get_lsp_document_symbols_tool(LspClient** lsp_ptr) {
     };
     return t;
 }
+
+// ===================================================================
+// apply_lsp_code_action
+// ===================================================================
+
+Tool make_apply_lsp_code_action_tool(LspClient** lsp_ptr) {
+    Tool t;
+    t.name = "apply_lsp_code_action";
+    t.description =
+        "Apply a code action (fix, refactor, etc.) suggested by the LSP "
+        "(clangd) language server.\n"
+        "First queries diagnostics then code actions at the given position, "
+        "selects the action at `action_index` (zero-based from "
+        "get_lsp_code_actions), and applies its edits to disk.\n"
+        "Use get_lsp_code_actions first to see available actions, "
+        "then call this with the chosen index.\n"
+        "This tool modifies files on disk — use with care.";
+    t.permission = ToolPermission::Write;
+    t.timeout_sec = 15;
+    t.parameters = {{"type", "object"},
+        {"properties",
+            {{"path",
+                {{"type", "string"},
+                    {"description", "Path to the source file"}}},
+             {"line",
+                {{"type", "integer"},
+                    {"description", "0-based line number"}}},
+             {"character",
+                {{"type", "integer"},
+                    {"description", "0-based column offset"}}},
+             {"action_index",
+                {{"type", "integer"},
+                    {"description",
+                        "Zero-based index of the code action to apply "
+                        "(as listed by get_lsp_code_actions)"}}},
+             {"diagnostic_index",
+                {{"type", "integer"},
+                    {"description",
+                        "If set, scope code action context to the "
+                        "diagnostic at this index (0-based)"}}}}},
+        {"required", {"path", "line", "character", "action_index"}}};
+    t.execute = [lsp_ptr](const json& args) -> Result<std::string> {
+        auto* lsp = *lsp_ptr;
+        if (!lsp || !lsp->is_running()) {
+            return std::unexpected(
+                std::string("LSP server is not running. "
+                            "Click Start LSP in the Config tab to enable this tool."));
+        }
+
+        auto raw_path = args.value("path", std::string());
+        auto line = args.value("line", -1);
+        auto character = args.value("character", -1);
+        auto action_index = args.value("action_index", -1);
+
+        if (raw_path.empty()) {
+            return std::unexpected(std::string("path is required"));
+        }
+        if (line < 0 || character < 0) {
+            return std::unexpected(
+                std::string("line and character must be >= 0"));
+        }
+        if (action_index < 0) {
+            return std::unexpected(
+                std::string("action_index must be >= 0"));
+        }
+
+        std::string uri = lsp::path_to_uri(raw_path);
+
+        // Read and sync file content
+        std::ifstream file(raw_path, std::ios::binary | std::ios::ate);
+        if (!file.is_open()) {
+            return std::unexpected("Cannot open file: " + raw_path);
+        }
+        auto size = file.tellg();
+        std::string content(static_cast<size_t>(size), '\0');
+        file.seekg(0);
+        file.read(content.data(), size);
+
+        auto lang = LspClient::language_id_from_extension(raw_path);
+        auto sync = lsp->ensure_file_synced(uri, lang, content);
+        if (!sync) {
+            return std::unexpected(
+                "Failed to sync file with LSP server: " + sync.error());
+        }
+
+        // Build the codeAction context from diagnostics
+        json context = {{"diagnostics", json::array()}};
+
+        auto diag_index = args.value("diagnostic_index", -1);
+        if (diag_index >= 0) {
+            // Fetch diagnostics and scope to the specific one
+            auto diag_resp = lsp->request("textDocument/pullDiagnostics", {
+                {"textDocument", {{"uri", uri}}}
+            }, 10);
+
+            if (diag_resp && !(*diag_resp).contains("error") &&
+                (*diag_resp).contains("result") && !(*diag_resp)["result"].is_null()) {
+                auto& result = (*diag_resp)["result"];
+                if (result.contains("diagnostics") && result["diagnostics"].is_array()) {
+                    auto& diags = result["diagnostics"];
+                    if (diag_index >= 0 && diag_index < static_cast<int>(diags.size())) {
+                        context["diagnostics"] = json::array({diags[diag_index]});
+                    }
+                }
+            }
+        }
+
+        // Request code actions
+        auto resp = lsp->request("textDocument/codeAction", {
+            {"textDocument", {{"uri", uri}}},
+            {"range", {
+                {"start", {{"line", line}, {"character", character}}},
+                {"end", {{"line", line}, {"character", character + 1}}}
+            }},
+            {"context", context}
+        }, 10);
+
+        if (!resp) {
+            return std::unexpected(resp.error());
+        }
+
+        auto& response = *resp;
+        if (response.contains("error")) {
+            auto& err = response["error"];
+            return std::unexpected(
+                std::string("LSP error [") +
+                std::to_string(err.value("code", 0)) + "]: " +
+                err.value("message", ""));
+        }
+
+        if (!response.contains("result") || response["result"].is_null()) {
+            return std::string("(no code actions available)");
+        }
+
+        auto& results = response["result"];
+        if (!results.is_array() || results.empty()) {
+            return std::string("(no code actions available)");
+        }
+
+        // Validate action_index
+        if (action_index >= static_cast<int>(results.size())) {
+            return std::unexpected(
+                std::string("action_index ") + std::to_string(action_index) +
+                " is out of range — only " + std::to_string(results.size()) +
+                " code actions available.");
+        }
+
+        const auto& action = results[action_index];
+        std::string title = action.value("title", "(unnamed)");
+
+        // CodeAction can have either `edit` (WorkspaceEdit) or `command` (Command).
+        // We only support `edit` — command-based actions are opaque to us.
+        if (!action.contains("edit") || action["edit"].is_null()) {
+            return std::unexpected(
+                std::string("Code action #") + std::to_string(action_index) +
+                " \"" + title + "\" is a command-based action and cannot be "
+                "applied automatically. Apply it manually.");
+        }
+
+        // Apply the workspace edit
+        auto apply_result = apply_workspace_edit(*lsp, action["edit"]);
+        if (!apply_result) {
+            return std::unexpected(
+                std::string("Failed to apply code action edits: ") +
+                apply_result.error());
+        }
+
+        // Build the report
+        std::string output = "Applied action #" + std::to_string(action_index) +
+            " \"" + title + "\":\n";
+        int total_files = 0;
+        int total_edits = 0;
+        for (const auto& [edit_uri, count] : *apply_result) {
+            auto path = lsp::uri_to_path(edit_uri);
+            const std::string& display = path ? *path : edit_uri;
+            output += "- " + display + ": " + std::to_string(count) +
+                      (count == 1 ? " edit" : " edits") + "\n";
+            total_files++;
+            total_edits += count;
+        }
+        // Prepend summary
+        std::string summary = std::to_string(total_edits) +
+            (total_edits == 1 ? " change" : " changes") +
+            " across " + std::to_string(total_files) +
+            (total_files == 1 ? " file" : " files") + ":\n";
+        output = summary + output;
+
+        return output;
+    };
+    return t;
+}

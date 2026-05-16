@@ -1538,3 +1538,235 @@ TEST_CASE("get_lsp_document_symbols respects max_depth", "[lsp][tool]") {
     // level3, level2, level1, leaf should be truncated by depth
     CHECK(result->find("level3") == std::string::npos);
 }
+
+// ===================================================================
+// apply_lsp_code_action
+// ===================================================================
+
+TEST_CASE("apply_lsp_code_action applies WorkspaceEdit from code action", "[lsp][tool]") {
+    LspToolFixture fix;
+    // Set diagnostics so the server returns code actions
+    fix.set_diagnostics(json::array({
+        json::object({
+            {"range", json::object({
+                {"start", json::object({{"line", 0}, {"character", 0}})},
+                {"end", json::object({{"line", 0}, {"character", 4}})}
+            })},
+            {"severity", 1},
+            {"message", "use of undeclared identifier 'foo'"}
+        })
+    }));
+    // Return a code action with an 'edit' (WorkspaceEdit)
+    fix.mock.set_code_action_response(json::array({
+        json::object({
+            {"title", "Rename to 'bar'"},
+            {"kind", "quickfix"},
+            {"edit", json::object({
+                {"changes", json::object({
+                    {lsp::path_to_uri(fix.dir + "/test.cc"), json::array({
+                        json::object({
+                            {"range", json::object({
+                                {"start", json::object({{"line", 0}, {"character", 0}})},
+                                {"end", json::object({{"line", 0}, {"character", 4}})}
+                            })},
+                            {"newText", "renamed_content"}
+                        })
+                    })}
+                })}
+            })}
+        })
+    }));
+    REQUIRE(fix.setup());
+
+    fix.reg.add(make_apply_lsp_code_action_tool(&fix.client_ptr));
+
+    auto path = fix.dir + "/test.cc";
+    std::ofstream(path) << "foo";
+
+    auto result = fix.reg.execute("apply_lsp_code_action",
+        json({{"path", path}, {"line", 0}, {"character", 0}, {"action_index", 0}}).dump());
+    REQUIRE(result);
+    CHECK(result->find("Applied action") != std::string::npos);
+    CHECK(result->find("Rename to 'bar'") != std::string::npos);
+    CHECK(result->find("1 change") != std::string::npos);
+    CHECK(result->find("1 file") != std::string::npos);
+    CHECK(result->find("test.cc") != std::string::npos);
+
+    // Verify file content was actually modified
+    std::ifstream f(path);
+    std::string content((std::istreambuf_iterator<char>(f)),
+                         std::istreambuf_iterator<char>());
+    CHECK(content == "renamed_content");
+}
+
+TEST_CASE("apply_lsp_code_action with diagnostic_index scopes context", "[lsp][tool]") {
+    LspToolFixture fix;
+    // Set multiple diagnostics
+    fix.set_diagnostics(json::array({
+        json::object({
+            {"range", json::object({
+                {"start", json::object({{"line", 0}, {"character", 0}})},
+                {"end", json::object({{"line", 0}, {"character", 3}})}
+            })},
+            {"severity", 1},
+            {"message", "first error"}
+        }),
+        json::object({
+            {"range", json::object({
+                {"start", json::object({{"line", 1}, {"character", 0}})},
+                {"end", json::object({{"line", 1}, {"character", 5}})}
+            })},
+            {"severity", 2},
+            {"message", "second warning"}
+        })
+    }));
+    // Return an action with an edit
+    fix.mock.set_code_action_response(json::array({
+        json::object({
+            {"title", "Fix scoped error"},
+            {"kind", "quickfix"},
+            {"edit", json::object({
+                {"changes", json::object({
+                    {lsp::path_to_uri(fix.dir + "/test.cc"), json::array({
+                        json::object({
+                            {"range", json::object({
+                                {"start", json::object({{"line", 0}, {"character", 0}})},
+                                {"end", json::object({{"line", 0}, {"character", 3}})}
+                            })},
+                            {"newText", "fixed"}
+                        })
+                    })}
+                })}
+            })}
+        })
+    }));
+    REQUIRE(fix.setup());
+
+    fix.reg.add(make_apply_lsp_code_action_tool(&fix.client_ptr));
+
+    auto path = fix.dir + "/test.cc";
+    std::ofstream(path) << "err\nwarn";
+
+    auto result = fix.reg.execute("apply_lsp_code_action",
+        json({{"path", path}, {"line", 0}, {"character", 0}, {"action_index", 0}, {"diagnostic_index", 0}}).dump());
+    REQUIRE(result);
+    CHECK(result->find("Applied action") != std::string::npos);
+
+    // Verify file was modified
+    std::ifstream f(path);
+    std::string content((std::istreambuf_iterator<char>(f)),
+                         std::istreambuf_iterator<char>());
+    CHECK(content == "fixed\nwarn");
+}
+
+TEST_CASE("apply_lsp_code_action action_index out of range", "[lsp][tool]") {
+    LspToolFixture fix;
+    // Set diagnostics
+    fix.set_diagnostics(json::array({
+        json::object({
+            {"range", json::object({
+                {"start", json::object({{"line", 0}, {"character", 0}})},
+                {"end", json::object({{"line", 0}, {"character", 3}})}
+            })},
+            {"severity", 1},
+            {"message", "error"}
+        })
+    }));
+    // Return only 1 action
+    fix.mock.set_code_action_response(json::array({
+        json::object({
+            {"title", "Fix something"},
+            {"kind", "quickfix"},
+            {"edit", json::object({
+                {"changes", json::object({
+                    {lsp::path_to_uri(fix.dir + "/test.cc"), json::array({
+                        json::object({
+                            {"range", json::object({
+                                {"start", json::object({{"line", 0}, {"character", 0}})},
+                                {"end", json::object({{"line", 0}, {"character", 3}})}
+                            })},
+                            {"newText", "fixed"}
+                        })
+                    })}
+                })}
+            })}
+        })
+    }));
+    REQUIRE(fix.setup());
+
+    fix.reg.add(make_apply_lsp_code_action_tool(&fix.client_ptr));
+
+    auto path = fix.dir + "/test.cc";
+    std::ofstream(path) << "err";
+
+    // action_index 999 is out of range (only 1 action)
+    auto result = fix.reg.execute("apply_lsp_code_action",
+        json({{"path", path}, {"line", 0}, {"character", 0}, {"action_index", 999}}).dump());
+    REQUIRE_FALSE(result);
+    CHECK(result.error().find("out of range") != std::string::npos);
+}
+
+TEST_CASE("apply_lsp_code_action command-based action rejected", "[lsp][tool]") {
+    LspToolFixture fix;
+    // Set diagnostics
+    fix.set_diagnostics(json::array({
+        json::object({
+            {"range", json::object({
+                {"start", json::object({{"line", 0}, {"character", 0}})},
+                {"end", json::object({{"line", 0}, {"character", 3}})}
+            })},
+            {"severity", 1},
+            {"message", "error"}
+        })
+    }));
+    // Return a CodeAction with 'command' but no 'edit'
+    fix.mock.set_code_action_response(json::array({
+        json::object({
+            {"title", "Refactor with command"},
+            {"kind", "refactor"},
+            {"command", json::object({
+                {"title", "Run refactoring"},
+                {"command", "clangd.doRefactoring"}
+            })}
+        })
+    }));
+    REQUIRE(fix.setup());
+
+    fix.reg.add(make_apply_lsp_code_action_tool(&fix.client_ptr));
+
+    auto path = fix.dir + "/test.cc";
+    std::ofstream(path) << "err";
+
+    auto result = fix.reg.execute("apply_lsp_code_action",
+        json({{"path", path}, {"line", 0}, {"character", 0}, {"action_index", 0}}).dump());
+    REQUIRE_FALSE(result);
+    CHECK(result.error().find("command-based") != std::string::npos);
+    CHECK(result.error().find("Refactor with command") != std::string::npos);
+}
+
+TEST_CASE("apply_lsp_code_action LSP not running", "[lsp][tool]") {
+    LspToolFixture fix;
+    // Don't call setup() — LSP not connected
+    fix.reg.add(make_apply_lsp_code_action_tool(&fix.client_ptr));
+
+    auto result = fix.reg.execute("apply_lsp_code_action",
+        json({{"path", "/tmp/test.cc"}, {"line", 0}, {"character", 0}, {"action_index", 0}}).dump());
+    REQUIRE_FALSE(result);
+    CHECK(result.error().find("not running") != std::string::npos);
+}
+
+TEST_CASE("apply_lsp_code_action no code actions available", "[lsp][tool]") {
+    LspToolFixture fix;
+    // No diagnostics → no code actions; the tool returns a message string
+    REQUIRE(fix.setup());
+
+    fix.reg.add(make_apply_lsp_code_action_tool(&fix.client_ptr));
+
+    auto path = fix.dir + "/clean.cc";
+    std::ofstream(path) << "int main() {}\n";
+
+    auto result = fix.reg.execute("apply_lsp_code_action",
+        json({{"path", path}, {"line", 0}, {"character", 0}, {"action_index", 0}}).dump());
+    REQUIRE(result);
+    CHECK(*result == "(no code actions available)");
+}
