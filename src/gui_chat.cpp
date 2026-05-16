@@ -3,7 +3,6 @@
 #include "notes.h"
 #include "tools.h"
 #include <cassert>
-#include <iostream>
 
 #define IMGUI_DEFINE_MATH_OPERATORS
 #include "imgui.h"
@@ -21,7 +20,6 @@
 #include <md4c.h>
 #include <string>
 #include <thread>
-#include <unordered_map>
 
 using namespace ImGui;
 using std::string;

@@ -1,9 +1,7 @@
 #pragma once
 
-#include "app_session.h"
 #include "chat.h"
 #include "config.h"
-#include "ship_name.h"
 #include "types.h"
 
 #include <SDL3/SDL.h>
