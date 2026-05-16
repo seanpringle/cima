@@ -1142,8 +1142,7 @@ void render_notes_tab(Notes& notes, ImFont* mono_font) {
     }
     for (int id : *ids_result) {
         if (ImGui::CollapsingHeader(
-                ("Note #" + std::to_string(id)).c_str(),
-                ImGuiTreeNodeFlags_DefaultOpen)) {
+                ("Note #" + std::to_string(id)).c_str())) {
             auto body_result = notes.read_note(id);
             if (body_result) {
                 PushFont(mono_font);
