@@ -803,6 +803,21 @@ void render_config_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
             }
         }
     }
+
+    // ── Clear button ──
+    {
+        if (ui.clearing) {
+            TextDisabled("Clearing...");
+        } else if (session.conversation().message_count() > 0) {
+            int msg_count = static_cast<int>(session.conversation().message_count());
+            string btn_label = "Clear (" + std::to_string(msg_count) + " messages)";
+            if (Button(btn_label.c_str())) {
+                ui.clear_requested = true;
+            }
+        } else {
+            TextDisabled("No messages to clear");
+        }
+    }
 }
 
 // ── Tag expansion for wiki:page-name and !snippet-name references ──
@@ -892,6 +907,22 @@ void render_chat_ui(TabInfo& tab, bool& done) {
         } else {
             push_entry(ui, EntryType::Content, "Compaction failed: " + compact_result.error(), false);
         }
+    }
+
+    // ── Handle clear request ──
+    if (ui.clear_requested && !ui.clearing) {
+        ui.clearing = true;
+        ui.clear_requested = false;
+        ui.clear_future = std::async(std::launch::async,
+            [&session]() -> Result<void> { session.clear(); return {}; });
+    }
+    if (ui.clearing && ui.clear_future.valid() &&
+        ui.clear_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        ui.clearing = false;
+        ui.clear_future.get();
+        // Clear UI entries and show confirmation
+        ui.entries.clear();
+        push_entry(ui, EntryType::Content, "Conversation cleared.", false);
     }
 
     // ── finalize streaming entry now that all pending data is incorporated ──

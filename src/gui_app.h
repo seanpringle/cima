@@ -57,6 +57,11 @@ struct ChatUIState {
     bool compacting = false;
     std::future<Result<void>> compact_future;
 
+    // Clear button state
+    bool clear_requested = false;
+    bool clearing = false;
+    std::future<Result<void>> clear_future;
+
     std::deque<std::string> input_history;
     std::vector<char> input_buffer = {0};
     int cursor_pos = 0; // tracked by InputText callback for insert-at-cursor

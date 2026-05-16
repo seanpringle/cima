@@ -74,6 +74,9 @@ class ChatSession {
     /// Replaces the entire history with a single summary message.
     Result<void> compact();
 
+    /// Clear all messages from the conversation and reset context tracking.
+    void clear();
+
     /// Compute context usage percentage (0-100).
     int context_usage_percent() const;
 
@@ -90,8 +93,8 @@ class ChatSession {
     void notify_file_modified(const std::string& path);
 
     /// Set the LSP client and register LSP tools (may be null to disable).
-    void set_lsp_client(LspClient* lsp);
-    LspClient* lsp_client() const { return lsp_client_; }
+    void set_lsp_client(LspClient *lsp);
+    LspClient *lsp_client() const { return lsp_client_; }
 
     /// Provider name this session belongs to.
     const std::string& provider_name() const { return provider_name_; }

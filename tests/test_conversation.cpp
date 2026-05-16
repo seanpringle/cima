@@ -374,3 +374,18 @@ TEST_CASE("Conversation droppable tokens estimation", "[conversation]") {
     // Should have droppable tokens now
     CHECK(conv.estimate_droppable_tokens() > 0);
 }
+
+TEST_CASE("Conversation clear removes all messages and resets ID counter", "[conversation]") {
+    Conversation conv;
+
+    conv.add_user("Hello");
+    conv.add_assistant("Hi!");
+    CHECK(conv.message_count() == 2);
+
+    conv.clear();
+    CHECK(conv.message_count() == 0);
+
+    // Verify next ID is reset to 1
+    auto id = conv.add_user("After clear");
+    CHECK(id == 1);
+}

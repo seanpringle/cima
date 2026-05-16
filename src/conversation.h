@@ -58,6 +58,9 @@ class Conversation {
     /// Replace the entire conversation with a single summary message.
     void replace_with_summary(const std::string& summary);
 
+    /// Clear all messages from the conversation and reset ID counter.
+    void clear();
+
     // ── Serialization ──
 
     json to_json() const;

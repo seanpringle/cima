@@ -469,5 +469,15 @@ Result<void> ChatSession::compact() {
         output_cb_("(conversation compacted — summary follows)\n\n" + summary,
             OutputType::Content);
 
-    return {};
+   return {};
+}
+
+// ---------------------------------------------------------------------------
+// Clear
+// ---------------------------------------------------------------------------
+
+void ChatSession::clear() {
+    if (*cancelled_) return;  // honour cancellation token
+    conversation_.clear();
+    last_usage_ = Usage{};  // reset so context pct falls back to estimate(0)
 }
