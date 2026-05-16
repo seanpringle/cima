@@ -937,30 +937,51 @@ void render_chat_ui(TabInfo& tab, bool& done) {
 
     PopFont();
 
-    // ── Wiki page reference combo (inserts wiki:pagename tag at cursor) ──
+    auto insert_text_at_cursor = [&](string_view text) {
+        auto& buf = ui.input_buffer;
+        int pos = ui.cursor_pos;
+        if (pos < 0 || (size_t)pos > strlen(buf.data()))
+            pos = (int)strlen(buf.data()); // append
+        // Make room and insert into buffer
+        size_t room = buf.size() - strlen(buf.data()) - 1;
+        size_t insert_len = text.size();
+        if (insert_len > room) insert_len = room;
+        memmove(buf.data() + pos + insert_len,
+                buf.data() + pos,
+                strlen(buf.data()) - pos + 1);
+        memcpy(buf.data() + pos, text.data(), insert_len);
+        ui.cursor_pos = pos + (int)insert_len;
+    };
+
+    float combo_width = (GetContentRegionAvail().x - GetStyle().ItemSpacing.x) / 3;
+
+    // ── History combo (replaces input buf with history item) ──
+    {
+        auto& history = ui.input_history;
+        SetNextItemWidth(combo_width);
+        if (BeginCombo("##history-list", "history")) {
+            for (const auto& entry : history) {
+                if (Selectable(entry.c_str())) {
+                    ui.input_buffer.assign(entry.begin(), entry.end());
+                    ui.cursor_pos = entry.size();
+                }
+            }
+            EndCombo();
+        }
+    }
+
+    // ── Wiki page reference combo (inserts wiki pagename at cursor) ──
     {
         auto wiki = tab.session->wiki();
         if (wiki) {
             auto pages_result = wiki->list_pages();
-            SetNextItemWidth(GetContentRegionAvail().x/2 - GetStyle().ItemSpacing.y/2);
-            if (BeginCombo("##wiki-ref", "wiki:")) {
+            SameLine(0,GetStyle().ItemSpacing.y);
+            SetNextItemWidth(combo_width);
+            if (BeginCombo("##wiki-ref", "wiki pages")) {
                 if (pages_result && !pages_result->empty()) {
                     for (const auto& page : *pages_result) {
                         if (Selectable(page.c_str())) {
-                            // Insert "wiki:pagename" tag at cursor position (no trailing space)
-                            auto& buf = ui.input_buffer;
-                            int pos = ui.cursor_pos;
-                            if (pos < 0 || (size_t)pos > strlen(buf.data()))
-                                pos = (int)strlen(buf.data()); // append
-                            // Make room and insert into buffer
-                            size_t room = buf.size() - strlen(buf.data()) - 1;
-                            size_t insert_len = page.size();
-                            if (insert_len > room) insert_len = room;
-                            memmove(buf.data() + pos + insert_len,
-                                    buf.data() + pos,
-                                    strlen(buf.data()) - pos + 1);
-                            memcpy(buf.data() + pos, page.data(), insert_len);
-                            ui.cursor_pos = pos + (int)insert_len;
+                            insert_text_at_cursor(page);
                         }
                     }
                 }
@@ -974,24 +995,12 @@ void render_chat_ui(TabInfo& tab, bool& done) {
         const auto* snippets = tab.snippets;
         if (snippets && !snippets->empty()) {
             SameLine(0,GetStyle().ItemSpacing.y);
-            SetNextItemWidth(GetContentRegionAvail().x);
-            if (BeginCombo("##snippet-ref", "!snippet")) {
+            SetNextItemWidth(GetContentRegionAvail().x); // ~combo_width
+            if (BeginCombo("##snippet-ref", "snippets")) {
                 for (const auto& [name, content] : *snippets) {
                     if (Selectable(name.c_str())) {
-                        // Insert "!snippetname" tag at cursor position
                         std::string tag = "!" + name;
-                        auto& buf = ui.input_buffer;
-                        int pos = ui.cursor_pos;
-                        if (pos < 0 || (size_t)pos > strlen(buf.data()))
-                            pos = (int)strlen(buf.data());
-                        size_t room = buf.size() - strlen(buf.data()) - 1;
-                        size_t insert_len = tag.size();
-                        if (insert_len > room) insert_len = room;
-                        memmove(buf.data() + pos + insert_len,
-                                buf.data() + pos,
-                                strlen(buf.data()) - pos + 1);
-                        memcpy(buf.data() + pos, tag.data(), insert_len);
-                        ui.cursor_pos = pos + (int)insert_len;
+                        insert_text_at_cursor(tag);
                     }
                 }
                 EndCombo();
@@ -1016,33 +1025,6 @@ void render_chat_ui(TabInfo& tab, bool& done) {
     constexpr size_t kInputBufferSize = 1024 * 1024;
     if (buffer.size() < kInputBufferSize) {
         buffer.resize(kInputBufferSize, 0);
-    }
-
-    if (IsKeyDown(ImGuiKey_LeftCtrl) && IsKeyReleased(ImGuiKey_UpArrow) && history.size() > 0) {
-        history.emplace_back() = std::move(history.front());
-        history.pop_front();
-        // Copy history entry into buffer, ensuring null termination + adequate size
-        auto& hist_entry = history.back();
-        buffer.assign(hist_entry.begin(), hist_entry.end());
-        if (buffer.size() < kInputBufferSize) {
-            buffer.resize(kInputBufferSize, 0);
-        } else {
-            buffer.push_back('\0');
-        }
-        SetKeyboardFocusHere();
-    }
-
-    if (IsKeyDown(ImGuiKey_LeftCtrl) && IsKeyReleased(ImGuiKey_DownArrow) && history.size() > 0) {
-        history.emplace_front() = std::move(history.back());
-        history.pop_back();
-        auto& hist_entry = history.back();
-        buffer.assign(hist_entry.begin(), hist_entry.end());
-        if (buffer.size() < kInputBufferSize) {
-            buffer.resize(kInputBufferSize, 0);
-        } else {
-            buffer.push_back('\0');
-        }
-        SetKeyboardFocusHere();
     }
 
     if (!chat.running && IsWindowAppearing()) {
@@ -1146,171 +1128,25 @@ void render_chat_ui(TabInfo& tab, bool& done) {
 }
 
 // ===================================================================
-// Notes tab (left panel)
+// Notes tab — render note bodies inline as markdown documents
 // ===================================================================
 
 void render_notes_tab(Notes& notes, ImFont* mono_font) {
-    // ── State ──
-    static std::string selected_note;
-    static char name_buf[256] = {};
-    static char body_buf[16384] = {};
-    static bool body_dirty = false;
-    static bool needs_refresh = false;
-
-    // ── Fetch data ──
-    auto names_result = notes.list_all_notes();
-
-    // Validate selected_note still exists
-    if (names_result) {
-        bool found = false;
-        for (const auto& n : *names_result) {
-            if (n == selected_note) { found = true; break; }
-        }
-        if (!found) {
-            selected_note.clear();
-            body_buf[0] = '\0';
-        }
-    } else {
-        selected_note.clear();
-        body_buf[0] = '\0';
+    auto ids_result = notes.list_all_notes();
+    if (!ids_result) {
+        TextDisabled("notes unavailable");
+        return;
     }
-
-    // ── Layout ──
-    auto space = GetContentRegionAvail();
-    auto tl = GetCursorPos();
-    float gap = GetStyle().ItemSpacing.x * 2.0f;
-    float left_width = space.x * 0.35f - gap;
-    auto win_pos = GetWindowPos();
-    auto sep_a = ImVec2(win_pos.x + tl.x + left_width + (gap / 2), win_pos.y + tl.y);
-    auto sep_b = ImVec2(sep_a.x, win_pos.y + tl.y + space.y);
-
-    // ── Left panel: note list ──
-    SetCursorPos(tl);
-    BeginChild("##notes-left", ImVec2(left_width, space.y),
-        ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_None);
-
-    // "New Note" button
-    if (SmallButton("+ New Note")) {
-        // Find an unused default name
-        std::string base = "Untitled";
-        std::string new_name = base;
-        int counter = 1;
-        if (names_result) {
-            while (std::find(names_result->begin(), names_result->end(), new_name) != names_result->end()) {
-                new_name = base + " " + std::to_string(counter++);
-            }
-        }
-        notes.write_note(new_name, "");
-        selected_note = new_name;
-        body_buf[0] = '\0';
-        strncpy(name_buf, new_name.c_str(), sizeof(name_buf) - 1);
-        name_buf[sizeof(name_buf) - 1] = '\0';
-        needs_refresh = true;
-    }
-    SameLine();
-    // "Delete All" button
-    if (SmallButton("Delete All")) {
-        notes.delete_all_notes();
-        selected_note.clear();
-        body_buf[0] = '\0';
-        needs_refresh = true;
-    }
-
-    // Note list
-    if (!names_result) {
-        TextDisabled("(notes unavailable)");
-    } else if (names_result->empty()) {
-        TextDisabled("(no notes)");
-    } else {
-        BeginChild("##notes-scroll");
-        for (const auto& name : *names_result) {
-            bool is_sel = (name == selected_note);
-            if (Selectable(name.c_str(), is_sel)) {
-                selected_note = name;
-                auto body_result = notes.read_note(name);
-                std::string body = body_result ? *body_result : "";
-                strncpy(body_buf, body.c_str(), sizeof(body_buf) - 1);
-                body_buf[sizeof(body_buf) - 1] = '\0';
-                strncpy(name_buf, name.c_str(), sizeof(name_buf) - 1);
-                name_buf[sizeof(name_buf) - 1] = '\0';
-                body_dirty = false;
-            }
-            if (is_sel) SetItemDefaultFocus();
-
-            // Delete button for this note
-            SameLine();
-            PushID(name.c_str());
-            if (SmallButton("x")) {
-                notes.delete_note(name);
-                if (selected_note == name) {
-                    selected_note.clear();
-                    body_buf[0] = '\0';
-                }
-                needs_refresh = true;
-                PopID();
-                break; // list is now stale
-            }
-            PopID();
-        }
-        EndChild();
-    }
-
-    EndChild();
-
-    // Separator line
-    GetWindowDrawList()->AddLine(sep_a, sep_b,
-        GetColorU32(ImGuiCol_Separator), GetStyle().ChildBorderSize);
-
-    // ── Right panel: note editor ──
-    auto right_pos = ImVec2(tl.x + left_width + gap, tl.y);
-    auto right_size = ImVec2(-1, space.y);
-    SetCursorPos(right_pos);
-    BeginChild("##notes-right", right_size,
-        ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_None);
-
-    if (selected_note.empty()) {
-        TextDisabled("Select a note from the left panel");
-    } else {
-        // Name edit (inline)
-        PushItemWidth(GetContentRegionAvail().x);
-        if (InputText("##note-name", name_buf, sizeof(name_buf))) {
-            // Name changed — rename the note
-            std::string new_name(name_buf);
-            if (!new_name.empty() && new_name != selected_note) {
-                // Write new name, delete old
-                notes.write_note(new_name, std::string(body_buf));
-                notes.delete_note(selected_note);
-                selected_note = new_name;
-                needs_refresh = true;
-            }
-        }
-        PopItemWidth();
-
+    for (int id : *ids_result) {
+        Text("Note #%d", id);
         Separator();
-
-        // Body editor
-        PushFont(mono_font);
-        PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4, 4));
-        float body_height = GetContentRegionAvail().y;
-        if (InputTextMultiline("##note-body", body_buf, sizeof(body_buf),
-                ImVec2(-FLT_MIN, body_height),
-                ImGuiInputTextFlags_AllowTabInput)) {
-            // Auto-save on every edit
-            notes.write_note(selected_note, std::string(body_buf));
-            body_dirty = true;
-            needs_refresh = true;
+        auto body_result = notes.read_note(id);
+        if (body_result) {
+            PushFont(mono_font);
+            TextUnformatted(body_result->c_str());
+            PopFont();
         }
-        PopStyleVar();
-        PopFont();
-    }
-
-    EndChild();
-
-    // Reload names if we mutated
-    if (needs_refresh) {
-        needs_refresh = false;
-        // Force refresh next frame by consuming the stale list
-        // (the Selectable loop above already broke if we deleted)
+        Separator();
     }
 }
 

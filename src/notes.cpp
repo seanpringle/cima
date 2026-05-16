@@ -1,50 +1,43 @@
 #include "notes.h"
 
-#include <algorithm>
-#include <fstream>
-#include <sstream>
-
 // ===================================================================
 // Notes operations
 // ===================================================================
 
-Result<std::vector<std::string>> Notes::list_all_notes() {
-    std::vector<std::string> names;
-    names.reserve(notes_.size());
-    for (const auto& [name, _] : notes_) {
-        names.push_back(name);
+Result<std::vector<int>> Notes::list_all_notes() {
+    std::vector<int> ids;
+    ids.reserve(notes_.size());
+    for (const auto& [id, _] : notes_) {
+        ids.push_back(id);
     }
-    std::sort(names.begin(), names.end());
-    return names;
+    return ids;
 }
 
-Result<std::string> Notes::read_note(const std::string& name) {
-    auto it = notes_.find(name);
+Result<std::string> Notes::read_note(int id) {
+    auto it = notes_.find(id);
     if (it == notes_.end()) {
-        return std::unexpected("no such note: " + name);
+        return std::unexpected("no such note: " + std::to_string(id));
     }
     return it->second;
 }
 
-Result<void> Notes::write_note(const std::string& name, const std::string& body) {
-    notes_[name] = body;
-    // Auto-save is no longer performed here — external persistence handles it.
+Result<void> Notes::write_note(const std::string& body) {
+    int id = static_cast<int>(notes_.size());
+    notes_[id] = body;
     return {};
 }
 
-Result<void> Notes::delete_note(const std::string& name) {
-    auto it = notes_.find(name);
+Result<void> Notes::delete_note(int id) {
+    auto it = notes_.find(id);
     if (it == notes_.end()) {
-        return std::unexpected("no such note: " + name);
+        return std::unexpected("no such note: " + std::to_string(id));
     }
     notes_.erase(it);
-    // Auto-save is no longer performed here — external persistence handles it.
     return {};
 }
 
 Result<void> Notes::delete_all_notes() {
     notes_.clear();
-    // Auto-save is no longer performed here — external persistence handles it.
     return {};
 }
 
@@ -54,8 +47,8 @@ Result<void> Notes::delete_all_notes() {
 
 json Notes::to_json() const {
     json j = json::object();
-    for (const auto& [name, body] : notes_) {
-        j[name] = body;
+    for (const auto& [id, body] : notes_) {
+        j[std::to_string(id)] = body;
     }
     return j;
 }
@@ -65,50 +58,12 @@ void Notes::from_json(const json& j) {
     if (!j.is_object()) return;
     for (auto it = j.begin(); it != j.end(); ++it) {
         if (it.value().is_string()) {
-            notes_[it.key()] = it.value().get<std::string>();
-        }
-    }
-}
-
-// ===================================================================
-// File persistence (legacy)
-// ===================================================================
-
-Result<void> Notes::save() {
-    if (notes_file_path_.empty()) {
-        return {};
-    }
-    auto j = to_json();
-    std::ofstream file(notes_file_path_);
-    if (!file.is_open()) {
-        return std::unexpected("Cannot write notes file: " + notes_file_path_);
-    }
-    file << j.dump(2) << std::endl;
-    return {};
-}
-
-Result<void> Notes::load_from_file(const std::string& path) {
-    notes_file_path_ = path;
-    notes_.clear();
-
-    std::ifstream file(path);
-    if (!file.is_open()) {
-        // First run — no file yet, that's OK
-        return {};
-    }
-    json j;
-    try {
-        file >> j;
-    } catch (...) {
-        // Corrupt file — start fresh
-        return {};
-    }
-    if (j.is_object()) {
-        for (auto it = j.begin(); it != j.end(); ++it) {
-            if (it.value().is_string()) {
-                notes_[it.key()] = it.value().get<std::string>();
+            try {
+                int id = std::stoi(it.key());
+                notes_[id] = it.value().get<std::string>();
+            } catch (...) {
+                // Non-integer key — skip (backward-compat with old string keys)
             }
         }
     }
-    return {};
 }

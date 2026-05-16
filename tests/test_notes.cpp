@@ -1,17 +1,6 @@
 #include "notes.h"
 
 #include <catch2/catch_test_macros.hpp>
-#include <cstdlib>
-#include <filesystem>
-
-namespace fs = std::filesystem;
-
-static std::string make_temp_dir() {
-    char tmpl[] = "/tmp/cima_test_notes_XXXXXX";
-    char* result = mkdtemp(tmpl);
-    REQUIRE(result != nullptr);
-    return result;
-}
 
 TEST_CASE("list_all_notes returns empty initially", "[notes]") {
     Notes notes;
@@ -22,46 +11,50 @@ TEST_CASE("list_all_notes returns empty initially", "[notes]") {
 
 TEST_CASE("write_note then list_all_notes shows it", "[notes]") {
     Notes notes;
-    auto r = notes.write_note("Hello", "World");
+    auto r = notes.write_note("World");
     REQUIRE(r);
 
     auto result = notes.list_all_notes();
     REQUIRE(result);
     REQUIRE(result->size() == 1);
-    CHECK((*result)[0] == "Hello");
+    CHECK((*result)[0] == 0);
 }
 
-TEST_CASE("write_note overwrites existing", "[notes]") {
+TEST_CASE("write_note auto-assigns incrementing IDs", "[notes]") {
     Notes notes;
-    notes.write_note("Hello", "World");
-    notes.write_note("Hello", "Updated");
+    notes.write_note("First");
+    notes.write_note("Second");
+    notes.write_note("Third");
 
-    auto result = notes.read_note("Hello");
+    auto result = notes.list_all_notes();
     REQUIRE(result);
-    CHECK(*result == "Updated");
+    REQUIRE(result->size() == 3);
+    CHECK((*result)[0] == 0);
+    CHECK((*result)[1] == 1);
+    CHECK((*result)[2] == 2);
 }
 
 TEST_CASE("read_note returns body", "[notes]") {
     Notes notes;
-    notes.write_note("Test", "Body text");
+    notes.write_note("Body text");
 
-    auto result = notes.read_note("Test");
+    auto result = notes.read_note(0);
     REQUIRE(result);
     CHECK(*result == "Body text");
 }
 
-TEST_CASE("read_note errors on missing name", "[notes]") {
+TEST_CASE("read_note errors on missing ID", "[notes]") {
     Notes notes;
-    auto result = notes.read_note("NonExistent");
+    auto result = notes.read_note(99);
     CHECK_FALSE(result);
     CHECK(result.error().find("no such note") != std::string::npos);
 }
 
 TEST_CASE("delete_note removes it", "[notes]") {
     Notes notes;
-    notes.write_note("Hello", "World");
+    notes.write_note("Body");
 
-    auto del = notes.delete_note("Hello");
+    auto del = notes.delete_note(0);
     REQUIRE(del);
 
     auto list = notes.list_all_notes();
@@ -69,18 +62,18 @@ TEST_CASE("delete_note removes it", "[notes]") {
     CHECK(list->empty());
 }
 
-TEST_CASE("delete_note errors on missing name", "[notes]") {
+TEST_CASE("delete_note errors on missing ID", "[notes]") {
     Notes notes;
-    auto result = notes.delete_note("NonExistent");
+    auto result = notes.delete_note(42);
     CHECK_FALSE(result);
     CHECK(result.error().find("no such note") != std::string::npos);
 }
 
 TEST_CASE("delete_all_notes clears everything", "[notes]") {
     Notes notes;
-    notes.write_note("A", "a");
-    notes.write_note("B", "b");
-    notes.write_note("C", "c");
+    notes.write_note("a");
+    notes.write_note("b");
+    notes.write_note("c");
 
     auto del = notes.delete_all_notes();
     REQUIRE(del);
@@ -90,69 +83,60 @@ TEST_CASE("delete_all_notes clears everything", "[notes]") {
     CHECK(list->empty());
 }
 
-TEST_CASE("list_all_notes returns alphabetically sorted", "[notes]") {
+TEST_CASE("list_all_notes returns IDs sorted ascending", "[notes]") {
     Notes notes;
-    notes.write_note("Zebra", "z");
-    notes.write_note("Alpha", "a");
-    notes.write_note("Charlie", "c");
+    notes.write_note("z");
+    notes.write_note("a");
+    notes.write_note("c");
 
     auto result = notes.list_all_notes();
     REQUIRE(result);
     REQUIRE(result->size() == 3);
-    CHECK((*result)[0] == "Alpha");
-    CHECK((*result)[1] == "Charlie");
-    CHECK((*result)[2] == "Zebra");
+    CHECK((*result)[0] == 0);
+    CHECK((*result)[1] == 1);
+    CHECK((*result)[2] == 2);
 }
 
-TEST_CASE("Notes save/load round-trip", "[notes]") {
-    auto tmp = make_temp_dir();
-    auto path = tmp + "/test_notes.json";
+TEST_CASE("Notes serialization round-trip", "[notes]") {
+    Notes notes;
+    notes.write_note("apple");
+    notes.write_note("banana");
 
-    // Write notes
-    {
-        Notes notes;
-        notes.write_note("A", "apple");
-        notes.write_note("B", "banana");
-        notes.set_notes_file_path(path);
-        auto r = notes.save();
-        REQUIRE(r);
-    }
+    auto j = notes.to_json();
+    REQUIRE(j.is_object());
+    CHECK(j["0"] == "apple");
+    CHECK(j["1"] == "banana");
 
-    // Read back
-    {
-        Notes notes;
-        auto r = notes.load_from_file(path);
-        REQUIRE(r);
+    Notes notes2;
+    notes2.from_json(j);
 
-        auto list = notes.list_all_notes();
-        REQUIRE(list);
-        REQUIRE(list->size() == 2);
-        CHECK((*list)[0] == "A");
-        CHECK((*list)[1] == "B");
+    auto list = notes2.list_all_notes();
+    REQUIRE(list);
+    REQUIRE(list->size() == 2);
+    CHECK((*list)[0] == 0);
+    CHECK((*list)[1] == 1);
 
-        auto body_a = notes.read_note("A");
-        REQUIRE(body_a);
-        CHECK(*body_a == "apple");
+    auto body_a = notes2.read_note(0);
+    REQUIRE(body_a);
+    CHECK(*body_a == "apple");
 
-        auto body_b = notes.read_note("B");
-        REQUIRE(body_b);
-        CHECK(*body_b == "banana");
-    }
-
-    fs::remove_all(tmp);
+    auto body_b = notes2.read_note(1);
+    REQUIRE(body_b);
+    CHECK(*body_b == "banana");
 }
 
-TEST_CASE("Notes load_from_file with missing file does not error", "[notes]") {
-    auto tmp = make_temp_dir();
-    auto path = tmp + "/nonexistent.json";
+TEST_CASE("from_json skips non-integer keys (backward compat)", "[notes]") {
+    json j;
+    j["0"] = "first";
+    j["old_name"] = "skip me"; // non-integer key — should be ignored
+    j["1"] = "second";
 
     Notes notes;
-    auto r = notes.load_from_file(path);
-    REQUIRE(r);
+    notes.from_json(j);
 
     auto list = notes.list_all_notes();
     REQUIRE(list);
-    CHECK(list->empty());
-
-    fs::remove_all(tmp);
+    CHECK(list->size() == 2);
+    CHECK(notes.read_note(0) == "first");
+    CHECK(notes.read_note(1) == "second");
 }

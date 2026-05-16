@@ -12,8 +12,8 @@ Tool make_list_all_notes_tool(Notes& notes) {
     Tool t;
     t.name = "list_all_notes";
     t.description =
-        "List all note names. "
-        "Returns an array of strings, e.g. [\"name1\", \"name2\", ...]";
+        "List all note IDs. "
+        "Returns an array of integers, e.g. [0, 1, 2]";
     t.permission = ToolPermission::ReadOnly;
     t.parameters = {{"type", "object"}, {"properties", json::object()}};
     t.execute = [&notes](const json& args) -> Result<std::string> {
@@ -23,8 +23,8 @@ Tool make_list_all_notes_tool(Notes& notes) {
             return std::unexpected(result.error());
         }
         json arr = json::array();
-        for (const auto& name : *result) {
-            arr.push_back(name);
+        for (int id : *result) {
+            arr.push_back(id);
         }
         return arr.dump();
     };
@@ -39,21 +39,18 @@ Tool make_read_note_tool(Notes& notes) {
     Tool t;
     t.name = "read_note";
     t.description =
-        "Read a note by name. "
+        "Read a note by ID. "
         "Returns the note body as text. "
         "Returns an error if the note does not exist.";
     t.permission = ToolPermission::ReadOnly;
     t.parameters = {{"type", "object"},
         {"properties",
-            {{"name",
-                {{"type", "string"}, {"description", "Name of the note to read"}}}}},
-        {"required", {"name"}}};
+            {{"note_id",
+                {{"type", "integer"}, {"description", "ID of the note to read"}}}}},
+        {"required", {"note_id"}}};
     t.execute = [&notes](const json& args) -> Result<std::string> {
-        auto name = args.value("name", std::string());
-        if (name.empty()) {
-            return std::unexpected("name is required");
-        }
-        auto result = notes.read_note(name);
+        int id = args.value("note_id", -1);
+        auto result = notes.read_note(id);
         if (!result) {
             return std::unexpected(result.error());
         }
@@ -70,27 +67,30 @@ Tool make_write_note_tool(Notes& notes) {
     Tool t;
     t.name = "write_note";
     t.description =
-        "Write a note. Creates the note if it doesn't exist, "
-        "or overwrites it if it does.";
+        "Create or overwrite a note. "
+        "If note_id is omitted, the next available ID is auto-assigned.";
     t.permission = ToolPermission::Write;
     t.parameters = {{"type", "object"},
         {"properties",
-            {{"name", {{"type", "string"}, {"description", "Name of the note"}}},
+            {{"note_id",
+                 {{"type", "integer"},
+                    {"description",
+                        "Note ID. Omitted to auto-assign the next available ID"}}},
                 {"body",
                     {{"type", "string"},
                         {"description", "Body content of the note"}}}}},
-        {"required", {"name", "body"}}};
+        {"required", {"body"}}};
     t.execute = [&notes](const json& args) -> Result<std::string> {
-        auto name = args.value("name", std::string());
         auto body = args.value("body", std::string());
-        if (name.empty()) {
-            return std::unexpected("name is required");
-        }
-        auto result = notes.write_note(name, body);
+
+        auto result = notes.write_note(body);
         if (!result) {
             return std::unexpected(result.error());
         }
-        return "ok (" + std::to_string(body.size()) + " bytes written)";
+        auto ids = notes.list_all_notes();
+        int id = ids ? static_cast<int>(ids->size()) - 1 : 0;
+        return "ok (" + std::to_string(body.size()) + " bytes written to note #" +
+            std::to_string(id) + ")";
     };
     return t;
 }
@@ -103,20 +103,17 @@ Tool make_delete_note_tool(Notes& notes) {
     Tool t;
     t.name = "delete_note";
     t.description =
-        "Delete a note by name. "
+        "Delete a note by ID. "
         "Returns an error if the note does not exist.";
     t.permission = ToolPermission::Write;
     t.parameters = {{"type", "object"},
         {"properties",
-            {{"name",
-                {{"type", "string"}, {"description", "Name of the note to delete"}}}}},
-        {"required", {"name"}}};
+            {{"note_id",
+                {{"type", "integer"}, {"description", "ID of the note to delete"}}}}},
+        {"required", {"note_id"}}};
     t.execute = [&notes](const json& args) -> Result<std::string> {
-        auto name = args.value("name", std::string());
-        if (name.empty()) {
-            return std::unexpected("name is required");
-        }
-        auto result = notes.delete_note(name);
+        int id = args.value("note_id", -1);
+        auto result = notes.delete_note(id);
         if (!result) {
             return std::unexpected(result.error());
         }
