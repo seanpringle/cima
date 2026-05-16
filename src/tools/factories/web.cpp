@@ -87,8 +87,14 @@ Tool make_web_search_tool(int timeout, CancellationToken cancelled) {
 
         if (http_code != 200) {
             std::string msg = "web_search HTTP " + std::to_string(http_code);
-            if (!body.empty())
+            // Detect DDG challenge/CAPTCHA page (HTTP 202)
+            if (http_code == 202) {
+                msg = "DuckDuckGo returned a challenge page (HTTP 202). "
+                      "This usually means your IP is being rate-limited. "
+                      "Wait a moment and try again, or use a different network.";
+            } else if (!body.empty()) {
                 msg += ": " + body.substr(0, 500);
+            }
             return std::unexpected(msg);
         }
 
