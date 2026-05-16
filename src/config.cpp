@@ -55,6 +55,8 @@ json Config::to_json() const {
     j["grep_timeout"] = grep_timeout;
     j["web_search_timeout"] = web_search_timeout;
     j["web_fetch_timeout"] = web_fetch_timeout;
+    j["font_sans"] = font_sans;
+    j["font_mono"] = font_mono;
     j["clangd_path"] = clangd_path;
     j["clangd_args"] = clangd_args;
     j["lsp_timeout"] = lsp_timeout;
@@ -168,6 +170,14 @@ Config Config::load() {
         load_timeout("grep_timeout", cfg.grep_timeout);
         load_timeout("web_search_timeout", cfg.web_search_timeout);
         load_timeout("web_fetch_timeout", cfg.web_fetch_timeout);
+
+        // Font settings
+        if (j.contains("font_sans") && j["font_sans"].is_string()) {
+            cfg.font_sans = j["font_sans"].get<std::string>();
+        }
+        if (j.contains("font_mono") && j["font_mono"].is_string()) {
+            cfg.font_mono = j["font_mono"].get<std::string>();
+        }
 
         // LSP settings
         if (j.contains("clangd_path") && j["clangd_path"].is_string()) {

@@ -57,6 +57,10 @@ struct Config {
     int cmake_build_timeout = 300;      // builds can take minutes
     int cmake_ctest_timeout = 300;      // test suites can be long
 
+    // Font paths (empty = auto-detect via fontconfig)
+    std::string font_sans;                   // path to sans-serif font file
+    std::string font_mono;                   // path to monospace font file
+
     // LSP / clangd settings
     std::string clangd_path;                 // Path to clangd binary (empty = search PATH)
     std::vector<std::string> clangd_args;    // Extra CLI flags, e.g. ["--clang-tidy"]

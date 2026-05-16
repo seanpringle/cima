@@ -13,9 +13,86 @@
 
 using namespace ImGui;
 
+#include <fontconfig/fontconfig.h>
+
 #include <algorithm>
 #include <csignal>
 #include <iostream>
+
+// ── Font lookup helpers (fontconfig) ──
+
+/// Find a single font file via fontconfig matching `pattern_str`
+/// (e.g. "Noto Sans", "monospace", "sans-serif:spacing=mono").
+/// `FcInit()` must have been called before the first call.
+/// Returns empty path on failure.
+static std::string find_system_font(const std::string& pattern_str) {
+    FcPattern* pattern = FcNameParse(reinterpret_cast<const FcChar8*>(pattern_str.c_str()));
+    if (!pattern) return {};
+
+    FcConfigSubstitute(nullptr, pattern, FcMatchPattern);
+    FcDefaultSubstitute(pattern);
+
+    FcResult result;
+    FcPattern* match = FcFontMatch(nullptr, pattern, &result);
+    FcPatternDestroy(pattern);
+
+    if (!match || result != FcResultMatch) {
+        FcPatternDestroy(match);
+        return {};
+    }
+
+    FcChar8* file = nullptr;
+    if (FcPatternGetString(match, FC_FILE, 0, &file) != FcResultMatch) {
+        FcPatternDestroy(match);
+        return {};
+    }
+
+    std::string path = reinterpret_cast<const char*>(file);
+    FcPatternDestroy(match);
+    return path;
+}
+
+/// Find the best sans + mono font pair from the system.
+/// Respects cfg.font_sans / cfg.font_mono overrides.
+/// Returns false if fontconfig is unavailable or no fonts could be matched.
+static bool find_font_pair(const Config& cfg,
+                           std::string& out_sans,
+                           std::string& out_mono) {
+    // Initialise fontconfig once (idempotent, ref-counted internally)
+    FcInit();
+
+    // User-specified paths take precedence
+    if (!cfg.font_sans.empty()) {
+        out_sans = cfg.font_sans;
+    }
+    if (!cfg.font_mono.empty()) {
+        out_mono = cfg.font_mono;
+    }
+
+    // Try to fill in any missing half
+    auto try_family = [&](const std::string& sans_name, const std::string& mono_name) -> bool {
+        if (out_sans.empty()) {
+            std::string p = find_system_font(sans_name);
+            if (p.empty()) return false;
+            out_sans = std::move(p);
+        }
+        if (out_mono.empty()) {
+            std::string p = find_system_font(mono_name);
+            if (p.empty()) return false;
+            out_mono = std::move(p);
+        }
+        return true;
+    };
+
+    // Priority-ordered family pairs
+    if (try_family("Noto Sans", "Noto Sans Mono")) return true;
+    if (try_family("DejaVu Sans", "DejaVu Sans Mono")) return true;
+    if (try_family("Liberation Sans", "Liberation Mono")) return true;
+    if (try_family("Ubuntu", "Ubuntu Mono")) return true;
+    if (try_family("sans-serif", "monospace")) return true;
+
+    return false;
+}
 
 // ── Helper: save a single tab to its consolidated JSON file ──
 static void save_tab_to_disk(const TabInfo& tab, AppSession& app_session) {
@@ -215,40 +292,38 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
             0,
         };
 
-        ImFontConfig cfg;
-        cfg.OversampleH = 2;
+        ImFontConfig font_cfg;
+        font_cfg.OversampleH = 2;
         ImFontConfig merge;
         merge.OversampleH = 2;
         merge.MergeMode = true;
 
         float fs = 18.0f * scale;
-        ImGui::GetIO().Fonts->Clear();
-        ImGui::GetIO().Fonts->AddFontFromFileTTF("font/NotoSans-Regular.ttf", fs, &cfg, latin);
-        ImGui::GetIO().Fonts->AddFontFromFileTTF("font/NotoSans-Regular.ttf", fs, &merge, unicode);
-        ImGui::GetIO().Fonts->AddFontFromFileTTF(
-            "font/NotoSansMath-Regular.ttf", fs, &merge, unicode);
-        ImGui::GetIO().Fonts->AddFontFromFileTTF(
-            "font/NotoSansSymbols-Regular.ttf", fs, &merge, unicode);
-        ImGui::GetIO().Fonts->AddFontFromFileTTF(
-            "font/NotoSansSymbols2-Regular.ttf", fs, &merge, unicode);
-        ImGui::GetIO().Fonts->AddFontFromFileTTF("font/NotoEmoji-Regular.ttf", fs, &merge, unicode);
 
-        mono_font = ImGui::GetIO().Fonts->AddFontFromFileTTF(
-            "font/DejaVuSansMono.ttf", fs * 0.9f, &cfg, latin);
-        if (!mono_font) {
-            SDL_Log("Failed to load mono font: font/DejaVuSansMono.ttf");
-            return 1;
+        // Try system fonts via fontconfig
+        std::string sans_path, mono_path;
+        if (find_font_pair(cfg, sans_path, mono_path)) {
+            ImGui::GetIO().Fonts->Clear();
+
+            // Sans
+            ImGui::GetIO().Fonts->AddFontFromFileTTF(sans_path.c_str(), fs, &font_cfg, latin);
+            ImGui::GetIO().Fonts->AddFontFromFileTTF(sans_path.c_str(), fs, &merge, unicode);
+
+            // Mono
+            mono_font = ImGui::GetIO().Fonts->AddFontFromFileTTF(
+                mono_path.c_str(), fs * 0.9f, &font_cfg, latin);
+            if (mono_font) {
+                ImGui::GetIO().Fonts->AddFontFromFileTTF(
+                    mono_path.c_str(), fs * 0.9f, &merge, unicode);
+            }
         }
-        ImGui::GetIO().Fonts->AddFontFromFileTTF(
-            "font/DejaVuSansMono.ttf", fs * 0.9f, &merge, unicode);
-        ImGui::GetIO().Fonts->AddFontFromFileTTF(
-            "font/NotoSansMath-Regular.ttf", fs * 0.9f, &merge, unicode);
-        ImGui::GetIO().Fonts->AddFontFromFileTTF(
-            "font/NotoSansSymbols-Regular.ttf", fs * 0.9f, &merge, unicode);
-        ImGui::GetIO().Fonts->AddFontFromFileTTF(
-            "font/NotoSansSymbols2-Regular.ttf", fs * 0.9f, &merge, unicode);
-        ImGui::GetIO().Fonts->AddFontFromFileTTF(
-            "font/NotoEmoji-Regular.ttf", fs * 0.9f, &merge, unicode);
+
+        // Fallback: if fontconfig failed or mono didn't load, use ImGui's default.
+        if (!mono_font) {
+            SDL_Log("Warning: fontconfig unavailable or no fonts found; "
+                    "using ImGui built-in default font");
+            mono_font = ImGui::GetIO().Fonts->Fonts[0];
+        }
     }
 
     ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);

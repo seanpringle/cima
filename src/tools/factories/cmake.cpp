@@ -181,7 +181,7 @@ Tool make_cmake_configure_tool(std::shared_ptr<std::string> safe_dir_ptr,
                 {{"type", "integer"},
                     {"description", "Take last N lines (0 = no tail filter, default 0)"}}},
              {"flags",
-                {{"type", "array", "items", {{"type", "string"}}},
+                {{"type", "array"}, {"items", {{"type", "string"}}},
                     {"description",
                         "Optional array of additional flags, e.g. "
                         "[\"-DCMAKE_BUILD_TYPE=Debug\"]"}}}}},

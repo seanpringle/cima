@@ -24,6 +24,15 @@ find_package(SDL3 REQUIRED)
 find_package(Catch2 REQUIRED)
 find_package(LibXml2 REQUIRED)
 
+# ── fontconfig (font discovery on Linux) ──
+find_package(PkgConfig QUIET)
+if(PkgConfig_FOUND)
+    pkg_check_modules(FONTCONFIG fontconfig)
+endif()
+if(NOT FONTCONFIG_FOUND)
+    find_package(Fontconfig REQUIRED)
+endif()
+
 # ── md4c (Markdown parser) ──
 find_package(PkgConfig QUIET)
 if(PkgConfig_FOUND)
@@ -140,7 +149,13 @@ add_executable(cima
 target_include_directories(cima PRIVATE ${imgui_SOURCE_DIR})
 target_include_directories(cima PRIVATE ${imgui_SOURCE_DIR}/backends)
 target_compile_definitions(cima PRIVATE IMGUI_USE_WCHAR32=1)
-target_link_libraries(cima PRIVATE cima_core SDL3::SDL3 cima_md4c)
+if(FONTCONFIG_FOUND)
+    target_compile_definitions(cima PRIVATE CIMA_HAVE_FONTCONFIG=1)
+    target_include_directories(cima PRIVATE ${FONTCONFIG_INCLUDE_DIRS})
+    target_link_libraries(cima PRIVATE cima_core SDL3::SDL3 cima_md4c ${FONTCONFIG_LIBRARIES})
+else()
+    target_link_libraries(cima PRIVATE cima_core SDL3::SDL3 cima_md4c Fontconfig::Fontconfig)
+endif()
 
 add_executable(test_config tests/test_config.cpp)
 target_link_libraries(test_config PRIVATE cima_core Catch2::Catch2WithMain)
