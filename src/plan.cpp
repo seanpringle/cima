@@ -1,7 +1,6 @@
 #include "plan.h"
 
 #include <fstream>
-#include <sstream>
 
 // ===================================================================
 // PlanBoard operations
@@ -18,11 +17,7 @@ Result<std::string> PlanBoard::read_plan() const {
         return std::string("(empty plan)");
     }
 
-    std::ostringstream ss;
-    ss << "# Plan\n\n";
-    ss << plan_ << "\n\n";
-
-    return ss.str();
+    return plan_;
 }
 
 // ===================================================================
