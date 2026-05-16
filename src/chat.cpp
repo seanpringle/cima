@@ -87,6 +87,8 @@ void ChatSession::set_lsp_client(LspClient* lsp) {
         tools_.add(make_get_lsp_definition_tool(*lsp_client_));
         tools_.add(make_get_lsp_completion_tool(*lsp_client_));
         tools_.add(make_get_lsp_code_actions_tool(*lsp_client_));
+        tools_.add(make_get_lsp_rename_tool(*lsp_client_));
+        tools_.add(make_get_lsp_format_tool(*lsp_client_));
     }
 }
 

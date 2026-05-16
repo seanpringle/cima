@@ -193,5 +193,7 @@ Tool make_get_lsp_hover_tool(LspClient& lsp);
 Tool make_get_lsp_definition_tool(LspClient& lsp);
 Tool make_get_lsp_completion_tool(LspClient& lsp);
 Tool make_get_lsp_code_actions_tool(LspClient& lsp);
+Tool make_get_lsp_rename_tool(LspClient& lsp);
+Tool make_get_lsp_format_tool(LspClient& lsp);
 
 

@@ -3,8 +3,12 @@
 #include "lsp/lsp_client.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <fstream>
+#include <iostream>
+#include <sstream>
 #include <string>
+#include <vector>
 
 // ===================================================================
 // get_lsp_diagnostics
@@ -876,5 +880,480 @@ Tool make_get_lsp_code_actions_tool(LspClient& lsp) {
         return output;
     };
 
+    return t;
+}
+
+// ===================================================================
+// Helpers for applying LSP edits to files
+// ===================================================================
+
+/// Convert 0-based line and column (UTF-8 byte offset) to a byte offset
+/// within the given content string.
+/// This is a simple newline-counting approach.  For ASCII content it is
+/// exact; for non-ASCII UTF-8 it assumes the column is given in bytes
+/// (which holds when the client advertises "offsetEncoding": "utf-8").
+/// TODO: support UTF-16 offset encoding when not advertising utf-8.
+static size_t position_to_offset(const std::string& content, int line, int col) {
+    size_t offset = 0;
+    int current_line = 0;
+    while (current_line < line && offset < content.size()) {
+        auto nl = content.find('\n', offset);
+        if (nl == std::string::npos)
+            return content.size();
+        offset = nl + 1;
+        current_line++;
+    }
+    if (current_line != line)
+        return content.size();
+
+    size_t pos = offset + static_cast<size_t>(col);
+    if (pos > content.size())
+        pos = content.size();
+    return pos;
+}
+
+/// Apply an array of TextEdit (from LSP) to the content string in-place.
+/// Edits are sorted by range start position in descending order so that
+/// applying them does not invalidate positions of subsequent edits.
+static void apply_text_edits_to_content(std::string& content, const json& edits) {
+    // Build a vector of (start_offset, end_offset, newText) tuples
+    struct EditRange {
+        size_t start;
+        size_t end;
+        std::string new_text;
+    };
+
+    std::vector<EditRange> edit_list;
+    for (const auto& edit : edits) {
+        auto& range = edit["range"];
+        auto& start_pos = range["start"];
+        auto& end_pos = range["end"];
+
+        size_t start_off = position_to_offset(
+            content, start_pos["line"].get<int>(), start_pos["character"].get<int>());
+        size_t end_off = position_to_offset(
+            content, end_pos["line"].get<int>(), end_pos["character"].get<int>());
+
+        edit_list.push_back({start_off, end_off, edit["newText"].get<std::string>()});
+    }
+
+    // Sort in descending order by start offset (so edits don't shift each other)
+    std::sort(edit_list.begin(), edit_list.end(),
+        [](const EditRange& a, const EditRange& b) {
+            return a.start > b.start;
+        });
+
+    // Apply edits
+    for (const auto& e : edit_list) {
+        content.replace(e.start, e.end - e.start, e.new_text);
+    }
+}
+
+/// Apply a single file's TextEdit[] to disk and sync with LSP.
+static Result<void> apply_text_edits_to_file(LspClient& lsp,
+                                              const std::string& uri,
+                                              const json& edits) {
+    auto path = lsp::uri_to_path(uri);
+    if (!path) {
+        return std::unexpected("Invalid URI: " + uri);
+    }
+
+    // Read the current file content
+    std::ifstream infile(*path, std::ios::binary);
+    if (!infile.is_open()) {
+        return std::unexpected("Cannot open file for reading: " + *path);
+    }
+    std::string content((std::istreambuf_iterator<char>(infile)),
+                         std::istreambuf_iterator<char>());
+    infile.close();
+
+    // Apply edits
+    apply_text_edits_to_content(content, edits);
+
+    // Write back
+    std::ofstream outfile(*path, std::ios::binary);
+    if (!outfile.is_open()) {
+        return std::unexpected("Cannot open file for writing: " + *path);
+    }
+    outfile.write(content.data(), content.size());
+    outfile.close();
+
+    // Sync with LSP server
+    auto lang = LspClient::language_id_from_extension(*path);
+    auto sync = lsp.ensure_file_synced(uri, lang, content);
+    if (!sync) {
+        // Non-fatal: the file is written, just log
+        std::cerr << "apply_text_edits_to_file: failed to sync " << *path
+                  << " with LSP: " << sync.error() << std::endl;
+    }
+
+    return {};
+}
+
+/// Apply a WorkspaceEdit (the result of textDocument/rename) to disk.
+/// Handles both `changes` (map of URI → TextEdit[]) and
+/// `documentChanges` (array of TextDocumentEdit).
+/// Returns a map of URI → number of edits applied for the report.
+static Result<std::map<std::string, int>> apply_workspace_edit(
+    LspClient& lsp, const json& workspace_edit) {
+    std::map<std::string, int> per_file_counts;
+
+    // Handle `changes` format
+    if (workspace_edit.contains("changes") && workspace_edit["changes"].is_object()) {
+        for (auto it = workspace_edit["changes"].begin();
+             it != workspace_edit["changes"].end(); ++it) {
+            const std::string& uri = it.key();
+            const json& edits = it.value();
+            if (!edits.is_array() || edits.empty())
+                continue;
+
+            auto result = apply_text_edits_to_file(lsp, uri, edits);
+            if (!result) {
+                return std::unexpected(result.error());
+            }
+            per_file_counts[uri] = static_cast<int>(edits.size());
+        }
+    }
+
+    // Handle `documentChanges` format
+    if (workspace_edit.contains("documentChanges") &&
+        workspace_edit["documentChanges"].is_array()) {
+        for (const auto& doc_change : workspace_edit["documentChanges"]) {
+            const std::string& uri = doc_change["textDocument"]["uri"];
+            const json& edits = doc_change["edits"];
+            if (!edits.is_array() || edits.empty())
+                continue;
+
+            auto result = apply_text_edits_to_file(lsp, uri, edits);
+            if (!result) {
+                return std::unexpected(result.error());
+            }
+            per_file_counts[uri] += static_cast<int>(edits.size());
+        }
+    }
+
+    return per_file_counts;
+}
+
+// ===================================================================
+// get_lsp_rename
+// ===================================================================
+
+Tool make_get_lsp_rename_tool(LspClient& lsp) {
+    Tool t;
+    t.name = "get_lsp_rename";
+    t.description =
+        "Rename a symbol across the entire project.\n"
+        "Specify the file path, line, and character of the symbol to rename, "
+        "and the new name.  Uses clangd's rename capability (textDocument/rename).\n"
+        "This tool modifies files on disk — use with care.\n"
+        "Requires 'lsp_enabled: true' in cima.json and clangd installed.";
+    t.permission = ToolPermission::Write;
+    t.timeout_sec = 30;
+    t.parameters = {{"type", "object"},
+        {"properties",
+            {{"path",
+                {{"type", "string"},
+                    {"description", "Path to the source file containing the symbol"}}},
+             {"line",
+                {{"type", "integer"},
+                    {"description", "0-based line number of the symbol"}}},
+             {"character",
+                {{"type", "integer"},
+                    {"description", "0-based column offset of the symbol"}}},
+             {"new_name",
+                {{"type", "string"},
+                    {"description", "The new name for the symbol"}}}}},
+        {"required", {"path", "line", "character", "new_name"}}};
+    int timeout = t.timeout_sec;
+    t.execute = [&lsp, timeout](const json& args) -> Result<std::string> {
+        if (!lsp.is_running()) {
+            return std::unexpected(
+                std::string("LSP server is not running. "
+                            "Enable with \"lsp_enabled\": true in cima.json "
+                            "and ensure clangd is installed."));
+        }
+
+        auto raw_path = args.value("path", std::string());
+        int line = args.value("line", -1);
+        int character = args.value("character", -1);
+        auto new_name = args.value("new_name", std::string());
+
+        if (raw_path.empty()) {
+            return std::unexpected(std::string("path is required"));
+        }
+        if (line < 0) {
+            return std::unexpected(std::string("line must be >= 0"));
+        }
+        if (character < 0) {
+            return std::unexpected(std::string("character must be >= 0"));
+        }
+        if (new_name.empty()) {
+            return std::unexpected(std::string("new_name is required"));
+        }
+
+        std::string uri = lsp::path_to_uri(raw_path);
+
+        // Read and sync file content
+        std::ifstream file(raw_path, std::ios::binary | std::ios::ate);
+        if (!file.is_open()) {
+            return std::unexpected("Cannot open file: " + raw_path);
+        }
+        auto size = file.tellg();
+        std::string content(static_cast<size_t>(size), '\0');
+        file.seekg(0);
+        file.read(content.data(), size);
+
+        auto lang = LspClient::language_id_from_extension(raw_path);
+        auto sync = lsp.ensure_file_synced(uri, lang, content);
+        if (!sync) {
+            return std::unexpected(
+                "Failed to sync file with LSP server: " + sync.error());
+        }
+
+        // First, check if the symbol is renameable via prepareRename
+        auto prepare = lsp.request("textDocument/prepareRename", {
+            {"textDocument", {{"uri", uri}}},
+            {"position", {{"line", line}, {"character", character}}}
+        }, timeout);
+
+        if (!prepare) {
+            // Method not found → clangd too old
+            if (prepare.error().find("MethodNotFound") != std::string::npos) {
+                return std::unexpected(
+                    std::string("clangd version too old — rename requires clangd >= 6.0.0. "
+                                "Please upgrade your clangd installation."));
+            }
+            return std::unexpected(prepare.error());
+        }
+
+        // Check for errors or null result (null = not renameable)
+        if (prepare->contains("error")) {
+            auto& err = (*prepare)["error"];
+            int code = err.value("code", 0);
+            std::string msg = err.value("message", "");
+            if (code == lsp::ErrorCodes::MethodNotFound) {
+                return std::unexpected(
+                    std::string("LSP method not found (clangd too old?): ") + msg);
+            }
+            return std::unexpected(
+                std::string("LSP error [") + std::to_string(code) +
+                "]: " + msg);
+        }
+
+        if (!prepare->contains("result") || (*prepare)["result"].is_null()) {
+            return std::string("(symbol is not renameable at this location)");
+        }
+
+        // Symbol is renameable — execute the rename
+        auto resp = lsp.request("textDocument/rename", {
+            {"textDocument", {{"uri", uri}}},
+            {"position", {{"line", line}, {"character", character}}},
+            {"newName", new_name}
+        }, timeout);
+
+        if (!resp) {
+            return std::unexpected(resp.error());
+        }
+
+        auto& response = *resp;
+        if (response.contains("error")) {
+            auto& err = response["error"];
+            return std::unexpected(
+                std::string("LSP error [") +
+                std::to_string(err.value("code", 0)) +
+                "]: " + err.value("message", ""));
+        }
+
+        if (!response.contains("result") || response["result"].is_null()) {
+            return std::string("(rename produced no changes)");
+        }
+
+        auto& workspace_edit = response["result"];
+
+        // Apply the workspace edit to disk
+        auto apply_result = apply_workspace_edit(lsp, workspace_edit);
+        if (!apply_result) {
+            return std::unexpected(
+                std::string("Failed to apply rename edits: ") +
+                apply_result.error());
+        }
+
+        // Build the report
+        std::string output = "Renamed → '" + new_name + "':\n";
+        int total_files = 0;
+        int total_edits = 0;
+        for (const auto& [uri, count] : *apply_result) {
+            auto path = lsp::uri_to_path(uri);
+            const std::string& display = path ? *path : uri;
+            output += "- " + display + ": " + std::to_string(count) +
+                      (count == 1 ? " occurrence" : " occurrences") + " updated\n";
+            total_files++;
+            total_edits += count;
+        }
+        // Prepend summary
+        std::string summary = std::to_string(total_edits) +
+            (total_edits == 1 ? " change" : " changes") +
+            " across " + std::to_string(total_files) +
+            (total_files == 1 ? " file" : " files") + ":\n";
+        output = summary + output;
+
+        return output;
+    };
+    return t;
+}
+
+// ===================================================================
+// get_lsp_format
+// ===================================================================
+
+Tool make_get_lsp_format_tool(LspClient& lsp) {
+    Tool t;
+    t.name = "get_lsp_format";
+    t.description =
+        "Format code in a file using clang-format (embedded in clangd).\n"
+        "If start_line and end_line are provided, only that range is formatted. "
+        "Otherwise the entire file is formatted.\n"
+        "This tool modifies the file on disk — use with care.\n"
+        "Requires 'lsp_enabled: true' in cima.json and clangd installed.";
+    t.permission = ToolPermission::Write;
+    t.timeout_sec = 15;
+    int timeout = t.timeout_sec;
+    t.parameters = {{"type", "object"},
+        {"properties",
+            {{"path",
+                {{"type", "string"},
+                    {"description", "Path to the source file to format"}}},
+             {"start_line",
+                {{"type", "integer"},
+                    {"description",
+                        "Optional: 0-based start line for range formatting"}}},
+             {"end_line",
+                {{"type", "integer"},
+                    {"description",
+                        "Optional: 0-based end line for range formatting (exclusive)"}}}}},
+        {"required", {"path"}}};
+    t.execute = [&lsp, timeout](const json& args) -> Result<std::string> {
+        if (!lsp.is_running()) {
+            return std::unexpected(
+                std::string("LSP server is not running. "
+                            "Enable with \"lsp_enabled\": true in cima.json "
+                            "and ensure clangd is installed."));
+        }
+
+        auto raw_path = args.value("path", std::string());
+        if (raw_path.empty()) {
+            return std::unexpected(std::string("path is required"));
+        }
+
+        // Optional range parameters
+        bool has_start = args.contains("start_line") && !args["start_line"].is_null();
+        bool has_end = args.contains("end_line") && !args["end_line"].is_null();
+
+        int start_line = args.value("start_line", -1);
+        int end_line = args.value("end_line", -1);
+
+        if (has_start && start_line < 0) {
+            return std::unexpected(std::string("start_line must be >= 0"));
+        }
+        if (has_end && end_line < 0) {
+            return std::unexpected(std::string("end_line must be >= 0"));
+        }
+        if (has_start && has_end && end_line <= start_line) {
+            return std::unexpected(
+                std::string("end_line must be > start_line"));
+        }
+
+        std::string uri = lsp::path_to_uri(raw_path);
+
+        // Read and sync file content
+        std::ifstream file(raw_path, std::ios::binary | std::ios::ate);
+        if (!file.is_open()) {
+            return std::unexpected("Cannot open file: " + raw_path);
+        }
+        auto size = file.tellg();
+        std::string content(static_cast<size_t>(size), '\0');
+        file.seekg(0);
+        file.read(content.data(), size);
+
+        auto lang = LspClient::language_id_from_extension(raw_path);
+        auto sync = lsp.ensure_file_synced(uri, lang, content);
+        if (!sync) {
+            return std::unexpected(
+                "Failed to sync file with LSP server: " + sync.error());
+        }
+
+        // Determine which formatting method to call
+        std::string method;
+        json params;
+        if (has_start && has_end) {
+            method = "textDocument/rangeFormatting";
+            params = {
+                {"textDocument", {{"uri", uri}}},
+                {"range", {
+                    {"start", {{"line", start_line}, {"character", 0}}},
+                    {"end", {{"line", end_line}, {"character", 0}}}
+                }},
+                {"options", {
+                    {"tabSize", 4},
+                    {"insertSpaces", true}
+                }}
+            };
+        } else {
+            method = "textDocument/formatting";
+            params = {
+                {"textDocument", {{"uri", uri}}},
+                {"options", {
+                    {"tabSize", 4},
+                    {"insertSpaces", true}
+                }}
+            };
+        }
+
+        auto resp = lsp.request(method, params, timeout);
+        if (!resp) {
+            // Check if the error is MethodNotFound (older clangd without clang-format)
+            if (resp.error().find("MethodNotFound") != std::string::npos) {
+                return std::unexpected(
+                    std::string("clangd version too old — formatting requires clangd >= 6.0.0. "
+                                "Please upgrade your clangd installation."));
+            }
+            return std::unexpected(resp.error());
+        }
+
+        auto& response = *resp;
+        if (response.contains("error")) {
+            auto& err = response["error"];
+            int code = err.value("code", 0);
+            std::string msg = err.value("message", "");
+            if (code == lsp::ErrorCodes::MethodNotFound) {
+                return std::unexpected(
+                    std::string("LSP method not found (clangd too old?): ") + msg);
+            }
+            return std::unexpected(
+                std::string("LSP error [") + std::to_string(code) +
+                "]: " + msg);
+        }
+
+        if (!response.contains("result") || response["result"].is_null()) {
+            return std::string("(already formatted)");
+        }
+
+        auto& edits = response["result"];
+        if (!edits.is_array() || edits.empty()) {
+            return std::string("(already formatted)");
+        }
+
+        // Apply edits to the file
+        auto apply = apply_text_edits_to_file(lsp, uri, edits);
+        if (!apply) {
+            return std::unexpected(
+                "Failed to apply formatting edits: " + apply.error());
+        }
+
+        int count = static_cast<int>(edits.size());
+        return "Formatted " + raw_path + " (" + std::to_string(count) +
+               (count == 1 ? " change" : " changes") + ")";
+    };
     return t;
 }

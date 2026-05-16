@@ -913,3 +913,264 @@ TEST_CASE("get_lsp_code_actions null result", "[lsp][tool]") {
     REQUIRE(result);
     CHECK(*result == "(no code actions available)");
 }
+
+// ===================================================================
+// get_lsp_rename
+// ===================================================================
+
+struct RenameFormatFixture {
+    MockLspServer mock;
+    LspClient client;
+    ToolRegistry reg;
+    std::string dir;
+
+    RenameFormatFixture() {
+        dir = make_temp_dir();
+    }
+
+    bool setup() {
+        if (!mock.start())
+            return false;
+        if (!client.connect(mock.child_stdout(), mock.child_stdin()))
+            return false;
+        reg.add(make_get_lsp_rename_tool(client));
+        reg.add(make_get_lsp_format_tool(client));
+        return true;
+    }
+
+    ~RenameFormatFixture() {
+        client.shutdown();
+        if (!dir.empty())
+            fs::remove_all(dir);
+    }
+};
+
+TEST_CASE("get_lsp_rename applies WorkspaceEdit", "[lsp][tool]") {
+    RenameFormatFixture fix;
+    // Set up mock to accept prepareRename and return a WorkspaceEdit
+    fix.mock.set_prepare_rename_response(json::object({
+        {"start", json::object({{"line", 0}, {"character", 0}})},
+        {"end", json::object({{"line", 0}, {"character", 5}})}
+    }));
+    fix.mock.set_rename_response(json::object({
+        {"changes", json::object({
+            {lsp::path_to_uri(fix.dir + "/file1.cc"), json::array({
+                json::object({
+                    {"range", json::object({
+                        {"start", json::object({{"line", 0}, {"character", 0}})},
+                        {"end", json::object({{"line", 0}, {"character", 5}})}
+                    })},
+                    {"newText", "renamed"}
+                })
+            })},
+            {lsp::path_to_uri(fix.dir + "/file2.cc"), json::array({
+                json::object({
+                    {"range", json::object({
+                        {"start", json::object({{"line", 2}, {"character", 0}})},
+                        {"end", json::object({{"line", 2}, {"character", 5}})}
+                    })},
+                    {"newText", "renamed"}
+                })
+            })}
+        })}
+    }));
+    REQUIRE(fix.setup());
+
+    // Create the source files
+    auto path1 = fix.dir + "/file1.cc";
+    auto path2 = fix.dir + "/file2.cc";
+    std::ofstream(path1) << "hello";
+    std::ofstream(path2) << "line1\nline2\nhello";
+
+    auto result = fix.reg.execute("get_lsp_rename",
+        json({{"path", path1}, {"line", 0}, {"character", 0}, {"new_name", "renamed"}}).dump());
+    REQUIRE(result);
+
+    // Should report changes across 2 files
+    CHECK(result->find("2 changes") != std::string::npos);
+    CHECK(result->find("2 files") != std::string::npos);
+    CHECK(result->find("file1.cc") != std::string::npos);
+    CHECK(result->find("file2.cc") != std::string::npos);
+    CHECK(result->find("renamed") != std::string::npos);
+
+    // Verify file content was actually modified
+    std::ifstream f1(path1);
+    std::string content1((std::istreambuf_iterator<char>(f1)),
+                          std::istreambuf_iterator<char>());
+    CHECK(content1 == "renamed");
+
+    std::ifstream f2(path2);
+    std::string content2((std::istreambuf_iterator<char>(f2)),
+                          std::istreambuf_iterator<char>());
+    CHECK(content2 == "line1\nline2\nrenamed");
+}
+
+TEST_CASE("get_lsp_rename rejects non-renameable symbol", "[lsp][tool]") {
+    RenameFormatFixture fix;
+    // prepareRename returns null (default) → not renameable
+    REQUIRE(fix.setup());
+
+    auto path = fix.dir + "/test.cc";
+    std::ofstream(path) << "int x;";
+
+    auto result = fix.reg.execute("get_lsp_rename",
+        json({{"path", path}, {"line", 0}, {"character", 0}, {"new_name", "y"}}).dump());
+    REQUIRE(result);
+    CHECK(*result == "(symbol is not renameable at this location)");
+}
+
+TEST_CASE("get_lsp_rename missing new_name", "[lsp][tool]") {
+    RenameFormatFixture fix;
+    REQUIRE(fix.setup());
+
+    auto result = fix.reg.execute("get_lsp_rename",
+        R"({"path": "/tmp/test.cc", "line": 0, "character": 0})");
+    CHECK_FALSE(result);
+}
+
+TEST_CASE("get_lsp_rename with documentChanges format", "[lsp][tool]") {
+    RenameFormatFixture fix;
+    // Set up mock with documentChanges format
+    fix.mock.set_prepare_rename_response(json::object({
+        {"start", json::object({{"line", 0}, {"character", 0}})},
+        {"end", json::object({{"line", 0}, {"character", 3}})}
+    }));
+    fix.mock.set_rename_response(json::object({
+        {"documentChanges", json::array({
+            json::object({
+                {"textDocument", json::object({
+                    {"uri", lsp::path_to_uri(fix.dir + "/test.cc")},
+                    {"version", 1}
+                })},
+                {"edits", json::array({
+                    json::object({
+                        {"range", json::object({
+                            {"start", json::object({{"line", 0}, {"character", 0}})},
+                            {"end", json::object({{"line", 0}, {"character", 6}})}
+                        })},
+                        {"newText", "int y;"}
+                    })
+                })}
+            })
+        })}
+    }));
+    REQUIRE(fix.setup());
+
+    auto path = fix.dir + "/test.cc";
+    std::ofstream(path) << "int x;";
+
+    auto result = fix.reg.execute("get_lsp_rename",
+        json({{"path", path}, {"line", 0}, {"character", 0}, {"new_name", "y"}}).dump());
+    REQUIRE(result);
+    CHECK(result->find("1 change") != std::string::npos);
+
+    // Verify file content was modified
+    std::ifstream f(path);
+    std::string content((std::istreambuf_iterator<char>(f)),
+                         std::istreambuf_iterator<char>());
+    CHECK(content == "int y;");
+}
+
+// ===================================================================
+// get_lsp_format
+// ===================================================================
+
+TEST_CASE("get_lsp_format formats full file", "[lsp][tool]") {
+    RenameFormatFixture fix;
+    // Set up formatting response with edits
+    fix.mock.set_formatting_response(json::array({
+        json::object({
+            {"range", json::object({
+                {"start", json::object({{"line", 0}, {"character", 0}})},
+                {"end", json::object({{"line", 0}, {"character", 12}})}
+            })},
+            {"newText", "int x = 42;\n"}
+        })
+    }));
+    REQUIRE(fix.setup());
+
+    auto path = fix.dir + "/test.cc";
+    std::ofstream(path) << "int  x=42;";
+
+    auto result = fix.reg.execute("get_lsp_format",
+        json({{"path", path}}).dump());
+    REQUIRE(result);
+    CHECK(result->find("Formatted") != std::string::npos);
+    CHECK(result->find(path) != std::string::npos);
+    CHECK(result->find("1 change") != std::string::npos);
+
+    // Verify file content was modified
+    std::ifstream f(path);
+    std::string content((std::istreambuf_iterator<char>(f)),
+                         std::istreambuf_iterator<char>());
+    CHECK(content == "int x = 42;\n");
+}
+
+TEST_CASE("get_lsp_format range formatting", "[lsp][tool]") {
+    RenameFormatFixture fix;
+    // Set up range formatting response — clang-format would replace
+    // the entire "x=42;" (chars 2-7) with "x = 42;".
+    fix.mock.set_formatting_response(json::array({
+        json::object({
+            {"range", json::object({
+                {"start", json::object({{"line", 1}, {"character", 2}})},
+                {"end", json::object({{"line", 1}, {"character", 7}})}
+            })},
+            {"newText", "x = 42;"}
+        })
+    }));
+    REQUIRE(fix.setup());
+
+    auto path = fix.dir + "/test.cc";
+    std::ofstream(path) << "int main() {\n  x=42;\n}\n";
+
+    auto result = fix.reg.execute("get_lsp_format",
+        json({{"path", path}, {"start_line", 1}, {"end_line", 2}}).dump());
+    REQUIRE(result);
+    CHECK(result->find("Formatted") != std::string::npos);
+
+    // Verify file content was modified
+    std::ifstream f(path);
+    std::string content((std::istreambuf_iterator<char>(f)),
+                         std::istreambuf_iterator<char>());
+    CHECK(content == "int main() {\n  x = 42;\n}\n");
+}
+
+TEST_CASE("get_lsp_format no changes needed", "[lsp][tool]") {
+    RenameFormatFixture fix;
+    // Mock returns null → already formatted
+    REQUIRE(fix.setup());
+
+    auto path = fix.dir + "/test.cc";
+    std::ofstream(path) << "int x;\n";
+
+    auto result = fix.reg.execute("get_lsp_format",
+        json({{"path", path}}).dump());
+    REQUIRE(result);
+    CHECK(*result == "(already formatted)");
+}
+
+TEST_CASE("get_lsp_format empty edits", "[lsp][tool]") {
+    RenameFormatFixture fix;
+    // Mock returns empty array → already formatted
+    fix.mock.set_formatting_response(json::array());
+    REQUIRE(fix.setup());
+
+    auto path = fix.dir + "/test.cc";
+    std::ofstream(path) << "int x;\n";
+
+    auto result = fix.reg.execute("get_lsp_format",
+        json({{"path", path}}).dump());
+    REQUIRE(result);
+    CHECK(*result == "(already formatted)");
+}
+
+TEST_CASE("get_lsp_format validates range", "[lsp][tool]") {
+    RenameFormatFixture fix;
+    REQUIRE(fix.setup());
+
+    // end_line <= start_line should fail
+    auto result = fix.reg.execute("get_lsp_format",
+        R"({"path": "/tmp/test.cc", "start_line": 5, "end_line": 3})");
+    CHECK_FALSE(result);
+}
