@@ -58,6 +58,9 @@ void ChatSession::set_provider(const Provider& provider) {
 void ChatSession::set_lsp_client(LspClient* lsp) {
     lsp_client_ = lsp;
     if (lsp_client_) {
+        // Share the cancellation token so LSP requests can be cancelled
+        lsp_client_->set_cancelled(cancelled_);
+
         // Wire the file-modified callback to sync modified files with the LSP server.
         // This ensures that after write_file or edit_file, clangd sees the new content.
         *file_modified_cb_ = [this](const std::string& path) {

@@ -36,6 +36,11 @@ LspClient::~LspClient() {
 Result<void> LspClient::start(const std::string& binary_path,
                                const std::vector<std::string>& args,
                                const std::string& project_root) {
+    // Store the parameters so ensure_running() can restart after a crash
+    start_binary_path_ = binary_path;
+    start_args_ = args;
+    start_project_root_ = project_root;
+
     // Create pipes: parent writes to child's stdin
     int stdin_pipe[2];
     int stdout_pipe[2];
@@ -268,9 +273,15 @@ void LspClient::reader_thread_main() {
 // ===================================================================
 
 Result<json> LspClient::request(const std::string& method, json params,
-                                 int timeout_sec) {
+                                 int timeout_sec,
+                                 std::shared_ptr<std::atomic<bool>> cancelled) {
+    // Auto-restart if crashed (requires stored start params)
     if (!running_) {
-        return std::unexpected(std::string("LSP server is not running"));
+        auto ensure = ensure_running();
+        if (!ensure) {
+            return std::unexpected(
+                std::string("LSP server is not running: ") + ensure.error());
+        }
     }
 
     int id = next_request_id_.fetch_add(1, std::memory_order_relaxed);
@@ -289,20 +300,69 @@ Result<json> LspClient::request(const std::string& method, json params,
     auto wire = lsp::encode_message(req);
     if (!write_raw(wire)) {
         std::lock_guard<std::mutex> lock(pending_mutex_);
-        pending_.erase(id);
+        auto it = pending_.find(id);
+        if (it != pending_.end()) {
+            try { it->second.set_value(json::object()); } catch (...) {}
+            pending_.erase(it);
+        }
         return std::unexpected(std::string("failed to write to LSP server"));
     }
 
-    // Wait for response with timeout
-    auto status = future.wait_for(std::chrono::seconds(timeout_sec));
-    if (status != std::future_status::ready) {
-        // Timeout — cancel the request and clean up
-        cancel_request(id);
-        std::lock_guard<std::mutex> lock(pending_mutex_);
-        pending_.erase(id);
-        return std::unexpected(
-            std::string("LSP request timed out after ") +
-            std::to_string(timeout_sec) + "s (method: " + method + ")");
+    // Wait for response with timeout, polling the cancellation token
+    auto deadline = std::chrono::steady_clock::now() +
+                    std::chrono::seconds(timeout_sec);
+    constexpr auto poll_interval = std::chrono::milliseconds(200);
+
+    while (true) {
+        // Check cancellation (either explicit token or stored token)
+        if ((cancelled && *cancelled) || (cancelled_ && *cancelled_)) {
+            cancel_request(id);
+            // Fulfill the promise with a dummy value so the caller's
+            // future.get() doesn't throw broken_promise.
+            {
+                std::lock_guard<std::mutex> lock(pending_mutex_);
+                auto it = pending_.find(id);
+                if (it != pending_.end()) {
+                    try {
+                        it->second.set_value(json::object());
+                    } catch (...) {}
+                    pending_.erase(it);
+                }
+            }
+            return std::unexpected(
+                std::string("LSP request was cancelled (method: ") + method + ")");
+        }
+
+        // Check remaining time
+        auto now = std::chrono::steady_clock::now();
+        if (now >= deadline) {
+            cancel_request(id);
+            // Fulfill the promise with a dummy value
+            {
+                std::lock_guard<std::mutex> lock(pending_mutex_);
+                auto it = pending_.find(id);
+                if (it != pending_.end()) {
+                    try {
+                        it->second.set_value(json::object());
+                    } catch (...) {}
+                    pending_.erase(it);
+                }
+            }
+            return std::unexpected(
+                std::string("LSP request timed out after ") +
+                std::to_string(timeout_sec) + "s (method: " + method + ")");
+        }
+
+        // Wait for the future with a short timeout so we can poll
+        auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+            deadline - now).count();
+        auto wait_time = std::min(poll_interval,
+                                  std::chrono::milliseconds(std::max(remaining, 1L)));
+
+        auto status = future.wait_for(wait_time);
+        if (status == std::future_status::ready) {
+            break;
+        }
     }
 
     json response = future.get();
@@ -332,6 +392,36 @@ void LspClient::cancel_request(int id) {
     json cancel = lsp::make_notification("$/cancelRequest", {{"id", id}});
     auto wire = lsp::encode_message(cancel);
     write_raw(wire); // best-effort
+}
+
+// ===================================================================
+// Crash recovery
+// ===================================================================
+
+Result<void> LspClient::ensure_running() {
+    if (running_) {
+        return {}; // all good
+    }
+
+    if (start_binary_path_.empty()) {
+        return std::unexpected(
+            std::string("LSP server was never started — call start() first"));
+    }
+
+    // Clean up any stale state from the previous connection
+    reader_stop_ = true;
+    if (reader_thread_.joinable()) {
+        reader_thread_.join();
+    }
+    if (read_fd_ >= 0) close(read_fd_);
+    if (write_fd_ >= 0) close(write_fd_);
+    read_fd_ = -1;
+    write_fd_ = -1;
+    reader_stop_ = false;
+    child_pid_ = -1;
+
+    // Attempt restart with the stored parameters
+    return start(start_binary_path_, start_args_, start_project_root_);
 }
 
 // ===================================================================
@@ -523,7 +613,12 @@ Result<void> LspClient::ensure_file_synced(const std::string& uri,
                                             const std::string& language_id,
                                             const std::string& content) {
     if (!running_) {
-        return std::unexpected(std::string("LSP server is not running"));
+        // Attempt crash recovery
+        auto ensure = ensure_running();
+        if (!ensure) {
+            return std::unexpected(
+                std::string("LSP server is not running: ") + ensure.error());
+        }
     }
 
     auto hash = content_hash(content);

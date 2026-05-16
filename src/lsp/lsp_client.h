@@ -55,8 +55,11 @@ public:
     /// Send a JSON-RPC request and wait for the matching response.
     /// Blocks up to `timeout_sec` seconds.  Returns the full response
     /// message (which includes either `result` or `error`).
+    /// If `cancelled` is provided, it is checked periodically during the wait
+    /// (every ~200ms) and the request is cancelled if the token becomes true.
     Result<json> request(const std::string& method, json params,
-                         int timeout_sec = 15);
+                         int timeout_sec = 15,
+                         std::shared_ptr<std::atomic<bool>> cancelled = nullptr);
 
     /// Send a JSON-RPC notification (fire-and-forget).
     Result<void> notify(const std::string& method, json params);
@@ -65,6 +68,13 @@ public:
     void cancel_request(int id);
 
     // ── Lifecycle ────────────────────────────────────────────────────
+
+    /// Ensure the server process is running.  If it has crashed, attempt
+    /// an automatic restart using the same binary, args, and project root
+    /// from the last `start()` call.  Does nothing if the server is already
+    /// running or if start() was never called.
+    /// Returns an error on restart failure (or if start() was never called).
+    Result<void> ensure_running();
 
     /// Graceful shutdown: send shutdown request, then exit notification,
     /// then wait for the child to exit.
@@ -111,6 +121,10 @@ public:
     using NotificationCallback = std::function<void(const json&)>;
     void on_notification(NotificationCallback cb) { on_notification_ = std::move(cb); }
 
+    /// Set a cancellation token that will be checked during request() waits.
+    /// If the token becomes true, pending requests will be cancelled with $/cancelRequest.
+    void set_cancelled(std::shared_ptr<std::atomic<bool>> token) { cancelled_ = std::move(token); }
+
 private:
     // Internal initialization shared by start() and connect().
     Result<void> do_handshake();
@@ -122,6 +136,11 @@ private:
     // I/O helpers
     bool write_raw(const std::string& data);
     std::optional<std::string> read_raw(int timeout_ms);
+
+    // Stored start parameters (for crash recovery restart)
+    std::string start_binary_path_;
+    std::vector<std::string> start_args_;
+    std::string start_project_root_;
 
     // Pipe fds (child's stdin/stdout from our perspective)
     int write_fd_ = -1;  // write → child's stdin
@@ -155,6 +174,9 @@ private:
     };
     mutable std::mutex file_mutex_;
     std::map<std::string, FileState> files_;
+
+    // Cancellation token (checked during request() waiting loops)
+    std::shared_ptr<std::atomic<bool>> cancelled_;
 
     // Write mutex (serialize writes to the pipe)
     std::mutex write_mutex_;

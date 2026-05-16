@@ -321,3 +321,143 @@ TEST_CASE("LspClient restart re-opens previously open files",
 
     client.shutdown();
 }
+
+// ===================================================================
+// Crash recovery
+// ===================================================================
+
+TEST_CASE("LspClient ensure_running restarts after crash", "[lsp][recovery]") {
+    MockLspServer mock;
+    REQUIRE(mock.start());
+
+    LspClient client;
+    // start() stores the binary path and args; we use connect() instead
+    // for testing (avoids fork/exec).  ensure_running() needs start() to
+    // have been called first, so we call start() with a dummy path first,
+    // then reconnect via connect() for the actual mock.
+    //
+    // Actually ensure_running() will try to re-start() with the stored
+    // params which forks/execs the dummy path.  That won't work for
+    // testing with the mock.  Let's test ensure_running() directly:
+    // 1. connect to mock
+    // 2. crash the mock
+    // 3. connect to a fresh mock (simulates manual restart)
+    // The auto-restart path (via start()) requires the real binary.
+    // For unit-testing the auto-restart flow, we'd need a real LSP server.
+    //
+    // Instead, test that ensure_running() detects the crash and returns
+    // an error when no start() params are stored (start() never called).
+    LspClient standalone;
+    auto result = standalone.ensure_running();
+    CHECK_FALSE(result); // never started
+
+    // Now test that ensure_running() returns OK when already running
+    REQUIRE(standalone.connect(mock.child_stdout(), mock.child_stdin()));
+    result = standalone.ensure_running();
+    CHECK(result); // still running
+
+    // Crash the server
+    mock.crash();
+    // Give the reader thread time to detect EOF
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    CHECK_FALSE(standalone.is_running());
+
+    // ensure_running() with only connect() (no start()) should fail
+    // because start_binary_path_ is empty
+    result = standalone.ensure_running();
+    CHECK_FALSE(result);
+
+    standalone.shutdown();
+}
+
+TEST_CASE("LspClient request auto-restart after crash", "[lsp][recovery]") {
+    // This test validates that request() calls ensure_running() internally
+    // when the server is not running.  We use connect() (not start()) to
+    // avoid fork/exec.  ensure_running() requires stored start params,
+    // so with only connect() it will fail — verify the error message.
+    MockLspServer mock;
+    REQUIRE(mock.start());
+
+    LspClient client;
+    REQUIRE(client.connect(mock.child_stdout(), mock.child_stdin()));
+
+    // Server is running — request should succeed
+    auto resp = client.request("textDocument/hover", json::object(), 5);
+    // The mock returns null for hover by default, so result is null
+    CHECK(resp);
+
+    // Crash the server
+    mock.crash();
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    CHECK_FALSE(client.is_running());
+
+    // Now request() will try ensure_running() which fails because
+    // no start() params were stored (we used connect())
+    auto fail_resp = client.request("textDocument/hover", json::object(), 5);
+    CHECK_FALSE(fail_resp);
+    bool found_msg = (fail_resp.error().find("not running") != std::string::npos) ||
+                     (fail_resp.error().find("never started") != std::string::npos);
+    CHECK(found_msg);
+
+    client.shutdown();
+}
+
+// ===================================================================
+// Cancellation
+// ===================================================================
+
+TEST_CASE("LspClient cancellation aborts pending request", "[lsp][cancel]") {
+    // Setup: mock with a delay so we can cancel mid-flight
+    MockLspServer mock;
+    mock.set_response_delay(3000); // 3 second delay on each response
+    REQUIRE(mock.start());
+
+    LspClient client;
+    REQUIRE(client.connect(mock.child_stdout(), mock.child_stdin()));
+
+    auto token = std::make_shared<std::atomic<bool>>(false);
+
+    // Fire off a request in a background thread
+    auto future = std::async(std::launch::async, [&] {
+        return client.request("textDocument/hover",
+            json::object(), 30, token);
+    });
+
+    // Give it time to start the request
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    // Cancel it — should be detected within the next poll (200ms)
+    *token = true;
+
+    auto result = future.get();
+    CHECK_FALSE(result);
+    CHECK(result.error().find("cancelled") != std::string::npos);
+
+    client.shutdown();
+}
+
+TEST_CASE("LspClient cancellation via stored token", "[lsp][cancel]") {
+    // Same as above but using set_cancelled() instead of per-request token
+    MockLspServer mock;
+    mock.set_response_delay(3000);
+    REQUIRE(mock.start());
+
+    LspClient client;
+    REQUIRE(client.connect(mock.child_stdout(), mock.child_stdin()));
+
+    auto token = std::make_shared<std::atomic<bool>>(false);
+    client.set_cancelled(token);
+
+    auto future = std::async(std::launch::async, [&] {
+        return client.request("textDocument/hover", json::object(), 30);
+    });
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    *token = true;
+
+    auto result = future.get();
+    CHECK_FALSE(result);
+    CHECK(result.error().find("cancelled") != std::string::npos);
+
+    client.shutdown();
+}

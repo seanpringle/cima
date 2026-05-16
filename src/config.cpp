@@ -55,6 +55,10 @@ json Config::to_json() const {
     j["grep_timeout"] = grep_timeout;
     j["web_search_timeout"] = web_search_timeout;
     j["web_fetch_timeout"] = web_fetch_timeout;
+    j["clangd_path"] = clangd_path;
+    j["clangd_args"] = clangd_args;
+    j["lsp_timeout"] = lsp_timeout;
+    j["lsp_enabled"] = lsp_enabled;
     return j;
 }
 
@@ -166,6 +170,26 @@ Config Config::load() {
         load_timeout("grep_timeout", cfg.grep_timeout);
         load_timeout("web_search_timeout", cfg.web_search_timeout);
         load_timeout("web_fetch_timeout", cfg.web_fetch_timeout);
+
+        // LSP settings
+        if (j.contains("clangd_path") && j["clangd_path"].is_string()) {
+            cfg.clangd_path = j["clangd_path"].get<std::string>();
+        }
+        if (j.contains("clangd_args") && j["clangd_args"].is_array()) {
+            cfg.clangd_args.clear();
+            for (const auto& a : j["clangd_args"]) {
+                if (a.is_string()) {
+                    cfg.clangd_args.push_back(a.get<std::string>());
+                }
+            }
+        }
+        if (j.contains("lsp_timeout") && j["lsp_timeout"].is_number_integer()) {
+            int n = j["lsp_timeout"].get<int>();
+            if (n >= 0) cfg.lsp_timeout = n;
+        }
+        if (j.contains("lsp_enabled") && j["lsp_enabled"].is_boolean()) {
+            cfg.lsp_enabled = j["lsp_enabled"].get<bool>();
+        }
 
         if (j.contains("read_only_paths") && j["read_only_paths"].is_array()) {
             cfg.read_only_paths.clear();
