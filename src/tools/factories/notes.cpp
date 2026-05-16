@@ -13,7 +13,7 @@ Tool make_list_notes_tool(Notes& notes) {
     t.name = "list_notes";
     t.description =
         "List all note IDs. "
-        "Returns an array of integers, e.g. [0, 1, 2]";
+        "Returns an array of integers, e.g. [1, 2, 3]";
     t.permission = ToolPermission::ReadOnly;
     t.parameters = {{"type", "object"}, {"properties", json::object()}};
     t.execute = [&notes](const json& args) -> Result<std::string> {
@@ -82,13 +82,16 @@ Tool make_write_note_tool(Notes& notes) {
         {"required", {"body"}}};
     t.execute = [&notes](const json& args) -> Result<std::string> {
         auto body = args.value("body", std::string());
+        std::optional<int> explicit_id = std::nullopt;
+        if (args.contains("note_id") && args["note_id"].is_number_integer()) {
+            explicit_id = args["note_id"].get<int>();
+        }
 
-        auto result = notes.write_note(body);
+        auto result = notes.write_note(body, explicit_id);
         if (!result) {
             return std::unexpected(result.error());
         }
-        auto ids = notes.list_notes();
-        int id = ids ? static_cast<int>(ids->size()) - 1 : 0;
+        int id = *result;
         return "ok (" + std::to_string(body.size()) + " bytes written to note #" +
             std::to_string(id) + ")";
     };
@@ -117,7 +120,7 @@ Tool make_delete_note_tool(Notes& notes) {
         if (!result) {
             return std::unexpected(result.error());
         }
-        return std::string("ok");
+        return "ok (deleted note #" + std::to_string(id) + ")";
     };
     return t;
 }

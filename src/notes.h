@@ -9,7 +9,7 @@
 /// Each ChatSession owns one Notes instance. Notes are local to that agent
 /// (not shared across tabs like the Wiki).
 ///
-/// Notes use integer IDs assigned sequentially starting from 0.
+/// Notes use integer IDs assigned sequentially starting from 1.
 /// Persistence is handled externally by the session management code,
 /// which calls to_json() / from_json() to consolidate data into a
 /// single per-assistant JSON file.
@@ -28,8 +28,10 @@ class Notes {
     /// Read the body of a note. Returns an error if the note does not exist.
     Result<std::string> read_note(int id);
 
-    /// Create or overwrite a note, auto-assigning the next available ID.
-    Result<void> write_note(const std::string& body);
+    /// Create or overwrite a note.
+    /// If id is nullopt, the next sequential ID is auto-assigned (starting from 1).
+    /// Returns the ID of the created/overwritten note.
+    Result<int> write_note(const std::string& body, std::optional<int> id = std::nullopt);
 
     /// Delete a single note by ID. Returns an error if the note does not exist.
     Result<void> delete_note(int id);
@@ -40,6 +42,7 @@ class Notes {
     void from_json(const json& j);
 
   private:
+    int next_id_ = 1;
     std::map<int, std::string> notes_; // id -> body
 };
 
