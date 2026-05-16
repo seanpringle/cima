@@ -30,14 +30,12 @@ ChatSession::ChatSession(const Config& config, const Provider& provider,
     // Each session gets its own plan tools tied to its PlanBoard
     tools_.add(make_write_plan_tool(plan_));
     tools_.add(make_read_plan_tool(plan_));
-    tools_.add(make_comment_plan_tool(plan_));
 
     // Each session gets its own notes tools tied to its Notes storage.
-    tools_.add(make_list_all_notes_tool(notes_));
+    tools_.add(make_list_notes_tool(notes_));
     tools_.add(make_read_note_tool(notes_));
     tools_.add(make_write_note_tool(notes_));
     tools_.add(make_delete_note_tool(notes_));
-    tools_.add(make_delete_all_notes_tool(notes_));
 
 }
 

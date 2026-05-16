@@ -1132,7 +1132,7 @@ void render_chat_ui(TabInfo& tab, bool& done) {
 // ===================================================================
 
 void render_notes_tab(Notes& notes, ImFont* mono_font) {
-    auto ids_result = notes.list_all_notes();
+    auto ids_result = notes.list_notes();
     if (!ids_result) {
         TextDisabled("notes unavailable");
         return;

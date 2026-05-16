@@ -5,12 +5,12 @@
 #include <string>
 
 // ===================================================================
-// Tool: list_all_notes
+// Tool: list_notes
 // ===================================================================
 
-Tool make_list_all_notes_tool(Notes& notes) {
+Tool make_list_notes_tool(Notes& notes) {
     Tool t;
-    t.name = "list_all_notes";
+    t.name = "list_notes";
     t.description =
         "List all note IDs. "
         "Returns an array of integers, e.g. [0, 1, 2]";
@@ -18,7 +18,7 @@ Tool make_list_all_notes_tool(Notes& notes) {
     t.parameters = {{"type", "object"}, {"properties", json::object()}};
     t.execute = [&notes](const json& args) -> Result<std::string> {
         (void)args;
-        auto result = notes.list_all_notes();
+        auto result = notes.list_notes();
         if (!result) {
             return std::unexpected(result.error());
         }
@@ -87,7 +87,7 @@ Tool make_write_note_tool(Notes& notes) {
         if (!result) {
             return std::unexpected(result.error());
         }
-        auto ids = notes.list_all_notes();
+        auto ids = notes.list_notes();
         int id = ids ? static_cast<int>(ids->size()) - 1 : 0;
         return "ok (" + std::to_string(body.size()) + " bytes written to note #" +
             std::to_string(id) + ")";
@@ -118,29 +118,6 @@ Tool make_delete_note_tool(Notes& notes) {
             return std::unexpected(result.error());
         }
         return std::string("ok");
-    };
-    return t;
-}
-
-// ===================================================================
-// Tool: delete_all_notes
-// ===================================================================
-
-Tool make_delete_all_notes_tool(Notes& notes) {
-    Tool t;
-    t.name = "delete_all_notes";
-    t.description =
-        "Delete every note. "
-        "Clears all notes for this assistant session.";
-    t.permission = ToolPermission::Write;
-    t.parameters = {{"type", "object"}, {"properties", json::object()}};
-    t.execute = [&notes](const json& args) -> Result<std::string> {
-        (void)args;
-        auto result = notes.delete_all_notes();
-        if (!result) {
-            return std::unexpected(result.error());
-        }
-        return std::string("ok (all notes deleted)");
     };
     return t;
 }

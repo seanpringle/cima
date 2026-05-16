@@ -23,7 +23,7 @@ class Notes {
     Notes& operator=(Notes&&) = delete;
 
     /// Return all note IDs, sorted ascending.
-    Result<std::vector<int>> list_all_notes();
+    Result<std::vector<int>> list_notes();
 
     /// Read the body of a note. Returns an error if the note does not exist.
     Result<std::string> read_note(int id);
@@ -33,9 +33,6 @@ class Notes {
 
     /// Delete a single note by ID. Returns an error if the note does not exist.
     Result<void> delete_note(int id);
-
-    /// Delete all notes.
-    Result<void> delete_all_notes();
 
     // ── Serialization (used by external persistence) ──
 
@@ -47,8 +44,7 @@ class Notes {
 };
 
 // Tool factory declarations
-Tool make_list_all_notes_tool(Notes& notes);
+Tool make_list_notes_tool(Notes& notes);
 Tool make_read_note_tool(Notes& notes);
 Tool make_write_note_tool(Notes& notes);
 Tool make_delete_note_tool(Notes& notes);
-Tool make_delete_all_notes_tool(Notes& notes);

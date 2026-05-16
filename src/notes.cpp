@@ -4,7 +4,7 @@
 // Notes operations
 // ===================================================================
 
-Result<std::vector<int>> Notes::list_all_notes() {
+Result<std::vector<int>> Notes::list_notes() {
     std::vector<int> ids;
     ids.reserve(notes_.size());
     for (const auto& [id, _] : notes_) {
@@ -33,11 +33,6 @@ Result<void> Notes::delete_note(int id) {
         return std::unexpected("no such note: " + std::to_string(id));
     }
     notes_.erase(it);
-    return {};
-}
-
-Result<void> Notes::delete_all_notes() {
-    notes_.clear();
     return {};
 }
 

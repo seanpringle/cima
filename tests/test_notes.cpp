@@ -2,19 +2,19 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-TEST_CASE("list_all_notes returns empty initially", "[notes]") {
+TEST_CASE("list_notes returns empty initially", "[notes]") {
     Notes notes;
-    auto result = notes.list_all_notes();
+    auto result = notes.list_notes();
     REQUIRE(result);
     CHECK(result->empty());
 }
 
-TEST_CASE("write_note then list_all_notes shows it", "[notes]") {
+TEST_CASE("write_note then list_notes shows it", "[notes]") {
     Notes notes;
     auto r = notes.write_note("World");
     REQUIRE(r);
 
-    auto result = notes.list_all_notes();
+    auto result = notes.list_notes();
     REQUIRE(result);
     REQUIRE(result->size() == 1);
     CHECK((*result)[0] == 0);
@@ -26,7 +26,7 @@ TEST_CASE("write_note auto-assigns incrementing IDs", "[notes]") {
     notes.write_note("Second");
     notes.write_note("Third");
 
-    auto result = notes.list_all_notes();
+    auto result = notes.list_notes();
     REQUIRE(result);
     REQUIRE(result->size() == 3);
     CHECK((*result)[0] == 0);
@@ -57,7 +57,7 @@ TEST_CASE("delete_note removes it", "[notes]") {
     auto del = notes.delete_note(0);
     REQUIRE(del);
 
-    auto list = notes.list_all_notes();
+    auto list = notes.list_notes();
     REQUIRE(list);
     CHECK(list->empty());
 }
@@ -69,27 +69,13 @@ TEST_CASE("delete_note errors on missing ID", "[notes]") {
     CHECK(result.error().find("no such note") != std::string::npos);
 }
 
-TEST_CASE("delete_all_notes clears everything", "[notes]") {
-    Notes notes;
-    notes.write_note("a");
-    notes.write_note("b");
-    notes.write_note("c");
-
-    auto del = notes.delete_all_notes();
-    REQUIRE(del);
-
-    auto list = notes.list_all_notes();
-    REQUIRE(list);
-    CHECK(list->empty());
-}
-
-TEST_CASE("list_all_notes returns IDs sorted ascending", "[notes]") {
+TEST_CASE("list_notes returns IDs sorted ascending", "[notes]") {
     Notes notes;
     notes.write_note("z");
     notes.write_note("a");
     notes.write_note("c");
 
-    auto result = notes.list_all_notes();
+    auto result = notes.list_notes();
     REQUIRE(result);
     REQUIRE(result->size() == 3);
     CHECK((*result)[0] == 0);
@@ -110,7 +96,7 @@ TEST_CASE("Notes serialization round-trip", "[notes]") {
     Notes notes2;
     notes2.from_json(j);
 
-    auto list = notes2.list_all_notes();
+    auto list = notes2.list_notes();
     REQUIRE(list);
     REQUIRE(list->size() == 2);
     CHECK((*list)[0] == 0);
@@ -134,7 +120,7 @@ TEST_CASE("from_json skips non-integer keys (backward compat)", "[notes]") {
     Notes notes;
     notes.from_json(j);
 
-    auto list = notes.list_all_notes();
+    auto list = notes.list_notes();
     REQUIRE(list);
     CHECK(list->size() == 2);
     CHECK(notes.read_note(0) == "first");
