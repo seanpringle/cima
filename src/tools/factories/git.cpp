@@ -751,3 +751,426 @@ Tool make_git_commit_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout
     };
     return t;
 }
+
+// ===================================================================
+// git_restore
+// ===================================================================
+
+Tool make_git_restore_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout) {
+    Tool t;
+    t.name = "git_restore";
+    t.description =
+        "Restore working tree files or unstage changes. "
+        "Like 'git restore <path>' or 'git restore --staged <path>'.\n"
+        "If 'staged' is false (default), discards unstaged changes "
+        "in the working tree (files are restored from HEAD).\n"
+        "If 'staged' is true, unstages the file (removes it from "
+        "the index) but keeps working tree changes.\n"
+        "Use 'source' to restore from a specific revision instead of "
+        "HEAD, e.g. source=\"HEAD~1\", source=\"main\".\n"
+        "Use path=\".\" to restore all files.\n"
+        "This tool modifies files on disk — use with care.";
+    t.permission = ToolPermission::Write;
+    t.timeout_sec = timeout;
+    t.parameters = {{"type", "object"},
+        {"properties",
+            {{"path",
+                {{"type", "string"},
+                    {"description",
+                        "File path to restore. "
+                        "Use \".\" to restore all files in the working tree. "
+                        "Must be under the safe directory."}}},
+             {"staged",
+                {{"type", "boolean"},
+                    {"description",
+                        "If true, unstage the file (remove from index). "
+                        "If false (default), discard working tree changes."}}},
+             {"source",
+                {{"type", "string"},
+                    {"description",
+                        "Optional revision to restore from "
+                        "(e.g. \"HEAD~1\", \"main\", commit hash). "
+                        "Defaults to HEAD."}}}}},
+        {"required", {"path"}}};
+    t.execute = [safe_dir_ptr](const json& args) -> Result<std::string> {
+        // Serialize with other git index write operations (for staged mode)
+        // Unstaged restoration doesn't touch the index, but we lock anyway
+        // since restoring files modifies the working tree.
+        std::lock_guard<std::mutex> lock(g_git_index_mutex);
+
+        // Open git repository
+        auto repo_res = open_git_repo(*safe_dir_ptr);
+        if (!repo_res) {
+            return std::unexpected(repo_res.error());
+        }
+        git_repository* repo = *repo_res;
+        auto repo_cleanup = std::unique_ptr<git_repository, decltype(&git_repository_free)>(
+            repo, git_repository_free);
+
+        std::string raw_path = args.value("path", std::string());
+        if (raw_path.empty()) {
+            return std::unexpected("path is required");
+        }
+
+        bool staged = args.value("staged", false);
+        std::string source = args.value("source", std::string());
+
+        // Resolve the path if it's not "." (which means "all files")
+        std::string resolved_path;
+        if (raw_path != ".") {
+            auto resolved = resolve_path(raw_path, *safe_dir_ptr);
+            if (!resolved) {
+                return std::unexpected(resolved.error());
+            }
+            resolved_path = *resolved;
+        }
+
+        // Build pathspec for checkout/remove
+        // libgit2 pathspecs are relative to the workdir root
+        const char* workdir = git_repository_workdir(repo);
+        if (!workdir) {
+            return std::unexpected("repository has no working directory");
+        }
+        std::string workdir_str(workdir);
+        if (!workdir_str.empty() && workdir_str.back() != '/')
+            workdir_str += '/';
+
+        std::string rel_path;
+        if (raw_path == ".") {
+            rel_path = ".";
+        } else {
+            // Convert resolved absolute path to relative for libgit2
+            if (resolved_path.size() > workdir_str.size() &&
+                resolved_path.compare(0, workdir_str.size(), workdir_str) == 0) {
+                rel_path = resolved_path.substr(workdir_str.size());
+            } else {
+                return std::unexpected("path is outside the repository working directory");
+            }
+        }
+
+        if (staged) {
+            // ── Unstage mode: remove from index ──
+            git_index* index = nullptr;
+            int err = git_repository_index(&index, repo);
+            if (err) {
+                const git_error* e = git_error_last();
+                return std::unexpected("git_restore error opening index: " +
+                    (e ? std::string(e->message) : std::string("unknown error")));
+            }
+            auto index_cleanup = std::unique_ptr<git_index, decltype(&git_index_free)>(
+                index, git_index_free);
+
+            if (raw_path == ".") {
+                // Unstage all: remove all entries from index
+                err = git_index_remove_all(index, nullptr, nullptr, nullptr);
+                if (err) {
+                    const git_error* e = git_error_last();
+                    return std::unexpected("git_restore error unstaging all: " +
+                        (e ? std::string(e->message) : std::string("unknown error")));
+                }
+            } else {
+                err = git_index_remove_bypath(index, rel_path.c_str());
+                if (err) {
+                    if (err == GIT_ENOTFOUND) {
+                        return std::unexpected("path '" + raw_path +
+                            "' is not staged");
+                    }
+                    const git_error* e = git_error_last();
+                    return std::unexpected("git_restore error unstaging '" +
+                        raw_path + "': " +
+                        (e ? std::string(e->message) : std::string("unknown error")));
+                }
+            }
+
+            err = git_index_write(index);
+            if (err) {
+                const git_error* e = git_error_last();
+                return std::unexpected("git_restore error writing index: " +
+                    (e ? std::string(e->message) : std::string("unknown error")));
+            }
+
+            std::string msg = "Unstaged";
+            if (raw_path == ".") {
+                msg += " all files";
+            } else {
+                msg += " '" + raw_path + "'";
+            }
+            return msg;
+        }
+
+        // ── Discard mode: checkout from source (or HEAD) ──
+        git_object* target_obj = nullptr;
+        if (!source.empty()) {
+            int err = git_revparse_single(&target_obj, repo, source.c_str());
+            if (err) {
+                const git_error* e = git_error_last();
+                return std::unexpected("git_restore error resolving source '" +
+                    source + "': " +
+                    (e ? std::string(e->message) : std::string("unknown error")));
+            }
+        }
+
+        auto obj_cleanup = std::unique_ptr<git_object, decltype(&git_object_free)>(
+            target_obj, git_object_free);
+
+        // Set up checkout options with pathspec
+        git_checkout_options checkout_opts = GIT_CHECKOUT_OPTIONS_INIT;
+        checkout_opts.checkout_strategy = GIT_CHECKOUT_FORCE;
+
+        const char* paths_arr[1];
+        if (raw_path != ".") {
+            paths_arr[0] = rel_path.c_str();
+            checkout_opts.paths.strings = const_cast<char**>(paths_arr);
+            checkout_opts.paths.count = 1;
+        }
+
+        if (target_obj) {
+            // Checkout from specific tree/commit
+            int err = git_checkout_tree(repo, target_obj, &checkout_opts);
+            if (err) {
+                const git_error* e = git_error_last();
+                return std::unexpected("git_restore error restoring from '" +
+                    source + "': " +
+                    (e ? std::string(e->message) : std::string("unknown error")));
+            }
+        } else {
+            // Checkout from HEAD (default)
+            int err = git_checkout_head(repo, &checkout_opts);
+            if (err) {
+                const git_error* e = git_error_last();
+                return std::unexpected("git_restore error: " +
+                    (e ? std::string(e->message) : std::string("unknown error")));
+            }
+        }
+
+        std::string msg = "Restored";
+        if (!source.empty()) {
+            msg += " from '" + source + "'";
+        }
+        if (raw_path == ".") {
+            msg += " all files";
+        } else {
+            msg += " '" + raw_path + "'";
+        }
+        return msg;
+    };
+    return t;
+}
+
+// ===================================================================
+// git_show
+// ===================================================================
+
+Tool make_git_show_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout) {
+    Tool t;
+    t.name = "git_show";
+    t.description =
+        "Show a commit's full diff and metadata. "
+        "Like 'git show <revision>'.\n"
+        "Shows the commit hash, author, date, full message, "
+        "and unified diff of changes introduced by that commit.\n"
+        "Use 'revision' to specify a commit "
+        "(hash, branch name, HEAD~N, tag, etc.).\n"
+        "Defaults to HEAD.";
+    t.permission = ToolPermission::ReadOnly;
+    t.timeout_sec = timeout;
+    t.parameters = {{"type", "object"},
+        {"properties",
+            {{"revision",
+                {{"type", "string"},
+                    {"description",
+                        "Git revision to show (commit hash, branch, "
+                        "HEAD~N, tag, etc.). Defaults to HEAD."}}}}},
+        {"required", json::array()}};
+    t.execute = [safe_dir_ptr](const json& args) -> Result<std::string> {
+        // Open repo
+        auto repo_res = open_git_repo(*safe_dir_ptr);
+        if (!repo_res) {
+            return std::unexpected(repo_res.error());
+        }
+        git_repository* repo = *repo_res;
+        auto repo_cleanup = std::unique_ptr<git_repository, decltype(&git_repository_free)>(
+            repo, git_repository_free);
+
+        std::string revision = args.value("revision", std::string("HEAD"));
+
+        // Resolve revision to a commit object
+        git_object* obj = nullptr;
+        int err = git_revparse_single(&obj, repo, revision.c_str());
+        if (err) {
+            const git_error* e = git_error_last();
+            return std::unexpected("git_show error resolving '" + revision + "': " +
+                (e ? std::string(e->message) : std::string("unknown error")));
+        }
+        auto obj_cleanup = std::unique_ptr<git_object, decltype(&git_object_free)>(
+            obj, git_object_free);
+
+        if (git_object_type(obj) != GIT_OBJECT_COMMIT) {
+            return std::unexpected("git_show error: '" + revision + "' is not a commit");
+        }
+
+        git_commit* commit = reinterpret_cast<git_commit*>(obj);
+        // obj_cleanup will free it — we just borrow the reference
+
+        // Build commit metadata
+        char hex[GIT_OID_HEXSZ + 1];
+        git_oid_tostr(hex, sizeof(hex), git_commit_id(commit));
+
+        // Author info
+        const git_signature* author = git_commit_author(commit);
+        std::string author_str = "unknown <unknown>";
+        if (author) {
+            author_str = (author->name ? author->name : "unknown");
+            author_str += " <";
+            author_str += (author->email ? author->email : "unknown");
+            author_str += ">";
+        }
+
+        // Date
+        time_t commit_time = git_commit_time(commit);
+        int time_offset = git_commit_time_offset(commit);
+        time_t local_epoch = commit_time + time_offset * 60;
+        struct tm local_tm{};
+        gmtime_r(&local_epoch, &local_tm);
+        char date_buf[64];
+        strftime(date_buf, sizeof(date_buf), "%Y-%m-%d %H:%M:%S", &local_tm);
+        char tz_buf[16];
+        int offset_hours = time_offset / 60;
+        int offset_mins = std::abs(time_offset) % 60;
+        char sign = (time_offset >= 0) ? '+' : '-';
+        snprintf(tz_buf, sizeof(tz_buf), " %c%02d%02d", sign,
+                 std::abs(offset_hours), offset_mins);
+        std::string date_str = std::string(date_buf) + tz_buf;
+
+        // Message
+        const char* raw_msg = git_commit_message(commit);
+        std::string msg(raw_msg ? raw_msg : "");
+
+        // ── Diff ──
+        // Get the commit's tree
+        git_tree* commit_tree = nullptr;
+        err = git_commit_tree(&commit_tree, commit);
+        if (err) {
+            const git_error* e = git_error_last();
+            return std::unexpected("git_show error getting commit tree: " +
+                (e ? std::string(e->message) : std::string("unknown error")));
+        }
+        auto tree_cleanup = std::unique_ptr<git_tree, decltype(&git_tree_free)>(
+            commit_tree, git_tree_free);
+
+        // Get parent tree (null tree for root commit)
+        git_tree* parent_tree = nullptr;
+        auto parent_cleanup = std::unique_ptr<git_tree, decltype(&git_tree_free)>(
+            nullptr, git_tree_free);
+
+        if (git_commit_parentcount(commit) > 0) {
+            git_commit* parent = nullptr;
+            err = git_commit_parent(&parent, commit, 0);
+            if (!err) {
+                auto parent_commit_cleanup = std::unique_ptr<git_commit, decltype(&git_commit_free)>(
+                    parent, git_commit_free);
+                err = git_commit_tree(&parent_tree, parent);
+                if (err) {
+                    parent_tree = nullptr;
+                }
+                parent_cleanup.reset(parent_tree);
+            }
+        }
+
+        // Diff commit vs parent
+        git_diff* diff = nullptr;
+        git_diff_options diff_opts = GIT_DIFF_OPTIONS_INIT;
+        // Show context of 3 lines
+        diff_opts.context_lines = 3;
+
+        err = git_diff_tree_to_tree(&diff, repo, parent_tree, commit_tree, &diff_opts);
+        if (err) {
+            const git_error* e = git_error_last();
+            return std::unexpected("git_show error creating diff: " +
+                (e ? std::string(e->message) : std::string("unknown error")));
+        }
+        auto diff_cleanup = std::unique_ptr<git_diff, decltype(&git_diff_free)>(
+            diff, git_diff_free);
+
+        // Build metadata header first
+        std::string result;
+        result += "commit " + std::string(hex) + "\n";
+        result += "Author: " + author_str + "\n";
+        result += "Date:   " + date_str + "\n\n";
+
+        // Indent message
+        if (!msg.empty()) {
+            std::string full_msg = msg;
+            while (!full_msg.empty() &&
+                   (full_msg.back() == '\n' || full_msg.back() == '\r'))
+                full_msg.pop_back();
+            size_t pos = 0;
+            while (pos < full_msg.size()) {
+                result += "    ";
+                auto next = full_msg.find('\n', pos);
+                if (next == std::string::npos) {
+                    result += full_msg.substr(pos) + "\n";
+                    break;
+                }
+                result += full_msg.substr(pos, next - pos) + "\n";
+                pos = next + 1;
+            }
+        }
+
+        result += "---\n";
+
+        // Count files changed
+        size_t num_deltas = git_diff_num_deltas(diff);
+        if (num_deltas > 0) {
+            result += std::to_string(num_deltas) +
+                (num_deltas == 1 ? " file changed" : " files changed") + ":\n";
+        } else {
+            result += "(no diff — root commit or empty commit)\n";
+            return result;
+        }
+
+        // Print diff, capped at 500 lines / 16000 chars
+        const int max_lines = 500;
+        const size_t max_chars = 16000;
+
+        struct DiffCtx {
+            std::string* output;
+            int line_count = 0;
+            bool truncated = false;
+        };
+        DiffCtx ctx{&result, 0, false};
+
+        auto print_cb = [](const git_diff_delta* /*delta*/,
+                           const git_diff_hunk* /*hunk*/,
+                           const git_diff_line* line,
+                           void* payload) -> int {
+            auto* c = static_cast<DiffCtx*>(payload);
+            if (c->truncated) return 1;
+            if (c->line_count >= max_lines || c->output->size() >= max_chars) {
+                c->truncated = true;
+                return 1;
+            }
+            if (line->origin == '+' || line->origin == '-' || line->origin == ' ') {
+                c->output->push_back(line->origin);
+            }
+            c->output->append(line->content, line->content_len);
+            c->line_count++;
+            return 0;
+        };
+
+        err = git_diff_print(diff, GIT_DIFF_FORMAT_PATCH, print_cb, &ctx);
+        if (err && !ctx.truncated) {
+            const git_error* e = git_error_last();
+            return std::unexpected("git_show error printing diff: " +
+                (e ? std::string(e->message) : std::string("unknown error")));
+        }
+
+        if (ctx.truncated) {
+            result += "\n...(diff truncated at " + std::to_string(max_lines) +
+                " lines / " + std::to_string(max_chars) + " chars)";
+        }
+
+        return result;
+    };
+    return t;
+}

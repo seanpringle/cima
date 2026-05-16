@@ -184,6 +184,8 @@ Tool make_git_diff_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout);
 Tool make_git_log_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout);
 Tool make_git_add_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout);
 Tool make_git_commit_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout);
+Tool make_git_restore_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout);
+Tool make_git_show_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout);
 Tool make_project_tree_tool(std::shared_ptr<std::string> safe_dir_ptr,
     const std::vector<std::string>& read_only_paths,
     int timeout,

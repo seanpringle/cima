@@ -72,6 +72,11 @@ void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
+    {
+        auto t = make_git_show_tool(safe_dir_ptr, config.git_log_timeout);
+        t.permission = ToolPermission::ReadOnly;
+        add(std::move(t));
+    }
 
     // ── Write tools ──
     if (include_write) {
@@ -97,6 +102,11 @@ void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
         }
         {
             auto t = make_git_commit_tool(safe_dir_ptr, config.git_commit_timeout);
+            t.permission = ToolPermission::Write;
+            add(std::move(t));
+        }
+        {
+            auto t = make_git_restore_tool(safe_dir_ptr, config.git_status_timeout);
             t.permission = ToolPermission::Write;
             add(std::move(t));
         }

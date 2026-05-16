@@ -111,7 +111,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
 
     json tools = reg.to_openai_tools();
     REQUIRE(tools.is_array());
-    REQUIRE(tools.size() == 18);
+    REQUIRE(tools.size() == 20);
 
     // Check structure of first tool
     CHECK(tools[0]["type"] == "function");
@@ -131,6 +131,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
                        "edit_file", "run_bash", "web_search", "web_fetch",
                        "project_tree", "git_status", "git_diff", "git_log",
                        "git_add", "git_commit",
+                       "git_restore", "git_show",
                        "delete_file", "move_file", "rename_file"});
 }
 
@@ -140,9 +141,9 @@ TEST_CASE("ToolRegistry without write tools (Planner-style)", "[tools][registry]
 
     json tools = reg.to_openai_tools();
     REQUIRE(tools.is_array());
-    // 10 read-only tools: list_files, read_file, read_file_lines, grep_files,
-    // project_tree, web_search, web_fetch, git_status, git_diff, git_log
-    REQUIRE(tools.size() == 10);
+    // 11 read-only tools: list_files, read_file, read_file_lines, grep_files,
+    // project_tree, web_search, web_fetch, git_status, git_diff, git_log, git_show
+    REQUIRE(tools.size() == 11);
 
     // No write tools should be present
     std::set<std::string> names;
@@ -2587,4 +2588,261 @@ TEST_CASE("run_bash chdir failure is caught", "[tools][run_bash][sandbox]") {
     if (result) {
         CHECK(result->find("chdir()") != std::string::npos);
     }
+}
+
+// ===================================================================
+// git_restore
+// ===================================================================
+
+TEST_CASE("git_restore discards unstaged changes", "[tools][git_restore]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    // Modify the tracked file
+    std::ofstream(sd + "/README.md") << "# Modified\n";
+    reg.add(make_git_restore_tool(std::make_shared<std::string>(sd), 10));
+
+    auto result = reg.execute("git_restore",
+        R"({"path": "README.md"})");
+    REQUIRE(result);
+    CHECK(result->find("Restored") != std::string::npos);
+
+    // Verify file was restored to original content
+    std::ifstream f(sd + "/README.md");
+    std::string content((std::istreambuf_iterator<char>(f)),
+                         std::istreambuf_iterator<char>());
+    CHECK(content == "# Test\n");
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_restore restore all files", "[tools][git_restore]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    // Create another tracked file via commit
+    std::ofstream(sd + "/file2.txt") << "content2\n";
+    {
+        auto r = reg.execute("git_add", R"({"path": "file2.txt"})");
+        REQUIRE(r);
+        r = reg.execute("git_commit", R"({"message": "add file2", "all": true})");
+        REQUIRE(r);
+    }
+
+    // Modify both files
+    std::ofstream(sd + "/README.md") << "# Modified\n";
+    std::ofstream(sd + "/file2.txt") << "modified2\n";
+    reg.add(make_git_restore_tool(std::make_shared<std::string>(sd), 10));
+
+    auto result = reg.execute("git_restore",
+        R"({"path": "."})");
+    REQUIRE(result);
+
+    // Verify both files restored
+    {
+        std::ifstream f(sd + "/README.md");
+        std::string c((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        CHECK(c == "# Test\n");
+    }
+    {
+        std::ifstream f(sd + "/file2.txt");
+        std::string c((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        CHECK(c == "content2\n");
+    }
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_restore unstage file", "[tools][git_restore]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    // Modify and stage a file
+    std::ofstream(sd + "/README.md") << "# Staged\n";
+    auto r = reg.execute("git_add", R"({"path": "README.md"})");
+    REQUIRE(r);
+
+    // Verify it's staged before restore
+    auto before = reg.execute("git_status", "{}");
+    REQUIRE(before);
+    // Should show staged modification (M in first column)
+    {
+        bool found_staged = (before->find("M  README.md") != std::string::npos) ||
+                            (before->find("M\tREADME.md") != std::string::npos);
+        CHECK(found_staged);
+    }
+
+    reg.add(make_git_restore_tool(std::make_shared<std::string>(sd), 10));
+
+    // Unstage it
+    auto result = reg.execute("git_restore",
+        R"({"path": "README.md", "staged": true})");
+    REQUIRE(result);
+    CHECK(result->find("Unstaged") != std::string::npos);
+
+    // Verify it's no longer staged — the working tree content should still
+    // be the modified version (unstage doesn't touch working tree)
+    std::ifstream f(sd + "/README.md");
+    std::string content((std::istreambuf_iterator<char>(f)),
+                         std::istreambuf_iterator<char>());
+    CHECK(content == "# Staged\n");
+
+    // The file should now appear with 'D' in the index column (removed from
+    // index but present in HEAD) and '?' in the worktree column (exists on
+    // disk but not tracked), showing as "D? README.md"
+    auto after = reg.execute("git_status", "{}");
+    REQUIRE(after);
+    {
+        bool found_unstaged = (after->find("D? README.md") != std::string::npos) ||
+                              (after->find("D?\tREADME.md") != std::string::npos);
+        CHECK(found_unstaged);
+    }
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_restore not a git repo", "[tools][git_restore]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+    reg.add(make_git_restore_tool(std::make_shared<std::string>(sd), 10));
+
+    auto result = reg.execute("git_restore",
+        R"({"path": "README.md"})");
+    REQUIRE_FALSE(result);
+    CHECK(result.error().find("not a git repository") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_restore path traversal rejected", "[tools][git_restore]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+    reg.add(make_git_restore_tool(std::make_shared<std::string>(sd), 10));
+
+    auto result = reg.execute("git_restore",
+        R"({"path": "../etc/passwd"})");
+    REQUIRE_FALSE(result);
+    // resolve_path says "path must be under <safe_dir>"
+    CHECK(result.error().find("path must be under") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+// ===================================================================
+// git_show
+// ===================================================================
+
+TEST_CASE("git_show HEAD shows commit metadata and diff", "[tools][git_show]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    // Create a second commit with actual changes
+    std::ofstream(sd + "/newfile.txt") << "new content\n";
+    auto r = reg.execute("git_add", R"({"path": "newfile.txt"})");
+    REQUIRE(r);
+    r = reg.execute("git_commit", R"({"message": "add newfile", "all": true})");
+    REQUIRE(r);
+
+    reg.add(make_git_show_tool(std::make_shared<std::string>(sd), 10));
+
+    auto result = reg.execute("git_show", "{}");
+    REQUIRE(result);
+    // Should show commit metadata
+    CHECK(result->find("commit ") != std::string::npos);
+    CHECK(result->find("Author:") != std::string::npos);
+    CHECK(result->find("Date:") != std::string::npos);
+    // Should show the commit message
+    CHECK(result->find("add newfile") != std::string::npos);
+    // Should show the diff (newfile.txt was added)
+    CHECK(result->find("newfile.txt") != std::string::npos);
+    CHECK(result->find("new content") != std::string::npos);
+    // Should show file count
+    CHECK(result->find("1 file changed") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_show specific revision", "[tools][git_show]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    // Create a second commit
+    std::ofstream(sd + "/file2.txt") << "second\n";
+    auto r = reg.execute("git_add", R"({"path": "file2.txt"})");
+    REQUIRE(r);
+    r = reg.execute("git_commit", R"({"message": "second commit", "all": true})");
+    REQUIRE(r);
+
+    // Create a third commit
+    std::ofstream(sd + "/file3.txt") << "third\n";
+    r = reg.execute("git_add", R"({"path": "file3.txt"})");
+    REQUIRE(r);
+    r = reg.execute("git_commit", R"({"message": "third commit", "all": true})");
+    REQUIRE(r);
+
+    reg.add(make_git_show_tool(std::make_shared<std::string>(sd), 10));
+
+    // Show HEAD~1 (the second commit)
+    auto result = reg.execute("git_show",
+        R"({"revision": "HEAD~1"})");
+    REQUIRE(result);
+    CHECK(result->find("commit ") != std::string::npos);
+    CHECK(result->find("second commit") != std::string::npos);
+    // Should show file2.txt but not file3.txt
+    CHECK(result->find("file2.txt") != std::string::npos);
+    CHECK(result->find("file3.txt") == std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_show invalid revision", "[tools][git_show]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+    reg.add(make_git_show_tool(std::make_shared<std::string>(sd), 10));
+
+    auto result = reg.execute("git_show",
+        R"({"revision": "nonexistent_branch_xyz"})");
+    REQUIRE_FALSE(result);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_show not a git repo", "[tools][git_show]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+    reg.add(make_git_show_tool(std::make_shared<std::string>(sd), 10));
+
+    auto result = reg.execute("git_show", "{}");
+    REQUIRE_FALSE(result);
+    CHECK(result.error().find("not a git repository") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_show root commit", "[tools][git_show]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    // make_git_repo already has one commit (the initial commit)
+    reg.add(make_git_show_tool(std::make_shared<std::string>(sd), 10));
+
+    // Show HEAD (the initial/root commit)
+    auto result = reg.execute("git_show", "{}");
+    REQUIRE(result);
+    CHECK(result->find("commit ") != std::string::npos);
+    CHECK(result->find("initial commit") != std::string::npos);
+    // Root commit should still show a diff (README.md added)
+    CHECK(result->find("README.md") != std::string::npos);
+
+    fs::remove_all(sd);
 }
