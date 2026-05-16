@@ -2013,17 +2013,6 @@ TEST_CASE("web_search empty query rejected", "[tools][web_search]") {
     CHECK(result.error() == "query is required");
 }
 
-TEST_CASE("web_search with mock HTML response", "[tools][web_search]") {
-    // Parsing is tested via ddg_html_parse unit tests above.
-    // Integration with HTTP is tested via the "always registered" test
-    // which hits the real DDG endpoint.
-    SUCCEED("Parsing tested via ddg_html_parse unit tests");
-}
-
-TEST_CASE("web_search HTTP error handled", "[tools][web_search]") {
-    SUCCEED("Error handling tested via ddg_html_parse malformed input tests");
-}
-
 TEST_CASE("web_search respects max query length", "[tools][web_search]") {
     // Verify the tool truncates long queries
     // We test this by checking the tool definition rather than executing
@@ -2041,6 +2030,48 @@ TEST_CASE("web_search respects max query length", "[tools][web_search]") {
         }
     }
     CHECK(found);
+}
+
+// ===================================================================
+// Live DDG format verification (hidden by default — opt-in only)
+// ===================================================================
+// This test hits the real DuckDuckGo HTML endpoint to verify the
+// HTML structure hasn't changed.  Hidden with [.] so it is excluded
+// from default ctest runs — run explicitly only when you suspect DDG
+// changed their result page format:
+//
+//   ./test_tools "[ddg-format]"
+//
+TEST_CASE("DDG HTML format is still parseable", "[.][ddg-format]") {
+    // Make one real POST to DDG's HTML search
+    auto resp = http_post_form(
+        "https://html.duckduckgo.com/html/",
+        "q=test",
+        15,      // timeout
+        nullptr  // no cancellation
+    );
+    REQUIRE(resp);
+
+    // If we got a 202 (challenge page from rate limiting), skip — that's
+    // an operational condition, not a format change.
+    if (resp->second == 202) {
+        SUCCEED("DDG returned a challenge page (HTTP 202) — skipping format check. "
+                "This is normal when running from some networks.");
+        return;
+    }
+
+    REQUIRE(resp->second == 200);
+
+    // Parse the HTML and verify we get structured results
+    auto parsed = ddg_html_parse(resp->first);
+    REQUIRE(parsed);
+
+    // Should have at least one result with a title (starts with "N. ")
+    CHECK(parsed->find("1. ") != std::string::npos);
+
+    // Log a summary so developers can see what happened
+    INFO("DDG returned " << std::count(parsed->begin(), parsed->end(), '\n')
+         << " lines of formatted results");
 }
 
 // ===================================================================
