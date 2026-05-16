@@ -368,6 +368,8 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
 
     // ── Auto-compaction at 90% context usage ──
     if (context_usage_percent() >= 90) {
+        if (output_cb_)
+            output_cb_("(compacting...)", OutputType::ToolInvocation);
         auto compact_result = compact();
         if (!compact_result) {
             // Compaction failed — log but don't fail the overall turn
@@ -459,9 +461,11 @@ Result<void> ChatSession::compact() {
 
     // Replace the conversation with just the summary
     conversation_.replace_with_summary(summary);
+    last_usage_ = Usage{};  // reset so UI falls back to conversation estimate
 
     if (output_cb_)
-        output_cb_("Conversation compacted.", OutputType::ToolInvocation);
+        output_cb_("(conversation compacted — summary follows)\n\n" + summary,
+            OutputType::Content);
 
     return {};
 }

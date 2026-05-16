@@ -1062,6 +1062,9 @@ void render_chat_ui(TabInfo& tab, bool& done) {
         if (tab.chat_state->running) {
             stateInfo = "running";
             stateColor = IM_COL32(100, 255, 100, 255);
+        } else if (ui.compacting) {
+            stateInfo = "compacting";
+            stateColor = IM_COL32(255, 208, 0, 255);
         } else {
             stateInfo = "idle";
             stateColor = IM_COL32(180, 180, 180, 255);
