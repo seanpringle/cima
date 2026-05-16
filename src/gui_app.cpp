@@ -572,9 +572,7 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                                 if (BeginTabItem("   Plan   ")) {
                                     auto plan_result = tab.session->plan().read_plan();
                                     if (plan_result) {
-                                        PushFont(mono_font);
-                                        render_content(*plan_result);
-                                        PopFont();
+                                        render_content(*plan_result, mono_font);
                                     } else {
                                         TextDisabled("(empty plan)");
                                     }

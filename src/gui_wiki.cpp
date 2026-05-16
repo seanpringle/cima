@@ -85,9 +85,7 @@ void render_wiki_tab(Wiki& wiki, ImFont* mono_font) {
                     TextColored(ImColor(IM_COL32(255, 100, 100, 255)), "%s",
                         content_result.error().c_str());
                 } else {
-                    PushFont(mono_font);
-                    render_content(*content_result);
-                    PopFont();
+                    render_content(*content_result, mono_font);
                 }
             }
         }

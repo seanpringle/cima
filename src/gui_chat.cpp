@@ -101,6 +101,7 @@ void text_unformatted_inline_wrap(const string& text) {
 struct RenderCtx {
     int style_depth = 0;
     int tables = 0;
+    ImFont* mono_font = nullptr;
     // code block rendering
     bool in_code_block = false;
     string code_buf;
@@ -153,6 +154,7 @@ static int enter_block_cb(MD_BLOCKTYPE type, void* detail, void* userdata) {
         auto* dl = GetWindowDrawList();
         ctx.code_splitter.Split(dl, 2);
         ctx.code_splitter.SetCurrentChannel(dl, 1);
+        if (ctx.mono_font) PushFont(ctx.mono_font);
         ctx.indent(GetStyle().IndentSpacing);
         ctx.newline(type);
         break;
@@ -261,6 +263,7 @@ static int leave_block_cb(MD_BLOCKTYPE type, void* detail, void* userdata) {
                     ImVec2(ctx.code_start.x + GetStyle().IndentSpacing, GetCursorScreenPos().y));
             }
         }
+        if (ctx.mono_font) PopFont();
         ctx.newline(type);
         ImVec2 br(GetCursorScreenPos().x + GetContentRegionAvail().x, GetCursorScreenPos().y);
         auto* dl = GetWindowDrawList();
@@ -328,6 +331,7 @@ static int enter_span_cb(MD_SPANTYPE type, void* detail, void* userdata) {
         break;
     case MD_SPAN_CODE:
         PushStyleColor(ImGuiCol_Text, IM_COL32(200, 200, 255, 255));
+        if (ctx.mono_font) PushFont(ctx.mono_font);
         ctx.style_depth++;
         break;
     case MD_SPAN_A:
@@ -357,6 +361,10 @@ static int leave_span_cb(MD_SPANTYPE type, void* detail, void* userdata) {
     switch (type) {
     case MD_SPAN_STRONG:
     case MD_SPAN_CODE:
+        if (ctx.mono_font) PopFont();
+        PopStyleColor();
+        ctx.style_depth--;
+        break;
     case MD_SPAN_A:
     case MD_SPAN_DEL:
         PopStyleColor();
@@ -403,7 +411,7 @@ static int text_cb(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* us
 
 } // anonymous namespace
 
-void render_content(const string& text) {
+void render_content(const string& text, ImFont* mono_font) {
     string_view trim(text);
     while (trim.size() && std::isspace(trim.back()))
         trim.remove_suffix(1);
@@ -416,6 +424,7 @@ void render_content(const string& text) {
         return;
 
     RenderCtx ctx;
+    ctx.mono_font = mono_font;
 
     MD_PARSER parser = {};
     parser.flags = MD_DIALECT_GITHUB | MD_FLAG_COLLAPSEWHITESPACE;
@@ -961,8 +970,6 @@ void render_chat_ui(TabInfo& tab, bool& done) {
     // ── main content ──
     float input_height = GetFrameHeightWithSpacing() * 6 + 8;
 
-    PushFont(ui.mono_font);
-
     BeginChild("##chat", ImVec2(0, -input_height), false, ImGuiWindowFlags_AlwaysVerticalScrollbar);
 
     size_t i = 0;
@@ -1018,22 +1025,24 @@ void render_chat_ui(TabInfo& tab, bool& done) {
                 break;
             case EntryType::Reasoning:
                 PushStyleColor(ImGuiCol_Text, IM_COL32(160, 160, 160, 255));
-                render_content("Thinking: " + entry.text);
+                render_content("Thinking: " + entry.text, ui.mono_font);
                 PopStyleColor();
                 break;
             case EntryType::Content:
                 PushStyleColor(ImGuiCol_Text, GetColorU32(ImGuiCol_Text));
-                render_content(entry.text);
+                render_content(entry.text, ui.mono_font);
                 PopStyleColor();
                 break;
             case EntryType::ToolCall:
                 PushStyleColor(ImGuiCol_Text, IM_COL32(255, 165, 0, 255));
                 PushTextWrapPos(0);
+                if (ui.mono_font) PushFont(ui.mono_font);
                 text_unformatted_ellipsis(entry.text);
                 for (; i + 1 < ui.entries.size() && ui.entries[i + 1].type == EntryType::ToolCall;
                     i++) {
                     text_unformatted_ellipsis(ui.entries[i + 1].text);
                 }
+                if (ui.mono_font) PopFont();
                 NewLine();
                 PopTextWrapPos();
                 PopStyleColor();
@@ -1057,8 +1066,6 @@ void render_chat_ui(TabInfo& tab, bool& done) {
         SetScrollHereY(1.0f);
 
     EndChild();
-
-    PopFont();
 
     auto insert_text_at_cursor = [&](string_view text) {
         auto& buf = ui.input_buffer;
@@ -1273,9 +1280,7 @@ void render_notes_tab(Notes& notes, ImFont* mono_font) {
                 ("Note #" + std::to_string(id)).c_str())) {
             auto body_result = notes.read_note(id);
             if (body_result) {
-                PushFont(mono_font);
-                render_content(*body_result);
-                PopFont();
+                render_content(*body_result, mono_font);
             }
         }
     }
