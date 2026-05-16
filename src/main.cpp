@@ -7,9 +7,9 @@
 
 static void print_usage() {
     std::cout
-        << "Usage: cima [--force] <session>\n\n"
+        << "Usage: cima [--force] [<session>]\n\n"
         << "Arguments:\n"
-        << "  <session>           Session name (resume or create a new one)\n"
+        << "  <session>           Session name (default: \"default\")\n"
         << "                      Stored in ~/.local/state/cima/<session>/\n\n"
         << "Options:\n"
         << "  --force             Skip session integrity checks (warn + continue)\n"
@@ -53,9 +53,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (session_name.empty()) {
-        std::cerr << "Error: <session> argument is required.\n\n";
-        print_usage();
-        return 1;
+        session_name = "default";
     }
 
     int exit_code = 0;
