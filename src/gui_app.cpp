@@ -298,7 +298,8 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
         merge.OversampleH = 2;
         merge.MergeMode = true;
 
-        float fs = static_cast<float>(cfg.font_size) * scale;
+        float fs_sans = static_cast<float>(cfg.font_size_sans) * scale;
+        float fs_mono = static_cast<float>(cfg.font_size_mono) * scale;
 
         // Try system fonts via fontconfig
         std::string sans_path, mono_path;
@@ -306,15 +307,15 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
             ImGui::GetIO().Fonts->Clear();
 
             // Sans
-            ImGui::GetIO().Fonts->AddFontFromFileTTF(sans_path.c_str(), fs, &font_cfg, latin);
-            ImGui::GetIO().Fonts->AddFontFromFileTTF(sans_path.c_str(), fs, &merge, unicode);
+            ImGui::GetIO().Fonts->AddFontFromFileTTF(sans_path.c_str(), fs_sans, &font_cfg, latin);
+            ImGui::GetIO().Fonts->AddFontFromFileTTF(sans_path.c_str(), fs_sans, &merge, unicode);
 
             // Mono
             mono_font = ImGui::GetIO().Fonts->AddFontFromFileTTF(
-                mono_path.c_str(), fs * 0.9f, &font_cfg, latin);
+                mono_path.c_str(), fs_mono, &font_cfg, latin);
             if (mono_font) {
                 ImGui::GetIO().Fonts->AddFontFromFileTTF(
-                    mono_path.c_str(), fs * 0.9f, &merge, unicode);
+                    mono_path.c_str(), fs_mono, &merge, unicode);
             }
         }
 

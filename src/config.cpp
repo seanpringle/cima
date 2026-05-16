@@ -57,7 +57,8 @@ json Config::to_json() const {
     j["web_fetch_timeout"] = web_fetch_timeout;
     j["font_sans"] = font_sans;
     j["font_mono"] = font_mono;
-    j["font_size"] = font_size;
+    j["font_size_sans"] = font_size_sans;
+    j["font_size_mono"] = font_size_mono;
     j["clangd_path"] = clangd_path;
     j["clangd_args"] = clangd_args;
     j["lsp_timeout"] = lsp_timeout;
@@ -179,9 +180,21 @@ Config Config::load() {
         if (j.contains("font_mono") && j["font_mono"].is_string()) {
             cfg.font_mono = j["font_mono"].get<std::string>();
         }
+        if (j.contains("font_size_sans") && j["font_size_sans"].is_number_integer()) {
+            int n = j["font_size_sans"].get<int>();
+            if (n > 0) cfg.font_size_sans = n;
+        }
+        if (j.contains("font_size_mono") && j["font_size_mono"].is_number_integer()) {
+            int n = j["font_size_mono"].get<int>();
+            if (n > 0) cfg.font_size_mono = n;
+        }
+        // Backward compat: old single font_size applies to both
         if (j.contains("font_size") && j["font_size"].is_number_integer()) {
             int n = j["font_size"].get<int>();
-            if (n > 0) cfg.font_size = n;
+            if (n > 0) {
+                cfg.font_size_sans = n;
+                cfg.font_size_mono = n;
+            }
         }
 
         // LSP settings
