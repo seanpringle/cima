@@ -84,9 +84,9 @@ static bool find_font_pair(const Config& cfg,
         return true;
     };
 
-    // Priority-ordered family pairs
-    if (try_family("Noto Sans", "Noto Sans Mono")) return true;
+    // Priority-ordered family pairs (DejaVu first — widest single-font Unicode coverage)
     if (try_family("DejaVu Sans", "DejaVu Sans Mono")) return true;
+    if (try_family("Noto Sans", "Noto Sans Mono")) return true;
     if (try_family("Liberation Sans", "Liberation Mono")) return true;
     if (try_family("Ubuntu", "Ubuntu Mono")) return true;
     if (try_family("sans-serif", "monospace")) return true;
