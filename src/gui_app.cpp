@@ -456,11 +456,11 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                             if (BeginTabBar("##session-tabs")) {
                                 // Config first so it's the default focus — model list loads
                                 // as soon as the assistant tab is created.
-                                if (BeginTabItem("Config")) {
+                                if (BeginTabItem("   Config   ")) {
                                     render_config_tab(tab, cfg, mono_font);
                                     EndTabItem();
                                 }
-                                if (BeginTabItem("Plan")) {
+                                if (BeginTabItem("   Plan   ")) {
                                     auto plan_result = tab.session->plan().read_plan();
                                     if (plan_result) {
                                         PushFont(mono_font);
@@ -471,7 +471,7 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                                     }
                                     EndTabItem();
                                 }
-                                if (BeginTabItem("Notes")) {
+                                if (BeginTabItem("   Notes   ")) {
                                     render_notes_tab(tab.session->notes(), mono_font);
                                     EndTabItem();
                                 }
