@@ -60,7 +60,7 @@ struct Config {
     // Font settings (empty paths = auto-detect via fontconfig)
     std::string font_sans;                   // path to sans-serif font file
     std::string font_mono;                   // path to monospace font file
-    int font_size = 22;                      // base font size in points (before display scaling)
+    int font_size = 20;                      // base font size in points (before display scaling)
 
     // LSP / clangd settings
     std::string clangd_path;                 // Path to clangd binary (empty = search PATH)
