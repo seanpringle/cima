@@ -52,6 +52,11 @@ struct Config {
     int web_search_timeout = 15;
     int web_fetch_timeout = 15;
 
+    // ── CMake tool timeouts ──
+    int cmake_configure_timeout = 120;  // cmake configure can be slow
+    int cmake_build_timeout = 300;      // builds can take minutes
+    int cmake_ctest_timeout = 300;      // test suites can be long
+
     // LSP / clangd settings
     std::string clangd_path;                 // Path to clangd binary (empty = search PATH)
     std::vector<std::string> clangd_args;    // Extra CLI flags, e.g. ["--clang-tidy"]
@@ -67,6 +72,16 @@ Access the language server (clangd) with `get_lsp_diagnostics`, `get_lsp_hover`,
 `get_lsp_format` tools.
 )";
 
+    /// CMake prompt snippet — appended to the system prompt only when
+    /// CMakeLists.txt exists in the workspace.
+    static constexpr const char* CMAKE_PROMPT_SNIPPET = R"(
+## CMake tools
+
+`cmake_configure(head=H, tail=T)` configures the project (generates compile_commands.json).
+`cmake_build(head=H, tail=T)` builds the project.
+`cmake_ctest(head=H, tail=T)` runs the test suite.
+All return raw output with optional head/tail trimming.
+)";
     std::string system_prompt =
         "You are an AI coding assistant.\n"
         "Use markdown with a neat, clear and concise layout for all output.\n"

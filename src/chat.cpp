@@ -28,6 +28,14 @@ static const std::unordered_set<std::string> lsp_tool_names = {
     "get_lsp_format",
 };
 
+// Names of all CMake tools — conditionally published when CMakeLists.txt
+// exists in the workspace.
+static const std::unordered_set<std::string> cmake_tool_names = {
+    "cmake_configure",
+    "cmake_build",
+    "cmake_ctest",
+};
+
 ChatSession::ChatSession(const Config& config, const Provider& provider,
     CancellationToken cancelled)
     : model_(provider.model), reasoning_effort_(provider.reasoning_effort),
@@ -68,6 +76,11 @@ ChatSession::ChatSession(const Config& config, const Provider& provider,
     tools_.add(make_get_lsp_references_tool(&lsp_client_));
     tools_.add(make_get_lsp_document_symbols_tool(&lsp_client_));
 
+    // CMake tools — always registered; conditionally published in run_once().
+    tools_.add(make_cmake_configure_tool(safe_dir_, config.cmake_configure_timeout, cancelled_));
+    tools_.add(make_cmake_build_tool(safe_dir_, config.cmake_build_timeout, cancelled_));
+    tools_.add(make_cmake_ctest_tool(safe_dir_, config.cmake_ctest_timeout, cancelled_));
+
 }
 
 void ChatSession::set_provider(const Provider& provider) {
@@ -80,6 +93,12 @@ void ChatSession::set_provider(const Provider& provider) {
     context_limit_discovered_ = false; // will re-discover on next run
     client_.set_api_base(provider.api_base);
     client_.set_api_key(provider.api_key);
+}
+
+bool ChatSession::has_cmake_project() const {
+    std::error_code ec;
+    return std::filesystem::exists(
+        std::filesystem::path(*safe_dir_) / "CMakeLists.txt", ec);
 }
 
 void ChatSession::set_lsp_client(LspClient* lsp) {
@@ -183,18 +202,26 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
 
     try {
         for (int iter = 0; iter < max_iterations_; iter++) {
-            // Build effective system prompt (conditionally include LSP section)
+            // Build effective system prompt (conditionally include LSP/CMake sections)
             std::string effective_prompt = system_prompt_;
             if (lsp_is_running()) {
                 effective_prompt += Config::LSP_PROMPT_SNIPPET;
             }
+            if (has_cmake_project()) {
+                effective_prompt += Config::CMAKE_PROMPT_SNIPPET;
+            }
 
-            // Filter tool list: only include LSP tools when clangd is running
+            // Filter tool list: only include LSP tools when clangd is running,
+            // only include CMake tools when CMakeLists.txt exists.
             std::set<std::string> allowed_tools;
             for (const auto& t : tools_.tools()) {
-                if (lsp_is_running() || lsp_tool_names.count(t.name) == 0) {
+                bool include = true;
+                if (lsp_tool_names.count(t.name) && !lsp_is_running())
+                    include = false;
+                if (cmake_tool_names.count(t.name) && !has_cmake_project())
+                    include = false;
+                if (include)
                     allowed_tools.insert(t.name);
-                }
             }
 
             json payload = {{"model", model_},
@@ -451,7 +478,9 @@ Result<void> ChatSession::compact() {
         {"model", model_},
         {"reasoning_effort", reasoning_effort_},
         {"messages", json::array({
-            {{"role", "system"}, {"content", sanitize_utf8(system_prompt_ + (lsp_is_running() ? std::string(Config::LSP_PROMPT_SNIPPET) : ""))}},
+            {{"role", "system"}, {"content", sanitize_utf8(system_prompt_
+                + (lsp_is_running() ? std::string(Config::LSP_PROMPT_SNIPPET) : "")
+                + (has_cmake_project() ? std::string(Config::CMAKE_PROMPT_SNIPPET) : ""))}},
             {{"role", "user"}, {"content", sanitize_utf8(summary_prompt)}}
         })},
         {"stream", true}

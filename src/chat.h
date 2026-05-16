@@ -97,6 +97,9 @@ class ChatSession {
         return lsp_client_ && lsp_client_->is_running();
     }
 
+    /// True when a CMakeLists.txt exists in the workspace directory.
+    bool has_cmake_project() const;
+
     /// Set the LSP client and register LSP tools (may be null to disable).
     void set_lsp_client(LspClient *lsp);
     LspClient *lsp_client() const { return lsp_client_; }
