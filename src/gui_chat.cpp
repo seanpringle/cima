@@ -359,9 +359,12 @@ static int enter_span_cb(MD_SPANTYPE type, void* detail, void* userdata) {
 static int leave_span_cb(MD_SPANTYPE type, void* detail, void* userdata) {
     auto& ctx = *static_cast<RenderCtx*>(userdata);
     switch (type) {
-    case MD_SPAN_STRONG:
     case MD_SPAN_CODE:
         if (ctx.mono_font) PopFont();
+        PopStyleColor();
+        ctx.style_depth--;
+        break;
+    case MD_SPAN_STRONG:
         PopStyleColor();
         ctx.style_depth--;
         break;
@@ -529,60 +532,53 @@ void render_config_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
     }
 
     // ── Provider combo ──
-    Text("Provider:");
-    SameLine();
     PushFont(mono_font);
-    SetNextItemWidth(-1);
-
-    // Build combo label
-    string provider_label = tab.provider_name.empty() ? cfg.providers[0].name : tab.provider_name;
-
-    if (BeginCombo("##provider-combo", provider_label.c_str())) {
-        for (const auto& p : cfg.providers) {
-            bool is_selected = (p.name == tab.provider_name);
-            if (Selectable(p.name.c_str(), is_selected)) {
-                if (p.name != tab.provider_name) {
-                    // Provider changed — update session client and re-fetch models
-                    session.set_provider(p);
-                    tab.provider_name = p.name;
-                    tab.model_name = p.model;
-                    tab.reasoning_effort = p.reasoning_effort;
-                    trigger_model_fetch();
+    {
+        string label = tab.provider_name.empty() ? cfg.providers[0].name : tab.provider_name;
+        if (BeginCombo("Provider", label.c_str())) {
+            for (const auto& p : cfg.providers) {
+                bool is_selected = (p.name == tab.provider_name);
+                if (Selectable(p.name.c_str(), is_selected)) {
+                    if (p.name != tab.provider_name) {
+                        // Provider changed — update session client and re-fetch models
+                        session.set_provider(p);
+                        tab.provider_name = p.name;
+                        tab.model_name = p.model;
+                        tab.reasoning_effort = p.reasoning_effort;
+                        trigger_model_fetch();
+                    }
                 }
+                if (is_selected) SetItemDefaultFocus();
             }
-            if (is_selected) SetItemDefaultFocus();
+            EndCombo();
         }
-        EndCombo();
     }
     PopFont();
 
     // ── Model combo (or manual text input if fetch failed) ──
-    Text("Model:");
-    SameLine();
     PushFont(mono_font);
-    SetNextItemWidth(-1);
 
     if (!ui.models_fetched->load(std::memory_order_acquire)) {
         // Still loading
-        string loading_label = "Loading models...";
         PushStyleColor(ImGuiCol_Text, IM_COL32(128, 128, 128, 255));
-        TextUnformatted(loading_label.c_str());
+        Text("Model:");
+        SameLine();
+        TextUnformatted("Loading models...");
         PopStyleColor();
     } else if (!ui.models_error.empty() || ui.available_models.empty()) {
         // Fetch failed or returned empty — show manual text input
-        // Use a fixed buffer for the model name
-        static std::string manual_model;
-        manual_model = session.model();
-        char buf[256];
-        strncpy(buf, manual_model.c_str(), sizeof(buf) - 1);
-        buf[sizeof(buf) - 1] = '\0';
         PushStyleColor(ImGuiCol_Text, IM_COL32(255, 100, 100, 255));
+        Text("Model:");
+        SameLine();
         if (!ui.models_error.empty()) {
-            TextUnformatted(("Error: " + ui.models_error).c_str());
+            TextUnformatted(ui.models_error.c_str());
         } else {
             TextDisabled("(no models returned)");
         }
         PopStyleColor();
+        char buf[256];
+        strncpy(buf, session.model().c_str(), sizeof(buf) - 1);
+        buf[sizeof(buf) - 1] = '\0';
         if (InputText("##model-manual", buf, sizeof(buf), ImGuiInputTextFlags_EnterReturnsTrue)) {
             std::string new_model(buf);
             if (!new_model.empty()) {
@@ -592,8 +588,7 @@ void render_config_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
         }
     } else {
         // Show dropdown
-        string combo_label = session.model();
-        if (BeginCombo("##model-combo", combo_label.c_str())) {
+        if (BeginCombo("Model", session.model().c_str())) {
             for (const auto& m : ui.available_models) {
                 bool is_selected = (m == session.model());
                 if (Selectable(m.c_str(), is_selected)) {
@@ -623,16 +618,13 @@ void render_config_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
     Separator();
 
     // ── Reasoning effort input ──
-    Text("Reasoning Effort:");
-    SameLine();
     PushFont(mono_font);
-    SetNextItemWidth(-1);
     {
         std::string re = tab.reasoning_effort.empty() ? session.reasoning_effort() : tab.reasoning_effort;
         char buf[128];
         strncpy(buf, re.c_str(), sizeof(buf) - 1);
         buf[sizeof(buf) - 1] = '\0';
-        if (InputText("##reasoning-effort", buf, sizeof(buf),
+        if (InputText("Reasoning Effort", buf, sizeof(buf),
                 ImGuiInputTextFlags_EnterReturnsTrue)) {
             std::string new_re(buf);
             tab.reasoning_effort = new_re;
@@ -644,10 +636,7 @@ void render_config_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
     Separator();
 
     // ── Workspace path (safe directory) ──
-    Text("Workspace:");
-    SameLine();
     PushFont(mono_font);
-    SetNextItemWidth(-1);
     {
         // Sync buffer from session when the input is NOT active
         // (avoids overwriting the user's in-progress edit)
@@ -660,7 +649,7 @@ void render_config_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
         buf[sizeof(buf) - 1] = '\0';
 
         bool was_active = IsItemActive();
-        bool committed = InputText("##workspace-path", buf, sizeof(buf),
+        bool committed = InputText("Workspace", buf, sizeof(buf),
             ImGuiInputTextFlags_EnterReturnsTrue);
         bool now_active = IsItemActive();
         bool focus_lost = was_active && !now_active;
@@ -690,7 +679,9 @@ void render_config_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
             if (ec) {
                 // exists() failed — likely invalid characters
                 SameLine();
-                TextUnformatted("\xE2\x9A\xA0"); // warning sign
+                PushStyleColor(ImGuiCol_Text, IM_COL32(255, 200, 0, 255));
+                TextUnformatted("(!)");
+                PopStyleColor();
                 if (IsItemHovered()) {
                     BeginTooltip();
                     TextUnformatted("Invalid path");
@@ -698,7 +689,9 @@ void render_config_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
                 }
             } else if (!exists) {
                 SameLine();
-                TextUnformatted("\xE2\x9C\x98"); // cross mark
+                PushStyleColor(ImGuiCol_Text, IM_COL32(255, 100, 100, 255));
+                TextUnformatted("(x)");
+                PopStyleColor();
                 if (IsItemHovered()) {
                     BeginTooltip();
                     TextUnformatted("Path does not exist");
@@ -706,7 +699,9 @@ void render_config_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
                 }
             } else if (!std::filesystem::is_directory(ui.workspace_path_buf, ec)) {
                 SameLine();
-                TextUnformatted("\xE2\x9C\x98"); // cross mark
+                PushStyleColor(ImGuiCol_Text, IM_COL32(255, 100, 100, 255));
+                TextUnformatted("(x)");
+                PopStyleColor();
                 if (IsItemHovered()) {
                     BeginTooltip();
                     TextUnformatted("Not a directory");
@@ -714,7 +709,9 @@ void render_config_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
                 }
             } else {
                 SameLine();
-                TextUnformatted("\xE2\x9C\x93"); // check mark
+                PushStyleColor(ImGuiCol_Text, IM_COL32(100, 255, 100, 255));
+                TextUnformatted("(v)");
+                PopStyleColor();
                 if (IsItemHovered()) {
                     BeginTooltip();
                     TextUnformatted("Valid directory");
@@ -736,7 +733,7 @@ void render_config_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
         SameLine();
         if (lsp && lsp->is_running()) {
             PushStyleColor(ImGuiCol_Text, IM_COL32(100, 255, 100, 255));
-            TextUnformatted("\xE2\x97\x89 running"); // ◉
+            TextUnformatted("(*) running");
             PopStyleColor();
             SameLine();
             if (Button("Stop LSP")) {
@@ -746,7 +743,7 @@ void render_config_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
             }
         } else if (lsp && !lsp->is_running()) {
             PushStyleColor(ImGuiCol_Text, IM_COL32(255, 200, 0, 255));
-            TextUnformatted("\xE2\x97\x8B crashed"); // ○
+            TextUnformatted("(!) crashed");
             PopStyleColor();
             SameLine();
             if (Button("Restart LSP")) {
@@ -763,7 +760,7 @@ void render_config_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
             }
         } else {
             PushStyleColor(ImGuiCol_Text, IM_COL32(128, 128, 128, 255));
-            TextUnformatted("\xE2\x97\x8B stopped"); // ○
+            TextUnformatted("(-) stopped");
             PopStyleColor();
             SameLine();
             if (Button("Start LSP")) {
