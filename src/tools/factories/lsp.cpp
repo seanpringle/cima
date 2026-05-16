@@ -72,8 +72,8 @@ Tool make_get_lsp_diagnostics_tool(LspClient& lsp) {
                 sync.error());
         }
 
-        // Request diagnostics
-        auto resp = lsp.request("textDocument/pullDiagnostics",
+        // Request diagnostics (LSP 3.17 pull diagnostics)
+        auto resp = lsp.request("textDocument/diagnostic",
             {{"textDocument", {{"uri", uri}}}},
             15);
 
@@ -113,55 +113,71 @@ Tool make_get_lsp_diagnostics_tool(LspClient& lsp) {
 
         auto& result = response["result"];
 
+        // LSP 3.17 pull diagnostics returns a DocumentDiagnosticReport.
+        // Check the kind first — only "full" reports have items.
+        std::string kind = result.value("kind", std::string());
+        bool is_unchanged = (kind == "unchanged");
+
         // Build formatted output
         std::string output;
         int total_count = 0;
 
-        // Diagnostics for the primary document
-        if (result.contains("diagnostics") && result["diagnostics"].is_array()) {
-            auto& diags = result["diagnostics"];
-            for (const auto& d : diags) {
-                total_count++;
-                std::string severity_str;
-                int severity = d.value("severity", 0);
-                switch (severity) {
-                    case 1: severity_str = "error"; break;
-                    case 2: severity_str = "warning"; break;
-                    case 3: severity_str = "info"; break;
-                    case 4: severity_str = "hint"; break;
-                    default: severity_str = "note"; break;
+        // Helper lambda to format a single Diagnostic object
+        auto format_diagnostic = [&](const json& d, const std::string& display_path) {
+            total_count++;
+            std::string severity_str;
+            int severity = d.value("severity", 0);
+            switch (severity) {
+                case 1: severity_str = "error"; break;
+                case 2: severity_str = "warning"; break;
+                case 3: severity_str = "info"; break;
+                case 4: severity_str = "hint"; break;
+                default: severity_str = "note"; break;
+            }
+
+            auto& range = d["range"];
+            auto& start = range["start"];
+            int line = start.value("line", 0);
+            int col = start.value("character", 0);
+
+            output += "- [" + severity_str + "] " +
+                      display_path + ":" +
+                      std::to_string(line + 1) + ":" +
+                      std::to_string(col + 1) + ": " +
+                      d.value("message", "") + "\n";
+
+            // Include code if present
+            if (d.contains("code") && !d["code"].is_null()) {
+                if (d["code"].is_string()) {
+                    output += "  code: " + d["code"].get<std::string>() + "\n";
+                } else if (d["code"].is_number()) {
+                    output += "  code: " + std::to_string(d["code"].get<int>()) + "\n";
                 }
+            }
+        };
 
-                auto& range = d["range"];
-                auto& start = range["start"];
-                int line = start.value("line", 0);
-                int col = start.value("character", 0);
-
-                output += "- [" + severity_str + "] " +
-                          raw_path + ":" +
-                          std::to_string(line + 1) + ":" +
-                          std::to_string(col + 1) + ": " +
-                          d.value("message", "") + "\n";
-
-                // Include code if present
-                if (d.contains("code") && !d["code"].is_null()) {
-                    if (d["code"].is_string()) {
-                        output += "  code: " + d["code"].get<std::string>() + "\n";
-                    } else if (d["code"].is_number()) {
-                        output += "  code: " + std::to_string(d["code"].get<int>()) + "\n";
-                    }
-                }
+        // Diagnostics for the primary document (items inside the report)
+        if (!is_unchanged && result.contains("items") && result["items"].is_array()) {
+            auto& items = result["items"];
+            for (const auto& d : items) {
+                format_diagnostic(d, raw_path);
             }
         }
 
         // Diagnostics from related documents (cross-file issues)
+        // Each value in relatedDocuments is itself a DocumentDiagnosticReport
+        // with kind and items.
         if (result.contains("relatedDocuments") &&
             result["relatedDocuments"].is_object()) {
             for (auto it = result["relatedDocuments"].begin();
                  it != result["relatedDocuments"].end(); ++it) {
                 const auto& related_uri = it.key();
-                auto& related_diags = it.value();
-                if (!related_diags.is_array())
+                auto& related_report = it.value();
+
+                // Only process "full" reports
+                if (related_report.value("kind", std::string()) != "full")
+                    continue;
+                if (!related_report.contains("items") || !related_report["items"].is_array())
                     continue;
 
                 // Convert URI to path for display
@@ -169,36 +185,8 @@ Tool make_get_lsp_diagnostics_tool(LspClient& lsp) {
                 const std::string& display_path =
                     related_path ? *related_path : related_uri;
 
-                for (const auto& d : related_diags) {
-                    total_count++;
-                    std::string severity_str;
-                    int severity = d.value("severity", 0);
-                    switch (severity) {
-                        case 1: severity_str = "error"; break;
-                        case 2: severity_str = "warning"; break;
-                        case 3: severity_str = "info"; break;
-                        case 4: severity_str = "hint"; break;
-                        default: severity_str = "note"; break;
-                    }
-
-                    auto& range = d["range"];
-                    auto& start = range["start"];
-                    int line = start.value("line", 0);
-                    int col = start.value("character", 0);
-
-                    output += "- [" + severity_str + "] " +
-                              display_path + ":" +
-                              std::to_string(line + 1) + ":" +
-                              std::to_string(col + 1) + ": " +
-                              d.value("message", "") + "\n";
-
-                    if (d.contains("code") && !d["code"].is_null()) {
-                        if (d["code"].is_string()) {
-                            output += "  code: " + d["code"].get<std::string>() + "\n";
-                        } else if (d["code"].is_number()) {
-                            output += "  code: " + std::to_string(d["code"].get<int>()) + "\n";
-                        }
-                    }
+                for (const auto& d : related_report["items"]) {
+                    format_diagnostic(d, display_path);
                 }
             }
         }

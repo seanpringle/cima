@@ -123,10 +123,18 @@ Result<void> LspClient::do_handshake() {
     running_ = true;
     start_reader_thread();
 
-    // Send initialize request
+    // Send initialize request with client capabilities
+    json capabilities = {
+        {"textDocument", {
+            {"diagnostic", {
+                {"dynamicRegistration", true},
+                {"relatedDocumentSupport", true}
+            }}
+        }}
+    };
     auto resp = request("initialize", {
         {"processId", static_cast<int>(getpid())},
-        {"capabilities", json::object()}
+        {"capabilities", capabilities}
     }, 30);
 
     if (!resp) {

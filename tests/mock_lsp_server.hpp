@@ -299,6 +299,10 @@ inline void MockLspServer::child_main() {
                                 {"documentSymbol", true},
                                 {"rename", true},
                                 {"formatting", true}
+                            })},
+                            {"diagnosticProvider", json::object({
+                                {"interFileDependencies", true},
+                                {"workspaceDiagnostics", false}
                             })}
                         })},
                         {"serverInfo", json::object({
@@ -309,9 +313,10 @@ inline void MockLspServer::child_main() {
                 } else if (method == "shutdown") {
                     response = lsp::make_response(id, nullptr);
                     running = false;
-                } else if (method == "textDocument/pullDiagnostics") {
+                } else if (method == "textDocument/diagnostic") {
                     response = lsp::make_response(id, json::object({
-                        {"diagnostics", diagnostics_response_},
+                        {"kind", "full"},
+                        {"items", diagnostics_response_},
                         {"relatedDocuments", json::object()}
                     }));
                 } else if (method == "textDocument/hover") {
@@ -575,15 +580,15 @@ inline std::optional<json> MockLspServer::send_request(
 
 inline std::optional<json> MockLspServer::send_pull_diagnostics(
     const std::string& uri, int timeout_ms) {
-    auto resp = send_request("textDocument/pullDiagnostics", {
+    auto resp = send_request("textDocument/diagnostic", {
         {"textDocument", {{"uri", uri}}}
     }, timeout_ms);
     if (!resp)
         return std::nullopt;
 
     auto& result = (*resp)["result"];
-    if (result.contains("diagnostics"))
-        return result["diagnostics"];
+    if (result.contains("items") && result["items"].is_array())
+        return result["items"];
     return json::array();
 }
 
