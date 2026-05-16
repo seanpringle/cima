@@ -64,8 +64,13 @@ void ChatSession::set_wiki(Wiki* wiki) {
 
 int ChatSession::context_usage_percent() const {
     if (context_limit_ <= 0) return 0;
-    auto est = conversation_.estimate_total_tokens();
-    return static_cast<int>(est * 100 / context_limit_);
+    // Use the API-reported token count when available (more accurate),
+    // fall back to the conversation estimate after restart.
+    int tokens = last_usage_.total_tokens;
+    if (tokens == 0) {
+        tokens = static_cast<int>(conversation_.estimate_total_tokens());
+    }
+    return static_cast<int>(tokens * 100 / context_limit_);
 }
 
 Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
