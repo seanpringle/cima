@@ -57,6 +57,16 @@ struct Config {
     std::vector<std::string> clangd_args;    // Extra CLI flags, e.g. ["--clang-tidy"]
     int lsp_timeout = 30;                    // Default timeout for LSP requests (seconds)
 
+    /// LSP prompt snippet — appended to the system prompt only when clangd is running.
+    static constexpr const char* LSP_PROMPT_SNIPPET = R"(
+## LSP tools
+
+Access the language server (clangd) with `get_lsp_diagnostics`, `get_lsp_hover`,
+`get_lsp_definition`, `get_lsp_completion`, `get_lsp_code_actions`,
+`get_lsp_references`, `get_lsp_document_symbols`, `get_lsp_rename`, and
+`get_lsp_format` tools.
+)";
+
     std::string system_prompt =
         "You are an AI coding assistant.\n"
         "Use markdown with a neat, clear and concise layout for all output.\n"
@@ -75,13 +85,6 @@ struct Config {
         " user. Access with `list_wiki_pages()`, `read_wiki_page()`, `write_wiki_page()`, and"
         " `edit_wiki_page()` tools. Note: the wiki is not file-based; only these tools can"
         " access it.\n"
-        "\n"
-        "## LSP tools\n"
-        "\n"
-        "Access the language server (clangd) with `get_lsp_diagnostics`, `get_lsp_hover`,"
-        " `get_lsp_definition`, `get_lsp_completion`, `get_lsp_code_actions`,"
-        " `get_lsp_references`, `get_lsp_document_symbols`, `get_lsp_rename`, and"
-        " `get_lsp_format` tools.\n"
         "\n";
 
     /// Load config from ~/.config/cima/cima.json, applying defaults for

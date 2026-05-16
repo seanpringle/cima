@@ -9,8 +9,24 @@
 #include <future>
 #include <iostream>
 #include <mutex>
+#include <set>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
+
+// Names of all LSP tools — used to conditionally exclude them from the
+// tool list and system prompt when clangd is not running.
+static const std::unordered_set<std::string> lsp_tool_names = {
+    "get_lsp_diagnostics",
+    "get_lsp_hover",
+    "get_lsp_definition",
+    "get_lsp_completion",
+    "get_lsp_code_actions",
+    "get_lsp_references",
+    "get_lsp_document_symbols",
+    "get_lsp_rename",
+    "get_lsp_format",
+};
 
 ChatSession::ChatSession(const Config& config, const Provider& provider,
     CancellationToken cancelled)
@@ -167,11 +183,24 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
 
     try {
         for (int iter = 0; iter < max_iterations_; iter++) {
-            // Build payload from the conversation.
+            // Build effective system prompt (conditionally include LSP section)
+            std::string effective_prompt = system_prompt_;
+            if (lsp_is_running()) {
+                effective_prompt += Config::LSP_PROMPT_SNIPPET;
+            }
+
+            // Filter tool list: only include LSP tools when clangd is running
+            std::set<std::string> allowed_tools;
+            for (const auto& t : tools_.tools()) {
+                if (lsp_is_running() || lsp_tool_names.count(t.name) == 0) {
+                    allowed_tools.insert(t.name);
+                }
+            }
+
             json payload = {{"model", model_},
                 {"reasoning_effort", reasoning_effort_},
-                {"messages", conversation_.build_openai_payload(system_prompt_)},
-                {"tools", tools_.to_openai_tools()},
+                {"messages", conversation_.build_openai_payload(effective_prompt)},
+                {"tools", tools_.to_openai_tools(&allowed_tools)},
                 {"stream", true}};
             payload["stream_options"] = {{"include_usage", true}};
             std::string content;
@@ -422,7 +451,7 @@ Result<void> ChatSession::compact() {
         {"model", model_},
         {"reasoning_effort", reasoning_effort_},
         {"messages", json::array({
-            {{"role", "system"}, {"content", sanitize_utf8(system_prompt_)}},
+            {{"role", "system"}, {"content", sanitize_utf8(system_prompt_ + (lsp_is_running() ? std::string(Config::LSP_PROMPT_SNIPPET) : ""))}},
             {{"role", "user"}, {"content", sanitize_utf8(summary_prompt)}}
         })},
         {"stream", true}

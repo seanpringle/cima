@@ -92,6 +92,11 @@ class ChatSession {
     /// This triggers LSP sync if an LspClient is attached.
     void notify_file_modified(const std::string& path);
 
+    /// True when clangd LSP is attached and its process is running.
+    bool lsp_is_running() const {
+        return lsp_client_ && lsp_client_->is_running();
+    }
+
     /// Set the LSP client and register LSP tools (may be null to disable).
     void set_lsp_client(LspClient *lsp);
     LspClient *lsp_client() const { return lsp_client_; }
