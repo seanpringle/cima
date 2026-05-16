@@ -160,7 +160,7 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
     }
 
     SDL_WindowFlags window_flags = (SDL_WindowFlags)(SDL_WINDOW_RESIZABLE);
-    std::string window_title = "cima \xe2\x80\x94 " + session_name;
+    std::string window_title = "cima :: " + session_name;
     SDL_Window* window = SDL_CreateWindow(window_title.c_str(), 1280, 720, window_flags);
     if (!window) {
         SDL_Log("SDL_CreateWindow error: %s", SDL_GetError());
