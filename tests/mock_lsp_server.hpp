@@ -69,6 +69,26 @@ public:
         push_diag_ = std::move(push);
     }
 
+    /// Set the canned response for textDocument/hover (null = return nullptr).
+    void set_hover_response(json resp) {
+        hover_response_ = std::move(resp);
+    }
+
+    /// Set the canned response for textDocument/definition (null = return nullptr).
+    void set_definition_response(json resp) {
+        definition_response_ = std::move(resp);
+    }
+
+    /// Set the canned response for textDocument/completion (null = return nullptr).
+    void set_completion_response(json resp) {
+        completion_response_ = std::move(resp);
+    }
+
+    /// Set the canned response for textDocument/codeAction (null = return nullptr).
+    void set_code_action_response(json resp) {
+        code_action_response_ = std::move(resp);
+    }
+
     // ── Lifecycle ────────────────────────────────────────────────────
 
     /// Fork the child process.  Returns true on success.
@@ -134,6 +154,10 @@ private:
 
     // Configuration
     json diagnostics_response_ = json::array();
+    json hover_response_;          // null by default → returns nullptr from server
+    json definition_response_;      // null by default → returns nullptr from server
+    json completion_response_;      // null by default → returns nullptr from server
+    json code_action_response_;     // null by default → returns nullptr from server
     int response_delay_ms_ = 0;
     std::optional<PushDiag> push_diag_;
 
@@ -260,11 +284,31 @@ inline void MockLspServer::child_main() {
                         {"diagnostics", diagnostics_response_},
                         {"relatedDocuments", json::object()}
                     }));
-                } else if (method == "textDocument/hover" ||
-                           method == "textDocument/definition" ||
-                           method == "textDocument/completion" ||
-                           method == "textDocument/codeAction" ||
-                           method == "textDocument/references" ||
+                } else if (method == "textDocument/hover") {
+                    if (hover_response_.is_null()) {
+                        response = lsp::make_response(id, nullptr);
+                    } else {
+                        response = lsp::make_response(id, hover_response_);
+                    }
+                } else if (method == "textDocument/definition") {
+                    if (definition_response_.is_null()) {
+                        response = lsp::make_response(id, nullptr);
+                    } else {
+                        response = lsp::make_response(id, definition_response_);
+                    }
+                } else if (method == "textDocument/completion") {
+                    if (completion_response_.is_null()) {
+                        response = lsp::make_response(id, nullptr);
+                    } else {
+                        response = lsp::make_response(id, completion_response_);
+                    }
+                } else if (method == "textDocument/codeAction") {
+                    if (code_action_response_.is_null()) {
+                        response = lsp::make_response(id, nullptr);
+                    } else {
+                        response = lsp::make_response(id, code_action_response_);
+                    }
+                } else if (method == "textDocument/references" ||
                            method == "textDocument/documentSymbol") {
                     response = lsp::make_response(id, nullptr);
                 } else if (method == "_mock_getLastNotification") {
@@ -274,6 +318,18 @@ inline void MockLspServer::child_main() {
                 } else if (method == "_mock_clearNotifications") {
                     all_notifications = json::array();
                     last_notification = json();
+                    response = lsp::make_response(id, true);
+                } else if (method == "_mock_setHoverResponse") {
+                    hover_response_ = msg["params"]["response"];
+                    response = lsp::make_response(id, true);
+                } else if (method == "_mock_setDefinitionResponse") {
+                    definition_response_ = msg["params"]["response"];
+                    response = lsp::make_response(id, true);
+                } else if (method == "_mock_setCompletionResponse") {
+                    completion_response_ = msg["params"]["response"];
+                    response = lsp::make_response(id, true);
+                } else if (method == "_mock_setCodeActionResponse") {
+                    code_action_response_ = msg["params"]["response"];
                     response = lsp::make_response(id, true);
                 } else if (method == "textDocument/rename" ||
                            method == "textDocument/formatting") {

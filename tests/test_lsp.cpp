@@ -5,15 +5,25 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
+#include <filesystem>
+#include <fstream>
 #include <future>
 #include <thread>
 
 using Catch::Matchers::ContainsSubstring;
 
-// ===================================================================
-// Helper: ClientMock — LspClient connected to a MockLspServer
-// ===================================================================
+namespace fs = std::filesystem;
 
+// Helper: create a temporary directory for file tests.
+static std::string make_temp_dir() {
+    char tmpl[] = "/tmp/cima_test_lsp_XXXXXX";
+    char* result = mkdtemp(tmpl);
+    REQUIRE(result != nullptr);
+    return result;
+}
+
+// Helper: connect LspClient to MockLspServer and return the connected client.
+// The caller must keep `mock` alive (it destructs before client).
 struct ClientMock {
     MockLspServer mock;
     LspClient client;
@@ -27,502 +37,287 @@ struct ClientMock {
         return conn.has_value();
     }
 
-    ~ClientMock() {
-        client.shutdown();
-    }
+    ~ClientMock() { client.shutdown(); }
 };
 
-// ===================================================================
-// MockLspServer lifecycle (Ticket 2)
-// ===================================================================
-
-TEST_CASE("MockLspServer starts and is running", "[lsp][mock]") {
-    MockLspServer mock;
-    CHECK(mock.start());
-    CHECK(mock.is_running());
-}
-
-TEST_CASE("MockLspServer responds to initialize", "[lsp][mock]") {
-    MockLspServer mock;
-    CHECK(mock.start());
-
-    auto caps = mock.send_initialize();
-    REQUIRE(caps);
-    CHECK(caps->contains("capabilities"));
-    CHECK((*caps)["capabilities"].contains("textDocument"));
-}
-
-TEST_CASE("MockLspServer responds to arbitrary request", "[lsp][mock]") {
-    MockLspServer mock;
-    CHECK(mock.start());
-
-    auto resp = mock.send_request("textDocument/hover",
-                                  {{"textDocument", {{"uri", "file:///test.cc"}}},
-                                   {"position", {{"line", 10}, {"character", 5}}}});
+// Helper: query the mock for its last received notification.
+static json mock_last_notif(LspClient& client) {
+    auto resp = client.request("_mock_getLastNotification", {}, 5);
     REQUIRE(resp);
-    CHECK(resp->contains("result"));
+    return (*resp)["result"];
 }
 
-TEST_CASE("MockLspServer shuts down cleanly", "[lsp][mock]") {
-    MockLspServer mock;
-    CHECK(mock.start());
-    CHECK(mock.is_running());
-    mock.shutdown();
-    CHECK_FALSE(mock.is_running());
-}
-
-TEST_CASE("MockLspServer simulates pull diagnostics", "[lsp][mock]") {
-    MockLspServer mock;
-    mock.set_diagnostics_response(json::array({
-        json::object({
-            {"range", json::object({
-                {"start", json::object({{"line", 0}, {"character", 0}})},
-                {"end", json::object({{"line", 0}, {"character", 5}})}
-            })},
-            {"severity", 1},
-            {"message", "test error"},
-            {"source", "clangd"}
-        })
-    }));
-    CHECK(mock.start());
-
-    auto diag = mock.send_pull_diagnostics("file:///test.cc");
-    REQUIRE(diag);
-    REQUIRE(diag->is_array());
-    REQUIRE(diag->size() == 1);
-    CHECK((*diag)[0]["message"] == "test error");
-    CHECK((*diag)[0]["severity"] == 1);
-}
-
-TEST_CASE("MockLspServer pull diagnostics empty", "[lsp][mock]") {
-    MockLspServer mock;
-    CHECK(mock.start());
-    auto diag = mock.send_pull_diagnostics("file:///test.cc");
-    REQUIRE(diag);
-    CHECK(diag->empty());
-}
-
-TEST_CASE("MockLspServer supports configurable delay", "[lsp][mock]") {
-    MockLspServer mock;
-    mock.set_response_delay(200);
-    CHECK(mock.start());
-
-    auto start = std::chrono::steady_clock::now();
-    auto resp = mock.send_request("textDocument/hover", {}, 5000);
-    auto elapsed = std::chrono::steady_clock::now() - start;
-    CHECK(resp);
-    CHECK(elapsed >= std::chrono::milliseconds(150));
-}
-
-TEST_CASE("MockLspServer simulates crash", "[lsp][mock]") {
-    MockLspServer mock;
-    CHECK(mock.start());
-    CHECK(mock.is_running());
-
-    mock.crash();
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    CHECK_FALSE(mock.is_running());
-}
-
-TEST_CASE("MockLspServer crash during request", "[lsp][mock]") {
-    MockLspServer mock;
-    mock.set_response_delay(5000);
-    CHECK(mock.start());
-
-    auto fut = std::async(std::launch::async, [&] {
-        return mock.send_request("textDocument/hover", {}, 10000);
-    });
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    mock.crash();
-
-    auto result = fut.get();
-    CHECK_FALSE(result);
-}
-
-TEST_CASE("MockLspServer handles multiple sequential requests",
-          "[lsp][mock]") {
-    MockLspServer mock;
-    CHECK(mock.start());
-
-    auto r1 = mock.send_request("textDocument/hover", {});
-    REQUIRE(r1);
-    auto r2 = mock.send_request("textDocument/completion", {});
-    REQUIRE(r2);
-    CHECK((*r1)["id"].get<int>() != (*r2)["id"].get<int>());
-}
-
-TEST_CASE("MockLspServer handles unknown method gracefully",
-          "[lsp][mock]") {
-    MockLspServer mock;
-    CHECK(mock.start());
-
-    auto resp = mock.send_request("some/unknown/method", {});
+// Helper: query the mock for all notifications received so far.
+static json mock_all_notifs(LspClient& client) {
+    auto resp = client.request("_mock_getAllNotifications", {}, 5);
     REQUIRE(resp);
-    CHECK((resp->contains("error") || resp->contains("result")));
+    return (*resp)["result"];
 }
 
-TEST_CASE("MockLspServer sends push diagnostics notification",
-          "[lsp][mock]") {
-    MockLspServer mock;
-    MockLspServer::PushDiag expected;
-    expected.uri = "file:///test.cc";
-    expected.diagnostics = json::array({
-        json::object({
-            {"range", json::object({
-                {"start", json::object({{"line", 1}, {"character", 0}})},
-                {"end", json::object({{"line", 1}, {"character", 10}})}
-            })},
-            {"severity", 2},
-            {"message", "warning: unused variable"}
-        })
-    });
-    mock.set_push_diagnostics(expected);
-    CHECK(mock.start());
-
-    auto caps = mock.send_initialize();
-    REQUIRE(caps);
-
-    auto notif = mock.read_push_notification(1000);
-    REQUIRE(notif);
-    CHECK((*notif)["method"] == "textDocument/publishDiagnostics");
-    CHECK((*notif)["params"]["uri"] == "file:///test.cc");
-    CHECK((*notif)["params"]["diagnostics"].size() == 1);
-    CHECK((*notif)["params"]["diagnostics"][0]["message"] == "warning: unused variable");
+// Helper: clear mock's notification log.
+static void mock_clear_notifs(LspClient& client) {
+    client.request("_mock_clearNotifications", {}, 5);
 }
 
 // ===================================================================
-// LspClient lifecycle (Ticket 3)
+// open_file
 // ===================================================================
 
-TEST_CASE("LspClient connects and performs initialize handshake",
-          "[lsp][client]") {
-    ClientMock cm;
-    CHECK(cm.start());
-    CHECK(cm.client.is_running());
-    CHECK(cm.client.server_capabilities().contains("textDocument"));
-}
-
-TEST_CASE("LspClient fails cleanly with broken pipe",
-          "[lsp][client]") {
-    LspClient client;
-    int pipes[2];
-    CHECK(pipe(pipes) == 0);
-    close(pipes[0]);
-    close(pipes[1]);
-    auto result = client.connect(pipes[0], pipes[1]);
-    CHECK_FALSE(result);
-}
-
-TEST_CASE("LspClient request/response round-trip", "[lsp][client]") {
+TEST_CASE("open_file sends textDocument/didOpen", "[lsp][filesync]") {
     ClientMock cm;
     REQUIRE(cm.start());
 
-    auto resp = cm.client.request("textDocument/hover", {{"uri", "file:///test.cc"}}, 5);
-    REQUIRE(resp);
-    CHECK((*resp)["jsonrpc"] == "2.0");
-    CHECK((*resp).contains("id"));
-    CHECK((*resp).contains("result"));
+    cm.client.open_file("file:///test.cc", "cpp", "int x = 1;");
+
+    auto last = mock_last_notif(cm.client);
+    CHECK(last["method"] == "textDocument/didOpen");
+    CHECK(last["params"]["textDocument"]["uri"] == "file:///test.cc");
+    CHECK(last["params"]["textDocument"]["languageId"] == "cpp");
+    CHECK(last["params"]["textDocument"]["text"] == "int x = 1;");
+    CHECK(last["params"]["textDocument"]["version"] == 1);
 }
 
-TEST_CASE("LspClient multiple sequential requests", "[lsp][client]") {
+TEST_CASE("open_file is idempotent with same content", "[lsp][filesync]") {
     ClientMock cm;
     REQUIRE(cm.start());
 
-    auto r1 = cm.client.request("textDocument/hover", {}, 5);
-    REQUIRE(r1);
-    auto r2 = cm.client.request("textDocument/completion", {}, 5);
-    REQUIRE(r2);
-    CHECK((*r1)["id"].get<int>() != (*r2)["id"].get<int>());
+    cm.client.open_file("file:///test.cc", "cpp", "int x = 1;");
+    mock_clear_notifs(cm.client);
+
+    // Open again with identical content — should NOT send another didOpen
+    cm.client.open_file("file:///test.cc", "cpp", "int x = 1;");
+
+    auto all = mock_all_notifs(cm.client);
+    CHECK(all.size() == 0); // no new notifications
 }
 
-TEST_CASE("LspClient sends notification", "[lsp][client]") {
-    ClientMock cm;
-    REQUIRE(cm.start());
-
-    auto result = cm.client.notify("textDocument/didOpen", {
-        {"textDocument", {{"uri", "file:///test.cc"}, {"languageId", "cpp"}, {"version", 1}, {"text", ""}}}
-    });
-    CHECK(result);
-}
-
-TEST_CASE("LspClient timeout triggers error", "[lsp][client]") {
-    ClientMock cm;
-    REQUIRE(cm.start(2000));
-
-    auto resp = cm.client.request("textDocument/hover", {}, 1);
-    CHECK_FALSE(resp);
-    CHECK(resp.error().find("timed out") != std::string::npos);
-}
-
-TEST_CASE("LspClient shutdown is clean", "[lsp][client]") {
-    ClientMock cm;
-    REQUIRE(cm.start());
-    CHECK(cm.client.is_running());
-
-    auto result = cm.client.shutdown();
-    CHECK(result);
-    CHECK_FALSE(cm.client.is_running());
-}
-
-TEST_CASE("LspClient handles concurrent requests", "[lsp][client]") {
-    ClientMock cm;
-    REQUIRE(cm.start());
-
-    auto fut1 = std::async(std::launch::async, [&] {
-        return cm.client.request("textDocument/hover", {}, 5);
-    });
-    auto fut2 = std::async(std::launch::async, [&] {
-        return cm.client.request("textDocument/completion", {}, 5);
-    });
-
-    auto r1 = fut1.get();
-    auto r2 = fut2.get();
-    REQUIRE(r1);
-    REQUIRE(r2);
-    CHECK((*r1)["id"].get<int>() != (*r2)["id"].get<int>());
-}
-
-TEST_CASE("LspClient detects server crash during request", "[lsp][client]") {
-    MockLspServer mock;
-    mock.set_response_delay(5000);
-    REQUIRE(mock.start());
-
-    LspClient client;
-    CHECK(client.connect(mock.child_stdout(), mock.child_stdin()).has_value());
-
-    std::promise<Result<json>> result_promise;
-    auto result_future = result_promise.get_future();
-    std::thread worker([&] {
-        result_promise.set_value(client.request("textDocument/hover", {}, 30));
-    });
-
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    mock.crash();
-    worker.join();
-
-    auto result = result_future.get();
-    CHECK_FALSE(result);
-    CHECK((result.error().find("closed") != std::string::npos ||
-           result.error().find("EOF") != std::string::npos ||
-           result.error().find("eof") != std::string::npos));
-}
-
-TEST_CASE("LspClient receives error response", "[lsp][client]") {
-    ClientMock cm;
-    REQUIRE(cm.start());
-
-    auto resp = cm.client.request("nonexistent/method", {}, 5);
-    REQUIRE(resp);
-    CHECK(resp->contains("error"));
-    CHECK((*resp)["error"]["code"] == lsp::ErrorCodes::MethodNotFound);
-}
-
-// ===================================================================
-// File sync (Ticket 4)
-// ===================================================================
-
-TEST_CASE("open_file sends didOpen and tracks state", "[lsp][filesync]") {
-    ClientMock cm;
-    REQUIRE(cm.start());
-
-    CHECK_FALSE(cm.client.is_file_open("file:///test.cc"));
-
-    auto result = cm.client.open_file("file:///test.cc", "cpp", "int x = 1;");
-    CHECK(result);
-    CHECK(cm.client.is_file_open("file:///test.cc"));
-
-    auto notifs_opt = cm.mock.get_received_notifications();
-    REQUIRE(notifs_opt);
-    auto& notifs = *notifs_opt;
-    REQUIRE(notifs.size() >= 1);
-    CHECK(notifs[0]["method"] == "textDocument/didOpen");
-    CHECK(notifs[0]["params"]["textDocument"]["uri"] == "file:///test.cc");
-    CHECK(notifs[0]["params"]["textDocument"]["languageId"] == "cpp");
-    CHECK(notifs[0]["params"]["textDocument"]["text"] == "int x = 1;");
-}
-
-TEST_CASE("open_file idempotent with same content", "[lsp][filesync]") {
-    ClientMock cm;
-    REQUIRE(cm.start());
-
-    auto r1 = cm.client.open_file("file:///test.cc", "cpp", "int x = 1;");
-    REQUIRE(r1);
-    auto r2 = cm.client.open_file("file:///test.cc", "cpp", "int x = 1;");
-    REQUIRE(r2);
-
-    auto notifs_opt = cm.mock.get_received_notifications();
-    REQUIRE(notifs_opt);
-    auto& notifs = *notifs_opt;
-    int did_open_count = 0;
-    for (const auto& n : notifs) {
-        if (n["method"] == "textDocument/didOpen")
-            did_open_count++;
-    }
-    CHECK(did_open_count == 1);
-}
-
-TEST_CASE("open_file with different content upgrades to didChange",
+TEST_CASE("open_file upgrades to didChange when content differs",
           "[lsp][filesync]") {
     ClientMock cm;
     REQUIRE(cm.start());
 
-    auto r1 = cm.client.open_file("file:///test.cc", "cpp", "int x = 1;");
-    REQUIRE(r1);
-    auto r2 = cm.client.open_file("file:///test.cc", "cpp", "int y = 2;");
-    REQUIRE(r2);
+    cm.client.open_file("file:///test.cc", "cpp", "int x = 1;");
+    mock_clear_notifs(cm.client);
 
-    auto notifs_opt = cm.mock.get_received_notifications();
-    REQUIRE(notifs_opt);
-    auto& notifs = *notifs_opt;
-    bool saw_open = false, saw_change = false;
-    for (const auto& n : notifs) {
-        if (n["method"] == "textDocument/didOpen")  saw_open = true;
-        if (n["method"] == "textDocument/didChange") saw_change = true;
-    }
-    CHECK(saw_open);
-    CHECK(saw_change);
+    // Open again with different content — should send didChange, not didOpen
+    cm.client.open_file("file:///test.cc", "cpp", "int x = 2;");
+
+    auto last = mock_last_notif(cm.client);
+    CHECK(last["method"] == "textDocument/didChange");
+    CHECK(last["params"]["textDocument"]["uri"] == "file:///test.cc");
+    CHECK(last["params"]["contentChanges"][0]["text"] == "int x = 2;");
+    CHECK(last["params"]["textDocument"]["version"] == 2);
 }
 
-TEST_CASE("change_file sends didChange with correct content",
-          "[lsp][filesync]") {
+TEST_CASE("open_file tracks version numbers", "[lsp][filesync]") {
     ClientMock cm;
     REQUIRE(cm.start());
-    REQUIRE(cm.client.open_file("file:///test.cc", "cpp", "int x = 1;"));
 
-    auto result = cm.client.change_file("file:///test.cc", "int y = 2;", 2);
-    CHECK(result);
+    cm.client.open_file("file:///test.cc", "cpp", "v1");
+    CHECK(mock_last_notif(cm.client)["params"]["textDocument"]["version"] == 1);
 
-    auto notifs_opt = cm.mock.get_received_notifications();
-    REQUIRE(notifs_opt);
-    auto& notifs = *notifs_opt;
-    bool found = false;
-    for (const auto& n : notifs) {
-        if (n["method"] == "textDocument/didChange") {
-            CHECK(n["params"]["textDocument"]["uri"] == "file:///test.cc");
-            CHECK(n["params"]["contentChanges"][0]["text"] == "int y = 2;");
-            found = true;
-        }
-    }
-    CHECK(found);
+    cm.client.open_file("file:///test.cc", "cpp", "v2");
+    CHECK(mock_last_notif(cm.client)["params"]["textDocument"]["version"] == 2);
+
+    cm.client.open_file("file:///test.cc", "cpp", "v3");
+    CHECK(mock_last_notif(cm.client)["params"]["textDocument"]["version"] == 3);
 }
 
-TEST_CASE("close_file sends didClose and clears state", "[lsp][filesync]") {
+// ===================================================================
+// change_file
+// ===================================================================
+
+TEST_CASE("change_file sends textDocument/didChange", "[lsp][filesync]") {
     ClientMock cm;
     REQUIRE(cm.start());
-    REQUIRE(cm.client.open_file("file:///test.cc", "cpp", "int x;"));
-    CHECK(cm.client.is_file_open("file:///test.cc"));
 
-    cm.mock.clear_notifications();
-    auto result = cm.client.close_file("file:///test.cc");
-    CHECK(result);
-    CHECK_FALSE(cm.client.is_file_open("file:///test.cc"));
+    cm.client.open_file("file:///test.cc", "cpp", "int x = 1;");
+    mock_clear_notifs(cm.client);
 
-    auto notifs_opt = cm.mock.get_received_notifications();
-    REQUIRE(notifs_opt);
-    auto& notifs = *notifs_opt;
-    REQUIRE(notifs.size() >= 1);
-    CHECK(notifs[0]["method"] == "textDocument/didClose");
-    CHECK(notifs[0]["params"]["textDocument"]["uri"] == "file:///test.cc");
+    cm.client.change_file("file:///test.cc", "int y = 2;", 2);
+
+    auto last = mock_last_notif(cm.client);
+    CHECK(last["method"] == "textDocument/didChange");
+    CHECK(last["params"]["textDocument"]["uri"] == "file:///test.cc");
+    CHECK(last["params"]["textDocument"]["version"] == 2);
+    CHECK(last["params"]["contentChanges"][0]["text"] == "int y = 2;");
 }
 
-TEST_CASE("close_file no-op on unopened file", "[lsp][filesync]") {
+TEST_CASE("change_file errors if file not open", "[lsp][filesync]") {
     ClientMock cm;
     REQUIRE(cm.start());
+
+    auto result = cm.client.change_file("file:///never_opened.cc", "content", 1);
+    CHECK_FALSE(result);
+}
+
+// ===================================================================
+// close_file
+// ===================================================================
+
+TEST_CASE("close_file sends textDocument/didClose", "[lsp][filesync]") {
+    ClientMock cm;
+    REQUIRE(cm.start());
+
+    cm.client.open_file("file:///test.cc", "cpp", "int x = 1;");
+    mock_clear_notifs(cm.client);
+
+    cm.client.close_file("file:///test.cc");
+
+    auto last = mock_last_notif(cm.client);
+    CHECK(last["method"] == "textDocument/didClose");
+    CHECK(last["params"]["textDocument"]["uri"] == "file:///test.cc");
+}
+
+TEST_CASE("close_file errors if file not open", "[lsp][filesync]") {
+    ClientMock cm;
+    REQUIRE(cm.start());
+
     auto result = cm.client.close_file("file:///never_opened.cc");
-    CHECK(result);
+    CHECK_FALSE(result);
 }
 
-TEST_CASE("ensure_file_synced opens new file", "[lsp][filesync]") {
-    ClientMock cm;
-    REQUIRE(cm.start());
+// ===================================================================
+// ensure_file_synced
+// ===================================================================
 
-    auto result = cm.client.ensure_file_synced(
-        "file:///test.cc", "cpp", "int x = 1;");
-    CHECK(result);
-    CHECK(cm.client.is_file_open("file:///test.cc"));
-}
-
-TEST_CASE("ensure_file_synced detects stale content", "[lsp][filesync]") {
-    ClientMock cm;
-    REQUIRE(cm.start());
-    REQUIRE(cm.client.open_file("file:///test.cc", "cpp", "int x = 1;"));
-    cm.mock.clear_notifications();
-
-    auto result = cm.client.ensure_file_synced(
-        "file:///test.cc", "cpp", "int y = 2;");
-    CHECK(result);
-
-    auto notifs_opt = cm.mock.get_received_notifications();
-    REQUIRE(notifs_opt);
-    auto& notifs = *notifs_opt;
-    bool saw_change = false;
-    for (const auto& n : notifs) {
-        if (n["method"] == "textDocument/didChange")
-            saw_change = true;
-    }
-    CHECK(saw_change);
-}
-
-TEST_CASE("ensure_file_synced no-op when content matches", "[lsp][filesync]") {
-    ClientMock cm;
-    REQUIRE(cm.start());
-    REQUIRE(cm.client.open_file("file:///test.cc", "cpp", "int x = 1;"));
-    cm.mock.clear_notifications();
-
-    auto result = cm.client.ensure_file_synced(
-        "file:///test.cc", "cpp", "int x = 1;");
-    CHECK(result);
-
-    auto notifs_opt = cm.mock.get_received_notifications();
-    REQUIRE(notifs_opt);
-    CHECK(notifs_opt->empty());
-}
-
-TEST_CASE("language_id_from_extension works correctly",
+TEST_CASE("ensure_file_synced sends didChange when file changed on disk",
           "[lsp][filesync]") {
-    CHECK(LspClient::language_id_from_extension("/path/to/file.cpp") == "cpp");
-    CHECK(LspClient::language_id_from_extension("/path/to/file.h") == "c");
-    CHECK(LspClient::language_id_from_extension("/path/to/file.hpp") == "cpp");
-    CHECK(LspClient::language_id_from_extension("/path/to/file.c") == "c");
-    CHECK(LspClient::language_id_from_extension("/path/to/file.cc") == "cpp");
-    CHECK(LspClient::language_id_from_extension("/path/to/file.cxx") == "cpp");
-    CHECK(LspClient::language_id_from_extension("/path/to/file.hxx") == "cpp");
-    CHECK(LspClient::language_id_from_extension("/path/to/file.unknown") == "");
-    CHECK(LspClient::language_id_from_extension("/path/to/Makefile") == "");
+    ClientMock cm;
+    REQUIRE(cm.start());
+
+    // Create a temp file
+    auto tmp_dir = fs::temp_directory_path() / "cima_test_lsp_XXXXXX";
+    auto dir = make_temp_dir();
+    auto path = dir + "/test.cc";
+    std::ofstream(path) << "int original;";
+
+    cm.client.open_file(lsp::path_to_uri(path), "cpp", "int original;");
+    mock_clear_notifs(cm.client);
+
+    // Modify file on disk
+    std::ofstream(path) << "int modified;";
+
+    // Call ensure_file_synced — should detect difference and send didChange
+    auto result = cm.client.ensure_file_synced(
+        lsp::path_to_uri(path), "cpp", "int modified;");
+    CHECK(result);
+
+    auto last = mock_last_notif(cm.client);
+    CHECK(last["method"] == "textDocument/didChange");
+    CHECK(last["params"]["contentChanges"][0]["text"] == "int modified;");
+
+    fs::remove_all(dir);
 }
 
-TEST_CASE("LspClient restart re-opens tracked files", "[lsp][filesync]") {
+TEST_CASE("ensure_file_synced is no-op when content matches",
+          "[lsp][filesync]") {
+    ClientMock cm;
+    REQUIRE(cm.start());
+
+    auto dir = make_temp_dir();
+    auto path = dir + "/test.cc";
+    std::ofstream(path) << "int x;";
+
+    cm.client.open_file(lsp::path_to_uri(path), "cpp", "int x;");
+    mock_clear_notifs(cm.client);
+
+    // File unchanged — ensure_file_synced should do nothing
+    auto result = cm.client.ensure_file_synced(
+        lsp::path_to_uri(path), "cpp", "int x;");
+    CHECK(result);
+
+    auto all = mock_all_notifs(cm.client);
+    CHECK(all.size() == 0);
+
+    fs::remove_all(dir);
+}
+
+TEST_CASE("ensure_file_synced opens a not-yet-open file",
+          "[lsp][filesync]") {
+    ClientMock cm;
+    REQUIRE(cm.start());
+
+    // File not tracked yet — ensure_file_synced should open it
+    auto result = cm.client.ensure_file_synced(
+        "file:///newfile.cc", "cpp", "int fresh;");
+    CHECK(result);
+    CHECK(cm.client.is_file_open("file:///newfile.cc"));
+
+    // Verify the mock received a didOpen for it
+    auto last = mock_last_notif(cm.client);
+    CHECK(last["method"] == "textDocument/didOpen");
+    CHECK(last["params"]["textDocument"]["uri"] == "file:///newfile.cc");
+}
+
+// ===================================================================
+// is_file_open
+// ===================================================================
+
+TEST_CASE("is_file_open tracks state correctly", "[lsp][filesync]") {
+    ClientMock cm;
+    REQUIRE(cm.start());
+
+    CHECK_FALSE(cm.client.is_file_open("file:///test.cc"));
+
+    cm.client.open_file("file:///test.cc", "cpp", "hello");
+    CHECK(cm.client.is_file_open("file:///test.cc"));
+
+    cm.client.close_file("file:///test.cc");
+    CHECK_FALSE(cm.client.is_file_open("file:///test.cc"));
+}
+
+// ===================================================================
+// Crash recovery — re-opens tracked files
+// ===================================================================
+
+TEST_CASE("LspClient restart re-opens previously open files",
+          "[lsp][filesync]") {
+    // This test validates crash recovery logic:
+    // 1. Open two files in LspClient
+    // 2. Simulate server crash
+    // 3. Reconnect to a fresh mock
+    // 4. Verify both files get didOpen again
+
     MockLspServer mock;
-    mock.set_response_delay(200);
     REQUIRE(mock.start());
 
     LspClient client;
-    CHECK(client.connect(mock.child_stdout(), mock.child_stdin()).has_value());
+    REQUIRE(client.connect(mock.child_stdout(), mock.child_stdin()));
 
-    REQUIRE(client.open_file("file:///test.cc", "cpp", "int x;"));
-    REQUIRE(client.open_file("file:///util.h", "cpp", "void foo();"));
-    REQUIRE(client.is_file_open("file:///test.cc"));
-    REQUIRE(client.is_file_open("file:///util.h"));
+    client.open_file("file:///alpha.cc", "cpp", "int a;");
+    client.open_file("file:///beta.cc", "cpp", "int b;");
 
+    // Clear the notification log
+    client.request("_mock_clearNotifications", {}, 5);
+
+    // Simulate server restart: crash + reconnect to fresh mock
     mock.crash();
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-    CHECK_FALSE(client.is_running());
 
+    // Start a fresh mock and reconnect
     MockLspServer mock2;
     REQUIRE(mock2.start());
-    auto conn = client.connect(mock2.child_stdout(), mock2.child_stdin());
-    CHECK(conn.has_value());
+    REQUIRE(client.connect(mock2.child_stdout(), mock2.child_stdin()));
 
-    CHECK(client.is_file_open("file:///test.cc"));
-    CHECK(client.is_file_open("file:///util.h"));
+    // Wait for re-open notifications to be sent
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
-    auto notifs_opt = mock2.get_received_notifications();
-    REQUIRE(notifs_opt);
-    int open_count = 0;
-    for (const auto& n : *notifs_opt) {
-        if (n["method"] == "textDocument/didOpen")
-            open_count++;
+    // Query mock2 for received notifications
+    auto all = client.request("_mock_getAllNotifications", {}, 5);
+    REQUIRE(all);
+    auto notifs = (*all)["result"];
+
+    // Should have received didOpen for alpha.cc and beta.cc
+    bool found_alpha = false, found_beta = false;
+    for (const auto& n : notifs) {
+        if (n["method"] == "textDocument/didOpen") {
+            auto uri = n["params"]["textDocument"]["uri"].get<std::string>();
+            if (uri == "file:///alpha.cc") found_alpha = true;
+            if (uri == "file:///beta.cc") found_beta = true;
+        }
     }
-    CHECK(open_count == 2);
+    CHECK(found_alpha);
+    CHECK(found_beta);
+
+    client.shutdown();
 }

@@ -3,6 +3,7 @@
 #include "client.h"
 #include "config.h"
 #include "conversation.h"
+#include "lsp/lsp_client.h"
 #include "notes.h"
 #include "plan.h"
 #include "tools.h"
@@ -84,6 +85,14 @@ class ChatSession {
     void set_wiki(Wiki* wiki);
     Wiki* wiki() const { return wiki_; }
 
+    /// Notify the session that a file was modified on disk.
+    /// This triggers LSP sync if an LspClient is attached.
+    void notify_file_modified(const std::string& path);
+
+    /// Set the LSP client and register LSP tools (may be null to disable).
+    void set_lsp_client(LspClient* lsp);
+    LspClient* lsp_client() const { return lsp_client_; }
+
     /// Provider name this session belongs to.
     const std::string& provider_name() const { return provider_name_; }
 
@@ -97,10 +106,12 @@ class ChatSession {
     std::string agent_name_;
     std::string provider_name_;
     Wiki* wiki_ = nullptr;
+    LspClient* lsp_client_ = nullptr;
     std::shared_ptr<std::string> safe_dir_;
     std::string api_base_;     // API base URL (for creating temp clients)
     std::string api_key_;      // API key for authentication
     int max_iterations_ = 100; // overridden by config.max_tool_iterations
+    std::shared_ptr<FileModifiedCallback> file_modified_cb_;
     std::string system_prompt_;
     PlanBoard plan_;
     Notes notes_;

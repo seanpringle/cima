@@ -10,13 +10,15 @@ void ToolRegistry::add(Tool tool) { tools_.push_back(std::move(tool)); }
 
 void ToolRegistry::add_defaults(const std::string& safe_dir,
     const Config& config,
-    bool include_write) {
-    add_defaults(std::make_shared<std::string>(safe_dir), config, include_write);
+    bool include_write,
+    FileModifiedCallback on_file_modified) {
+    add_defaults(std::make_shared<std::string>(safe_dir), config, include_write, std::move(on_file_modified));
 }
 
 void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
     const Config& config,
-    bool include_write) {
+    bool include_write,
+    FileModifiedCallback on_file_modified) {
     const auto& read_only_paths = config.read_only_paths;
 
     // ── Read-only tools (receive whitelist for extra path access) ──
@@ -75,12 +77,12 @@ void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
     // ── Write tools ──
     if (include_write) {
         {
-            auto t = make_write_file_tool(safe_dir_ptr);
+            auto t = make_write_file_tool(safe_dir_ptr, on_file_modified);
             t.permission = ToolPermission::Write;
             add(std::move(t));
         }
         {
-            auto t = make_edit_file_tool(safe_dir_ptr);
+            auto t = make_edit_file_tool(safe_dir_ptr, on_file_modified);
             t.permission = ToolPermission::Write;
             add(std::move(t));
         }

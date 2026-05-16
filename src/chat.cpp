@@ -1,10 +1,13 @@
 #include "chat.h"
+#include "lsp/json_rpc.h"
 #include "plan.h"
 
 #include <chrono>
 #include <exception>
 #include <filesystem>
+#include <fstream>
 #include <future>
+#include <iostream>
 #include <mutex>
 #include <thread>
 #include <unordered_map>
@@ -20,12 +23,13 @@ ChatSession::ChatSession(const Config& config, const Provider& provider,
       context_limit_(provider.context_limit),
       system_prompt_(config.system_prompt),
       client_(provider.api_base, provider.api_key),
+      file_modified_cb_(std::make_shared<FileModifiedCallback>()),
       cancelled_(cancelled ? std::move(cancelled) : make_cancellation_token()) {
     // Share the cancellation token with tools and client
     tools_.set_cancelled(cancelled_);
     client_.set_cancelled(cancelled_);
 
-    tools_.add_defaults(safe_dir_, config, /*include_write=*/true);
+    tools_.add_defaults(safe_dir_, config, /*include_write=*/true, *file_modified_cb_);
 
     // Each session gets its own plan tools tied to its PlanBoard
     tools_.add(make_write_plan_tool(plan_));
@@ -49,6 +53,47 @@ void ChatSession::set_provider(const Provider& provider) {
     context_limit_discovered_ = false; // will re-discover on next run
     client_.set_api_base(provider.api_base);
     client_.set_api_key(provider.api_key);
+}
+
+void ChatSession::set_lsp_client(LspClient* lsp) {
+    lsp_client_ = lsp;
+    if (lsp_client_) {
+        // Wire the file-modified callback to sync modified files with the LSP server.
+        // This ensures that after write_file or edit_file, clangd sees the new content.
+        *file_modified_cb_ = [this](const std::string& path) {
+            // Read file content from disk
+            std::ifstream file(path, std::ios::binary | std::ios::ate);
+            if (!file.is_open()) {
+                return; // silently skip — file may have been deleted
+            }
+            auto size = file.tellg();
+            std::string content(static_cast<size_t>(size), '\0');
+            file.seekg(0);
+            file.read(content.data(), size);
+
+            // Sync with LSP
+            std::string uri = lsp::path_to_uri(path);
+            auto lang = LspClient::language_id_from_extension(path);
+            auto result = lsp_client_->ensure_file_synced(uri, lang, content);
+            if (!result) {
+                // Non-fatal: log and continue
+                std::cerr << "notify_file_modified: failed to sync " << path
+                          << " with LSP: " << result.error() << std::endl;
+            }
+        };
+
+        tools_.add(make_get_lsp_diagnostics_tool(*lsp_client_));
+        tools_.add(make_get_lsp_hover_tool(*lsp_client_));
+        tools_.add(make_get_lsp_definition_tool(*lsp_client_));
+        tools_.add(make_get_lsp_completion_tool(*lsp_client_));
+        tools_.add(make_get_lsp_code_actions_tool(*lsp_client_));
+    }
+}
+
+void ChatSession::notify_file_modified(const std::string& path) {
+    if (*file_modified_cb_) {
+        (*file_modified_cb_)(path);
+    }
 }
 
 void ChatSession::set_wiki(Wiki* wiki) {

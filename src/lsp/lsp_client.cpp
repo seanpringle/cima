@@ -91,6 +91,18 @@ Result<void> LspClient::start(const std::string& binary_path,
 }
 
 Result<void> LspClient::connect(int read_fd, int write_fd) {
+    // Tear down any previous connection first.
+    // Important: check the reader thread, not running_ — the reader may
+    // have set running_=false after detecting EOF, but the thread object
+    // still needs to be joined before we can start a new one.
+    reader_stop_ = true;
+    if (reader_thread_.joinable()) {
+        reader_thread_.join();
+    }
+    if (read_fd_ >= 0) close(read_fd_);
+    if (write_fd_ >= 0) close(write_fd_);
+    running_ = false;
+
     read_fd_ = read_fd;
     write_fd_ = write_fd;
     return do_handshake();
@@ -400,64 +412,71 @@ Result<void> LspClient::open_file(const std::string& uri,
             // Same content, no-op
             return {};
         }
-        // Content changed — upgrade to didChange instead of didOpen
-        auto version = it->second.version + 1;
-        lock.unlock(); // release before calling notify
+        // Content differs — upgrade to didChange
+        int new_version = it->second.version + 1;
+        lock.unlock();
 
-        return change_file(uri, content, version);
+        return change_file(uri, content, new_version);
     }
+    lock.unlock();
 
-    // Not open — send didOpen
+    // New file — send didOpen
     json params = {
         {"textDocument", {
             {"uri", uri},
             {"languageId", language_id},
             {"version", 1},
-            {"text", content}
+            {"text", content},
         }}
     };
-    auto result = notify("textDocument/didOpen", std::move(params));
-    if (!result) {
-        return result;
-    }
 
-    // Update state
-    {
-        std::lock_guard<std::mutex> lock2(file_mutex_);
-        files_[uri] = FileState{
-            .is_open = true,
-            .version = 1,
-            .content_hash = hash,
-            .content = content,
-        };
-    }
+    auto result = notify("textDocument/didOpen", std::move(params));
+    if (!result) return result;
+
+    // Track state
+    std::lock_guard<std::mutex> lock2(file_mutex_);
+    files_[uri] = FileState{
+        .is_open = true,
+        .version = 1,
+        .content_hash = hash,
+        .content = content,
+    };
     return {};
 }
 
 Result<void> LspClient::change_file(const std::string& uri,
-                                     const std::string& content, int version) {
+                                     const std::string& content,
+                                     int version) {
     if (!running_) {
         return std::unexpected(std::string("LSP server is not running"));
     }
 
-    auto hash = content_hash(content);
+    // Check that file is open (or was open before)
+    {
+        std::lock_guard<std::mutex> lock(file_mutex_);
+        auto it = files_.find(uri);
+        if (it == files_.end() || !it->second.is_open) {
+            return std::unexpected(
+                std::string("file is not open: ") + uri +
+                " — call open_file() first");
+        }
+    }
 
-    // Send didChange
     json params = {
         {"textDocument", {
             {"uri", uri},
-            {"version", version}
+            {"version", version},
         }},
         {"contentChanges", json::array({
-            {{"text", content}}
-        })}
+            {{"text", content}},
+        })},
     };
+
     auto result = notify("textDocument/didChange", std::move(params));
-    if (!result) {
-        return result;
-    }
+    if (!result) return result;
 
     // Update state
+    auto hash = content_hash(content);
     std::lock_guard<std::mutex> lock(file_mutex_);
     files_[uri] = FileState{
         .is_open = true,
@@ -473,13 +492,21 @@ Result<void> LspClient::close_file(const std::string& uri) {
         return std::unexpected(std::string("LSP server is not running"));
     }
 
+    {
+        std::lock_guard<std::mutex> lock(file_mutex_);
+        auto it = files_.find(uri);
+        if (it == files_.end() || !it->second.is_open) {
+            return std::unexpected(
+                std::string("file is not open: ") + uri);
+        }
+    }
+
     json params = {
         {"textDocument", {{"uri", uri}}}
     };
+
     auto result = notify("textDocument/didClose", std::move(params));
-    if (!result) {
-        return result;
-    }
+    if (!result) return result;
 
     std::lock_guard<std::mutex> lock(file_mutex_);
     files_.erase(uri);
@@ -492,13 +519,9 @@ bool LspClient::is_file_open(const std::string& uri) const {
     return it != files_.end() && it->second.is_open;
 }
 
-bool LspClient::is_running() const {
-    return running_;
-}
-
 Result<void> LspClient::ensure_file_synced(const std::string& uri,
-                                             const std::string& language_id,
-                                             const std::string& content) {
+                                            const std::string& language_id,
+                                            const std::string& content) {
     if (!running_) {
         return std::unexpected(std::string("LSP server is not running"));
     }
@@ -508,58 +531,62 @@ Result<void> LspClient::ensure_file_synced(const std::string& uri,
     std::unique_lock<std::mutex> lock(file_mutex_);
     auto it = files_.find(uri);
 
-    if (it != files_.end() && it->second.is_open) {
-        if (it->second.content_hash == hash) {
-            // Already in sync
-            return {};
-        }
-        // Stale — send didChange
-        // Release the lock before calling notify to avoid
-        // deadlock with the write_mutex_ ordering. The comparison
-        // is already done; worst case another thread races and
-        // we send an extra didChange — harmless.
-        auto version = it->second.version + 1;
+    if (it == files_.end() || !it->second.is_open) {
+        // File not open — open it
         lock.unlock();
-
-        return change_file(uri, content, version);
+        return open_file(uri, language_id, content);
     }
 
-    // Not open — send didOpen
-    lock.unlock();
+    // File is open — check if content is stale
+    if (it->second.content_hash == hash) {
+        return {}; // already in sync
+    }
 
-    return open_file(uri, language_id, content);
+    int new_version = it->second.version + 1;
+    lock.unlock();
+    return change_file(uri, content, new_version);
+}
+
+// ===================================================================
+// Helpers
+// ===================================================================
+
+size_t LspClient::content_hash(const std::string& content) {
+    // Simple FNV-1a hash for content change detection.
+    // This is not cryptographic — just for equality checking.
+    size_t h = 14695981039346656037ULL;
+    for (unsigned char c : content) {
+        h ^= c;
+        h *= 1099511628211ULL;
+    }
+    return h;
 }
 
 std::string LspClient::language_id_from_extension(const std::string& path) {
     auto dot = path.rfind('.');
-    if (dot == std::string::npos)
-        return "cpp"; // default
+    if (dot == std::string::npos) return "plaintext";
     auto ext = path.substr(dot);
-
-    // Common C/C++ extensions
-    if (ext == ".c")   return "c";
-    if (ext == ".h")   return "c";
-    if (ext == ".cpp") return "cpp";
-    if (ext == ".cc")  return "cpp";
-    if (ext == ".cxx") return "cpp";
-    if (ext == ".hpp") return "cpp";
-    if (ext == ".hxx") return "cpp";
-    if (ext == ".hh")  return "cpp";
-    if (ext == ".ipp") return "cpp";
-    if (ext == ".txx") return "cpp";
-    if (ext == ".ixx") return "cpp";  // C++20 modules
-
-    // Other languages commonly served by clangd
-    if (ext == ".objc")  return "objective-c";
-    if (ext == ".m")     return "objective-c";
-    if (ext == ".mm")    return "objective-cpp";
-
-    return "cpp"; // fallback
+    if (ext == ".c" || ext == ".h")          return "c";
+    if (ext == ".cc" || ext == ".cpp" ||
+        ext == ".cxx" || ext == ".h" ||
+        ext == ".hpp" || ext == ".hxx" ||
+        ext == ".c++" || ext == ".h++")      return "cpp";
+    if (ext == ".py")                        return "python";
+    if (ext == ".rs")                        return "rust";
+    if (ext == ".go")                        return "go";
+    if (ext == ".java")                      return "java";
+    if (ext == ".ts" || ext == ".tsx")       return "typescript";
+    if (ext == ".js" || ext == ".jsx")       return "javascript";
+    if (ext == ".json")                      return "json";
+    if (ext == ".md")                        return "markdown";
+    if (ext == ".html" || ext == ".htm")     return "html";
+    if (ext == ".css")                       return "css";
+    if (ext == ".sh")                        return "shell";
+    if (ext == ".yaml" || ext == ".yml")     return "yaml";
+    if (ext == ".xml")                       return "xml";
+    return "plaintext";
 }
 
-size_t LspClient::content_hash(const std::string& content) {
-    return std::hash<std::string>{}(content);
-}
 
 // ===================================================================
 // I/O helpers
@@ -602,4 +629,8 @@ std::optional<std::string> LspClient::read_raw(int timeout_ms) {
         return std::nullopt;
 
     return std::string(buf, n);
+}
+
+bool LspClient::is_running() const {
+    return running_;
 }

@@ -188,7 +188,8 @@ Tool make_read_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
     return t;
 }
 
-Tool make_write_file_tool(std::shared_ptr<std::string> safe_dir_ptr) {
+Tool make_write_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
+    FileModifiedCallback on_file_modified) {
     Tool t;
     t.name = "write_file";
     t.description = "Write content to a file, creating parent directories if needed";
@@ -197,7 +198,7 @@ Tool make_write_file_tool(std::shared_ptr<std::string> safe_dir_ptr) {
             {{"path", {{"type", "string"}, {"description", "File path"}}},
                 {"content", {{"type", "string"}, {"description", "Content to write"}}}}},
         {"required", {"path", "content"}}};
-    t.execute = [safe_dir_ptr](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr, on_file_modified](const json& args) -> Result<std::string> {
         auto raw = args.value("path", std::string());
         auto content = args.value("content", std::string());
 
@@ -219,12 +220,18 @@ Tool make_write_file_tool(std::shared_ptr<std::string> safe_dir_ptr) {
         file.write(content.data(), content.size());
         file.close();
 
+        // Notify the callback that a file was modified
+        if (on_file_modified) {
+            on_file_modified(*resolved);
+        }
+
         return "ok (" + std::to_string(content.size()) + " bytes written)";
     };
     return t;
 }
 
-Tool make_edit_file_tool(std::shared_ptr<std::string> safe_dir_ptr) {
+Tool make_edit_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
+    FileModifiedCallback on_file_modified) {
     Tool t;
     t.name = "edit_file";
     t.description = "Edit a file by searching for an exact string and replacing it. "
@@ -245,7 +252,7 @@ Tool make_edit_file_tool(std::shared_ptr<std::string> safe_dir_ptr) {
                     {{"type", "string"},
                         {"description", "String to replace the matched occurrence with"}}}}},
         {"required", {"path", "search", "replace"}}};
-    t.execute = [safe_dir_ptr](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr, on_file_modified](const json& args) -> Result<std::string> {
         auto raw = args.value("path", std::string());
         auto search = args.value("search", std::string());
         auto replace = args.value("replace", std::string());
@@ -306,6 +313,11 @@ Tool make_edit_file_tool(std::shared_ptr<std::string> safe_dir_ptr) {
         }
         out.write(content.data(), content.size());
         out.close();
+
+        // Notify the callback that a file was modified
+        if (on_file_modified) {
+            on_file_modified(*resolved);
+        }
 
         // Compute the line number where the edit occurred (1-indexed)
         int line_num = 1;

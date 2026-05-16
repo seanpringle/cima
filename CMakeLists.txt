@@ -113,6 +113,7 @@ add_library(cima_core
     src/tools/factories/notes.cpp
     src/lsp/json_rpc.cpp
     src/lsp/lsp_client.cpp
+    src/tools/factories/lsp.cpp
 )
 target_include_directories(cima_core PUBLIC src)
 target_link_libraries(cima_core PUBLIC
@@ -168,6 +169,9 @@ target_link_libraries(test_json_rpc PRIVATE cima_core Catch2::Catch2WithMain)
 add_executable(test_lsp tests/test_lsp.cpp)
 target_link_libraries(test_lsp PRIVATE cima_core Catch2::Catch2WithMain)
 
+add_executable(test_lsp_tools tests/test_lsp_tools.cpp)
+target_link_libraries(test_lsp_tools PRIVATE cima_core Catch2::Catch2WithMain)
+
 include(CTest)
 include(Catch)
 catch_discover_tests(test_config)
@@ -180,3 +184,4 @@ catch_discover_tests(test_conversation)
 catch_discover_tests(test_notes)
 catch_discover_tests(test_json_rpc)
 catch_discover_tests(test_lsp)
+catch_discover_tests(test_lsp_tools)

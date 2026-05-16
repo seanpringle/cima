@@ -29,6 +29,10 @@ Result<std::string> resolve_path(const std::string& raw_path,
 // ---------------------------------------------------------------------------
 enum class ToolPermission { ReadOnly, Write, Internal };
 
+// Callback invoked after a write_file or edit_file successfully modifies
+// a file on disk.  The argument is the resolved absolute path of the file.
+using FileModifiedCallback = std::function<void(const std::string& path)>;
+
 // ---------------------------------------------------------------------------
 // Tool
 // ---------------------------------------------------------------------------
@@ -53,12 +57,14 @@ class ToolRegistry {
     void add(Tool tool);
     void add_defaults(std::shared_ptr<std::string> safe_dir,
         const Config& config,
-        bool include_write = true);
+        bool include_write = true,
+        FileModifiedCallback on_file_modified = nullptr);
 
     // Convenience overload: accepts a plain string safe_dir (wraps in shared_ptr internally).
     void add_defaults(const std::string& safe_dir,
         const Config& config,
-        bool include_write = true);
+        bool include_write = true,
+        FileModifiedCallback on_file_modified = nullptr);
 
     json to_openai_tools() const;
     /// Return tools for OpenAI, filtered to only include tools whose names
@@ -146,8 +152,10 @@ Tool make_grep_files_tool(std::shared_ptr<std::string> safe_dir_ptr,
     const std::vector<std::string>& read_only_paths,
     int timeout,
     CancellationToken cancelled = nullptr);
-Tool make_write_file_tool(std::shared_ptr<std::string> safe_dir_ptr);
-Tool make_edit_file_tool(std::shared_ptr<std::string> safe_dir_ptr);
+Tool make_write_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
+    FileModifiedCallback on_file_modified = nullptr);
+Tool make_edit_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
+    FileModifiedCallback on_file_modified = nullptr);
 Tool make_run_bash_tool(
     std::shared_ptr<std::string> safe_dir_ptr, int timeout, CancellationToken cancelled = nullptr);
 Tool make_web_search_tool(const std::string& api_key,
@@ -170,6 +178,7 @@ Tool make_move_file_tool(std::shared_ptr<std::string> safe_dir_ptr);
 Tool make_rename_file_tool(std::shared_ptr<std::string> safe_dir_ptr);
 
 class Wiki;
+class LspClient;
 
 // ── Wiki tools ──
 Tool make_list_wiki_pages_tool(Wiki& wiki);
@@ -177,5 +186,12 @@ Tool make_read_wiki_page_tool(Wiki& wiki);
 Tool make_write_wiki_page_tool(Wiki& wiki);
 Tool make_edit_wiki_page_tool(Wiki& wiki);
 Tool make_delete_wiki_page_tool(Wiki& wiki);
+
+// ── LSP tools ──
+Tool make_get_lsp_diagnostics_tool(LspClient& lsp);
+Tool make_get_lsp_hover_tool(LspClient& lsp);
+Tool make_get_lsp_definition_tool(LspClient& lsp);
+Tool make_get_lsp_completion_tool(LspClient& lsp);
+Tool make_get_lsp_code_actions_tool(LspClient& lsp);
 
 
