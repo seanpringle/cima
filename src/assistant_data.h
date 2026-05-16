@@ -26,6 +26,7 @@ struct AssistantData {
     json chat_log;                  // serialized chat log entries (array of entry objects)
     json plan;                      // { "plan": "...", "comments": [...] }
     json notes;                     // { "note_name": "body", ... }
+    bool bash_enabled = false;      // run_bash tool enabled for this session
 
     json to_json() const;
     void from_json(const json& j);

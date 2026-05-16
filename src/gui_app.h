@@ -83,6 +83,8 @@ struct TabInfo {
     std::string git_branch;
     std::string workspace_path;
 
+    bool bash_enabled = false;       // run_bash tool enabled for this tab
+
     /// Snippets from cima.json (shared across all tabs)
     const std::map<std::string, std::string>* snippets = nullptr;
 };

@@ -786,6 +786,22 @@ void render_config_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
 
     Separator();
 
+    // ── Bash checkbox ──
+    {
+        bool enabled = tab.bash_enabled;
+        if (Checkbox("Enable run_bash (shell command execution)", &enabled)) {
+            tab.bash_enabled = enabled;
+            session.set_bash_enabled(enabled);
+        }
+        if (IsItemHovered()) {
+            BeginTooltip();
+            TextUnformatted("When disabled, the model cannot execute shell commands via run_bash.");
+            EndTooltip();
+        }
+    }
+
+    Separator();
+
     // ── Raw checkbox ──
     Checkbox("Raw", &ui.show_raw);
 

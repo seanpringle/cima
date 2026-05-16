@@ -54,6 +54,9 @@ static void save_tab_to_disk(const TabInfo& tab, AppSession& app_session) {
     // Notes data
     data.notes = tab.session->notes().to_json();
 
+    // Per-tab settings
+    data.bash_enabled = tab.bash_enabled;
+
     data.save_to_file(json_path);
 }
 
@@ -140,6 +143,10 @@ static void load_tab_from_disk(TabInfo& tab, AppSession& app_session,
     if (data.notes.is_object()) {
         tab.session->notes().from_json(data.notes);
     }
+
+    // Restore per-tab settings
+    tab.bash_enabled = data.bash_enabled;
+    tab.session->set_bash_enabled(data.bash_enabled);
 }
 
 // ── Helper: find a provider index by name, fallback to 0 ──

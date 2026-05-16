@@ -100,6 +100,10 @@ class ChatSession {
     /// True when a CMakeLists.txt exists in the workspace directory.
     bool has_cmake_project() const;
 
+    /// Enable/disable the run_bash tool for this session.
+    void set_bash_enabled(bool v) { bash_enabled_ = v; }
+    bool bash_enabled() const { return bash_enabled_; }
+
     /// Set the LSP client and register LSP tools (may be null to disable).
     void set_lsp_client(LspClient *lsp);
     LspClient *lsp_client() const { return lsp_client_; }
@@ -134,4 +138,5 @@ class ChatSession {
     Usage last_usage_;
     int context_limit_ = 300000;           // discovered from API, falls back to Config
     bool context_limit_discovered_ = false;
+    bool bash_enabled_ = false;
 };

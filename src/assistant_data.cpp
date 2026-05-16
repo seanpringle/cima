@@ -20,6 +20,7 @@ json AssistantData::to_json() const {
     j["chat_log"] = chat_log;
     j["plan"] = plan;
     j["notes"] = notes;
+    j["bash_enabled"] = bash_enabled;
     return j;
 }
 
@@ -36,6 +37,7 @@ void AssistantData::from_json(const json& j) {
     chat_log = j.value("chat_log", json::array());
     plan = j.value("plan", json::object());
     notes = j.value("notes", json::object());
+    bash_enabled = j.value("bash_enabled", false);
 }
 
 // ===================================================================

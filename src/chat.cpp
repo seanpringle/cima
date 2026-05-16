@@ -211,14 +211,16 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                 effective_prompt += Config::CMAKE_PROMPT_SNIPPET;
             }
 
-            // Filter tool list: only include LSP tools when clangd is running,
-            // only include CMake tools when CMakeLists.txt exists.
+            // Filter tool list: only include LSP/CMake/bash tools when their
+            // respective conditions are met.
             std::set<std::string> allowed_tools;
             for (const auto& t : tools_.tools()) {
                 bool include = true;
                 if (lsp_tool_names.count(t.name) && !lsp_is_running())
                     include = false;
                 if (cmake_tool_names.count(t.name) && !has_cmake_project())
+                    include = false;
+                if (t.name == "run_bash" && !bash_enabled_)
                     include = false;
                 if (include)
                     allowed_tools.insert(t.name);
