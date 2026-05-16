@@ -408,7 +408,7 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
             // ── Tab bar ──
             if (BeginTabBar("##chat_tabs", ImGuiTabBarFlags_NoTooltip)) {
                 // ── Wiki tab (read-only, first in the tab bar) ──
-                if (BeginTabItem("Wiki")) {
+                if (BeginTabItem("   Wiki   ")) {
                     render_wiki_tab(wiki, mono_font);
                     EndTabItem();
                 }
@@ -426,7 +426,7 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                         focus_tab_id = -1;
                     }
 
-                    if (BeginTabItem((tab_label + "##tab-" + std::to_string(ti)).c_str(),
+                    if (BeginTabItem(("   " + tab_label + "   ##tab-" + std::to_string(ti)).c_str(),
                             nullptr,
                             tab_flags)) {
                         active_tab = ti;
