@@ -818,6 +818,15 @@ void render_config_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
             TextDisabled("No messages to clear");
         }
     }
+
+    // ── Stop button ──
+    {
+        BeginDisabled(!tab.chat_state->running);
+        if (Button("Stop")) {
+            *tab.chat_state->cancelled = true;
+        }
+        EndDisabled();
+    }
 }
 
 // ── Tag expansion for wiki:page-name and !snippet-name references ──
