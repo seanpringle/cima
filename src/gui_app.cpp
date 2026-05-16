@@ -543,20 +543,19 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
 
     // ── Update manifest with current tabs ──
     {
+        std::error_code ec;
+        auto cwd = std::filesystem::current_path(ec);
+        if (!ec) {
+            app_session->set_last_cwd(cwd.string());
+        }
+
         // Rebuild assistant file list from tabs and persist once
         std::vector<std::string> filenames;
         filenames.reserve(tabs.size());
         for (const auto& tab : tabs) {
             filenames.push_back(tab.title + ".json");
         }
-        app_session->set_assistant_files(filenames);
-
-        std::error_code ec;
-        auto cwd = std::filesystem::current_path(ec);
-        if (!ec) {
-            app_session->set_last_cwd(cwd.string());
-        }
-        // set_assistant_files already called save_manifest()
+        app_session->set_assistant_files(filenames);  // calls save_manifest() internally
     }
 
     ImGui_ImplSDLRenderer3_Shutdown();
