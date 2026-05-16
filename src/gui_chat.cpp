@@ -1080,8 +1080,13 @@ void render_chat_ui(TabInfo& tab, bool& done) {
         else
             tokenColor = IM_COL32(180, 180, 180, 255);
 
-        // Token count
-        string tokenInfo = std::to_string(session.last_usage().total_tokens) + " tokens";
+        // Token count — use API-reported usage, fall back to conversation estimate
+        // (the latter is available immediately after restart, before any prompt completes)
+        int tokens = session.last_usage().total_tokens;
+        if (tokens == 0) {
+            tokens = static_cast<int>(session.conversation().estimate_total_tokens());
+        }
+        string tokenInfo = std::to_string(tokens) + " tokens";
 
         // Git branch (refresh if workspace changed)
         {
