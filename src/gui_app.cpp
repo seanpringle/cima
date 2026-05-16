@@ -298,7 +298,7 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
         merge.OversampleH = 2;
         merge.MergeMode = true;
 
-        float fs = 18.0f * scale;
+        float fs = static_cast<float>(cfg.font_size) * scale;
 
         // Try system fonts via fontconfig
         std::string sans_path, mono_path;

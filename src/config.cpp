@@ -57,6 +57,7 @@ json Config::to_json() const {
     j["web_fetch_timeout"] = web_fetch_timeout;
     j["font_sans"] = font_sans;
     j["font_mono"] = font_mono;
+    j["font_size"] = font_size;
     j["clangd_path"] = clangd_path;
     j["clangd_args"] = clangd_args;
     j["lsp_timeout"] = lsp_timeout;
@@ -177,6 +178,10 @@ Config Config::load() {
         }
         if (j.contains("font_mono") && j["font_mono"].is_string()) {
             cfg.font_mono = j["font_mono"].get<std::string>();
+        }
+        if (j.contains("font_size") && j["font_size"].is_number_integer()) {
+            int n = j["font_size"].get<int>();
+            if (n > 0) cfg.font_size = n;
         }
 
         // LSP settings
