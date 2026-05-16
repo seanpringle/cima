@@ -5,7 +5,9 @@
 #include <algorithm>
 #include <cstdint>
 #include <fstream>
+#include <functional>
 #include <iostream>
+#include <map>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -1354,6 +1356,389 @@ Tool make_get_lsp_format_tool(LspClient& lsp) {
         int count = static_cast<int>(edits.size());
         return "Formatted " + raw_path + " (" + std::to_string(count) +
                (count == 1 ? " change" : " changes") + ")";
+    };
+    return t;
+}
+
+// ===================================================================
+// Helpers for LSP response formatting
+// ===================================================================
+
+/// Convert an LSP SymbolKind number to a human-readable string.
+static std::string symbol_kind_name(int kind) {
+    switch (kind) {
+        case 1:  return "file";
+        case 2:  return "module";
+        case 3:  return "namespace";
+        case 4:  return "package";
+        case 5:  return "class";
+        case 6:  return "method";
+        case 7:  return "property";
+        case 8:  return "field";
+        case 9:  return "constructor";
+        case 10: return "enum";
+        case 11: return "interface";
+        case 12: return "function";
+        case 13: return "variable";
+        case 14: return "constant";
+        case 15: return "string";
+        case 16: return "number";
+        case 17: return "boolean";
+        case 18: return "array";
+        case 19: return "object";
+        case 20: return "key";
+        case 21: return "null";
+        case 22: return "enum member";
+        case 23: return "struct";
+        case 24: return "event";
+        case 25: return "operator";
+        case 26: return "type parameter";
+        default: return "symbol";
+    }
+}
+
+/// Recursively format a DocumentSymbol tree into output with indentation.
+static void format_document_symbol(const json& symbol, std::string& output,
+                                    int depth, int max_depth) {
+    if (depth >= max_depth) return;
+
+    // Indent
+    for (int i = 0; i < depth; i++) {
+        output += "  ";
+    }
+    output += "├── ";
+
+    // Symbol name
+    std::string name = symbol.value("name", "(unnamed)");
+    int kind = symbol.value("kind", 0);
+    output += symbol_kind_name(kind) + " " + name;
+
+    // Detail (e.g. function signature)
+    if (symbol.contains("detail") && symbol["detail"].is_string() &&
+        !symbol["detail"].get<std::string>().empty()) {
+        output += " : " + symbol["detail"].get<std::string>();
+    }
+
+    // Location
+    if (symbol.contains("range") && symbol["range"].contains("start")) {
+        auto& start = symbol["range"]["start"];
+        int line = start.value("line", 0);
+        int col = start.value("character", 0);
+        output += " [" + std::to_string(line + 1) + ":" +
+                  std::to_string(col + 1) + "]";
+    }
+
+    output += "\n";
+
+    // Children
+    if (symbol.contains("children") && symbol["children"].is_array()) {
+        for (const auto& child : symbol["children"]) {
+            format_document_symbol(child, output, depth + 1, max_depth);
+        }
+    }
+}
+
+// ===================================================================
+// get_lsp_references
+// ===================================================================
+
+Tool make_get_lsp_references_tool(LspClient& lsp) {
+    Tool t;
+    t.name = "get_lsp_references";
+    t.description =
+        "Find all references to a symbol at a given file position.\n"
+        "Returns locations grouped by file with line and column numbers.\n"
+        "Uses the LSP (clangd) language server to query references.\n"
+        "Requires 'lsp_enabled: true' in cima.json and clangd installed.";
+    t.permission = ToolPermission::ReadOnly;
+    t.timeout_sec = 15;
+    t.parameters = {{"type", "object"},
+        {"properties",
+            {{"path",
+                {{"type", "string"},
+                    {"description", "Path to the source file"}}},
+             {"line",
+                {{"type", "integer"},
+                    {"description", "0-based line number"}}},
+             {"character",
+                {{"type", "integer"},
+                    {"description", "0-based column offset (in UTF-16 code units)"}}},
+             {"include_declaration",
+                {{"type", "boolean"},
+                    {"description", "Include the declaration as a reference (default true)"}}},
+             {"max_results",
+                {{"type", "integer"},
+                    {"description", "Maximum number of references to return (default 200)"}}}}},
+        {"required", {"path", "line", "character"}}};
+    int timeout = t.timeout_sec;
+    t.execute = [&lsp, timeout](const json& args) -> Result<std::string> {
+        if (!lsp.is_running()) {
+            return std::unexpected(
+                std::string("LSP server is not running. "
+                            "Enable with \"lsp_enabled\": true in cima.json "
+                            "and ensure clangd is installed."));
+        }
+
+        auto raw_path = args.value("path", std::string());
+        int line = args.value("line", -1);
+        int character = args.value("character", -1);
+        bool include_declaration = args.value("include_declaration", true);
+        int max_results = args.value("max_results", 200);
+
+        if (raw_path.empty()) {
+            return std::unexpected(std::string("path is required"));
+        }
+        if (line < 0) {
+            return std::unexpected(std::string("line must be >= 0"));
+        }
+        if (character < 0) {
+            return std::unexpected(std::string("character must be >= 0"));
+        }
+        if (max_results < 1) max_results = 1;
+
+        std::string uri = lsp::path_to_uri(raw_path);
+
+        // Read and sync file content
+        std::ifstream file(raw_path, std::ios::binary | std::ios::ate);
+        if (!file.is_open()) {
+            return std::unexpected("Cannot open file: " + raw_path);
+        }
+        auto size = file.tellg();
+        std::string content(static_cast<size_t>(size), '\0');
+        file.seekg(0);
+        file.read(content.data(), size);
+
+        auto lang = LspClient::language_id_from_extension(raw_path);
+        auto sync = lsp.ensure_file_synced(uri, lang, content);
+        if (!sync) {
+            return std::unexpected(
+                "Failed to sync file with LSP server: " + sync.error());
+        }
+
+        // Request references
+        auto resp = lsp.request("textDocument/references", {
+            {"textDocument", {{"uri", uri}}},
+            {"position", {{"line", line}, {"character", character}}},
+            {"context", {{"includeDeclaration", include_declaration}}}
+        }, timeout);
+
+        if (!resp) {
+            return std::unexpected(resp.error());
+        }
+
+        auto& response = *resp;
+        if (response.contains("error")) {
+            auto& err = response["error"];
+            return std::unexpected(
+                std::string("LSP error [") +
+                std::to_string(err.value("code", 0)) + "]: " +
+                err.value("message", ""));
+        }
+
+        if (!response.contains("result") || response["result"].is_null()) {
+            return std::string("(no references found)");
+        }
+
+        auto& locations = response["result"];
+        if (!locations.is_array() || locations.empty()) {
+            return std::string("(no references found)");
+        }
+
+        // Group references by file
+        std::map<std::string, std::vector<json>> grouped;
+        for (const auto& loc : locations) {
+            auto loc_uri = loc.value("uri", "");
+            grouped[loc_uri].push_back(loc);
+        }
+
+        // Format output
+        std::string output;
+        int total = 0;
+        for (const auto& [file_uri, refs] : grouped) {
+            auto path = lsp::uri_to_path(file_uri);
+            const std::string& display = path ? *path : file_uri;
+            output += display + ":\n";
+
+            int count = 0;
+            for (const auto& ref : refs) {
+                if (total >= max_results) {
+                    output += "  ...(truncated, >" + std::to_string(max_results) +
+                              " results — increase max_results)\n";
+                    break;
+                }
+                auto& range = ref["range"];
+                auto& start = range["start"];
+                auto& end = range["end"];
+                int sl = start.value("line", 0);
+                int sc = start.value("character", 0);
+                int el = end.value("line", 0);
+                int ec = end.value("character", 0);
+
+                output += "  [" + std::to_string(sl + 1) + ":" +
+                          std::to_string(sc + 1) + " - " +
+                          std::to_string(el + 1) + ":" +
+                          std::to_string(ec + 1) + "]\n";
+                count++;
+                total++;
+            }
+            if (count == 0) continue; // shouldn't happen
+        }
+
+        if (total == 0) {
+            return std::string("(no references found)");
+        }
+
+        // Prepend count
+        std::string summary = std::to_string(total) +
+            (total == 1 ? " reference" : " references") + " found:\n";
+        output = summary + output;
+        return output;
+    };
+    return t;
+}
+
+// ===================================================================
+// get_lsp_document_symbols
+// ===================================================================
+
+Tool make_get_lsp_document_symbols_tool(LspClient& lsp) {
+    Tool t;
+    t.name = "get_lsp_document_symbols";
+    t.description =
+        "Get the symbol outline (structure) of a source file.\n"
+        "Returns a tree of symbols (classes, functions, variables, namespaces, etc.) "
+        "with their kinds and locations.\n"
+        "Uses the LSP (clangd) language server to query document symbols.\n"
+        "Requires 'lsp_enabled: true' in cima.json and clangd installed.";
+    t.permission = ToolPermission::ReadOnly;
+    t.timeout_sec = 10;
+    t.parameters = {{"type", "object"},
+        {"properties",
+            {{"path",
+                {{"type", "string"},
+                    {"description", "Path to the source file"}}},
+             {"max_depth",
+                {{"type", "integer"},
+                    {"description", "Maximum nesting depth for the symbol tree (default 5)"}}}}},
+        {"required", {"path"}}};
+    int timeout = t.timeout_sec;
+    t.execute = [&lsp, timeout](const json& args) -> Result<std::string> {
+        if (!lsp.is_running()) {
+            return std::unexpected(
+                std::string("LSP server is not running. "
+                            "Enable with \"lsp_enabled\": true in cima.json "
+                            "and ensure clangd is installed."));
+        }
+
+        auto raw_path = args.value("path", std::string());
+        int max_depth = args.value("max_depth", 5);
+
+        if (raw_path.empty()) {
+            return std::unexpected(std::string("path is required"));
+        }
+        if (max_depth < 1) max_depth = 1;
+        if (max_depth > 20) max_depth = 20;
+
+        std::string uri = lsp::path_to_uri(raw_path);
+
+        // Read and sync file content
+        std::ifstream file(raw_path, std::ios::binary | std::ios::ate);
+        if (!file.is_open()) {
+            return std::unexpected("Cannot open file: " + raw_path);
+        }
+        auto size = file.tellg();
+        std::string content(static_cast<size_t>(size), '\0');
+        file.seekg(0);
+        file.read(content.data(), size);
+
+        auto lang = LspClient::language_id_from_extension(raw_path);
+        auto sync = lsp.ensure_file_synced(uri, lang, content);
+        if (!sync) {
+            return std::unexpected(
+                "Failed to sync file with LSP server: " + sync.error());
+        }
+
+        // Request document symbols
+        auto resp = lsp.request("textDocument/documentSymbol", {
+            {"textDocument", {{"uri", uri}}}
+        }, timeout);
+
+        if (!resp) {
+            return std::unexpected(resp.error());
+        }
+
+        auto& response = *resp;
+        if (response.contains("error")) {
+            auto& err = response["error"];
+            return std::unexpected(
+                std::string("LSP error [") +
+                std::to_string(err.value("code", 0)) + "]: " +
+                err.value("message", ""));
+        }
+
+        if (!response.contains("result") || response["result"].is_null()) {
+            return std::string("(no symbols found)");
+        }
+
+        auto& symbols = response["result"];
+
+        // Handle both DocumentSymbol[] (array of objects with children)
+        // and SymbolInformation[] (flat array with location.uri)
+        std::string output;
+        int total = 0;
+
+        if (symbols.is_array()) {
+            for (const auto& sym : symbols) {
+                if (sym.is_object()) {
+                    // Check if it's a DocumentSymbol (has range) or
+                    // SymbolInformation (has location)
+                    if (sym.contains("range")) {
+                        // DocumentSymbol (may or may not have children)
+                        format_document_symbol(sym, output, 0, max_depth);
+                        // Count this symbol
+                        total++;
+                        // Count children recursively
+                        std::function<void(const json&)> count_children =
+                            [&](const json& s) {
+                                if (s.contains("children") && s["children"].is_array()) {
+                                    for (const auto& c : s["children"]) {
+                                        total++;
+                                        count_children(c);
+                                    }
+                                }
+                            };
+                        count_children(sym);
+                    } else if (sym.contains("location")) {
+                        // SymbolInformation flat format
+                        total++;
+                        std::string name = sym.value("name", "(unnamed)");
+                        int kind = sym.value("kind", 0);
+                        auto& loc = sym["location"];
+                        auto& range = loc["range"];
+                        auto& start = range["start"];
+                        int line = start.value("line", 0);
+                        int col = start.value("character", 0);
+
+                        std::string container = sym.value("containerName", "");
+                        if (!container.empty()) {
+                            output += container + "::";
+                        }
+                        output += symbol_kind_name(kind) + " " + name +
+                                  " [" + std::to_string(line + 1) + ":" +
+                                  std::to_string(col + 1) + "]\n";
+                    }
+                }
+            }
+        }
+
+        if (total == 0) {
+            return std::string("(no symbols found)");
+        }
+
+        std::string summary = std::to_string(total) +
+            (total == 1 ? " symbol" : " symbols") + ":\n";
+        output = summary + output;
+        return output;
     };
     return t;
 }

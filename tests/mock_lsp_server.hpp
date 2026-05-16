@@ -104,6 +104,16 @@ public:
         formatting_response_ = std::move(resp);
     }
 
+    /// Set the canned response for textDocument/references (null = return nullptr).
+    void set_references_response(json resp) {
+        references_response_ = std::move(resp);
+    }
+
+    /// Set the canned response for textDocument/documentSymbol (null = return nullptr).
+    void set_document_symbols_response(json resp) {
+        document_symbols_response_ = std::move(resp);
+    }
+
     // ── Lifecycle ────────────────────────────────────────────────────
 
     /// Fork the child process.  Returns true on success.
@@ -176,6 +186,8 @@ private:
     json rename_response_;          // null by default → returns nullptr (not applicable)
     json prepare_rename_response_;  // null by default → symbol not renameable
     json formatting_response_;      // null by default → returns nullptr
+    json references_response_;      // null by default → returns nullptr
+    json document_symbols_response_; // null by default → returns nullptr
     int response_delay_ms_ = 0;
     std::optional<PushDiag> push_diag_;
 
@@ -332,9 +344,18 @@ inline void MockLspServer::child_main() {
                     } else {
                         response = lsp::make_response(id, prepare_rename_response_);
                     }
-                } else if (method == "textDocument/references" ||
-                           method == "textDocument/documentSymbol") {
-                    response = lsp::make_response(id, nullptr);
+                } else if (method == "textDocument/references") {
+                    if (references_response_.is_null()) {
+                        response = lsp::make_response(id, nullptr);
+                    } else {
+                        response = lsp::make_response(id, references_response_);
+                    }
+                } else if (method == "textDocument/documentSymbol") {
+                    if (document_symbols_response_.is_null()) {
+                        response = lsp::make_response(id, nullptr);
+                    } else {
+                        response = lsp::make_response(id, document_symbols_response_);
+                    }
                 } else if (method == "_mock_getLastNotification") {
                     response = lsp::make_response(id, last_notification);
                 } else if (method == "_mock_getAllNotifications") {
@@ -363,6 +384,12 @@ inline void MockLspServer::child_main() {
                     response = lsp::make_response(id, true);
                 } else if (method == "_mock_setFormattingResponse") {
                     formatting_response_ = msg["params"]["response"];
+                    response = lsp::make_response(id, true);
+                } else if (method == "_mock_setReferencesResponse") {
+                    references_response_ = msg["params"]["response"];
+                    response = lsp::make_response(id, true);
+                } else if (method == "_mock_setDocumentSymbolsResponse") {
+                    document_symbols_response_ = msg["params"]["response"];
                     response = lsp::make_response(id, true);
                 } else if (method == "textDocument/rename") {
                     if (rename_response_.is_null()) {

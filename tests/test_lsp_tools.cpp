@@ -1174,3 +1174,351 @@ TEST_CASE("get_lsp_format validates range", "[lsp][tool]") {
         R"({"path": "/tmp/test.cc", "start_line": 5, "end_line": 3})");
     CHECK_FALSE(result);
 }
+
+// ===================================================================
+// get_lsp_references
+// ===================================================================
+
+struct NavFixture {
+    MockLspServer mock;
+    LspClient client;
+    ToolRegistry reg;
+    std::string dir;
+
+    NavFixture() {
+        dir = make_temp_dir();
+    }
+
+    bool setup() {
+        if (!mock.start())
+            return false;
+        if (!client.connect(mock.child_stdout(), mock.child_stdin()))
+            return false;
+        reg.add(make_get_lsp_references_tool(client));
+        reg.add(make_get_lsp_document_symbols_tool(client));
+        return true;
+    }
+
+    ~NavFixture() {
+        client.shutdown();
+        if (!dir.empty())
+            fs::remove_all(dir);
+    }
+};
+
+TEST_CASE("get_lsp_references formats results grouped by file", "[lsp][tool]") {
+    NavFixture fix;
+    fix.mock.set_references_response(json::array({
+        json::object({
+            {"uri", lsp::path_to_uri(fix.dir + "/main.cc")},
+            {"range", json::object({
+                {"start", json::object({{"line", 10}, {"character", 4}})},
+                {"end", json::object({{"line", 10}, {"character", 15}})}
+            })}
+        }),
+        json::object({
+            {"uri", lsp::path_to_uri(fix.dir + "/util.h")},
+            {"range", json::object({
+                {"start", json::object({{"line", 42}, {"character", 0}})},
+                {"end", json::object({{"line", 42}, {"character", 11}})}
+            })}
+        }),
+        json::object({
+            {"uri", lsp::path_to_uri(fix.dir + "/main.cc")},
+            {"range", json::object({
+                {"start", json::object({{"line", 5}, {"character", 2}})},
+                {"end", json::object({{"line", 5}, {"character", 8}})}
+            })}
+        })
+    }));
+    REQUIRE(fix.setup());
+
+    auto path = fix.dir + "/main.cc";
+    std::ofstream(path) << "int main() {}\n";
+
+    auto result = fix.reg.execute("get_lsp_references",
+        json({{"path", path}, {"line", 5}, {"character", 2}}).dump());
+    REQUIRE(result);
+
+    // Should show count
+    CHECK(result->find("3 references") != std::string::npos);
+
+    // Should group by file
+    CHECK(result->find("main.cc") != std::string::npos);
+    CHECK(result->find("util.h") != std::string::npos);
+
+    // Should show line:col ranges (1-based)
+    CHECK(result->find("[11:5 - 11:16]") != std::string::npos);  // main.cc:11:5
+    CHECK(result->find("[43:1 - 43:12]") != std::string::npos);  // util.h:43:1
+    CHECK(result->find("[6:3 - 6:9]") != std::string::npos);    // main.cc:6:3
+}
+
+TEST_CASE("get_lsp_references empty", "[lsp][tool]") {
+    NavFixture fix;
+    // Default: null result → no references
+    REQUIRE(fix.setup());
+
+    auto path = fix.dir + "/test.cc";
+    std::ofstream(path) << "int x;\n";
+
+    auto result = fix.reg.execute("get_lsp_references",
+        json({{"path", path}, {"line", 0}, {"character", 0}}).dump());
+    REQUIRE(result);
+    CHECK(*result == "(no references found)");
+}
+
+TEST_CASE("get_lsp_references respects max_results", "[lsp][tool]") {
+    NavFixture fix;
+    // Return 5 references but set max_results=2
+    json refs = json::array();
+    for (int i = 0; i < 5; i++) {
+        refs.push_back(json::object({
+            {"uri", lsp::path_to_uri(fix.dir + "/test.cc")},
+            {"range", json::object({
+                {"start", json::object({{"line", i}, {"character", 0}})},
+                {"end", json::object({{"line", i}, {"character", 1}})}
+            })}
+        }));
+    }
+    fix.mock.set_references_response(refs);
+    REQUIRE(fix.setup());
+
+    auto path = fix.dir + "/test.cc";
+    std::ofstream(path) << "int x;\n";
+
+    auto result = fix.reg.execute("get_lsp_references",
+        json({{"path", path}, {"line", 0}, {"character", 0}, {"max_results", 2}}).dump());
+    REQUIRE(result);
+    CHECK(result->find("2 references") != std::string::npos);
+    CHECK(result->find("truncated") != std::string::npos);
+}
+
+TEST_CASE("get_lsp_references validates params", "[lsp][tool]") {
+    NavFixture fix;
+    REQUIRE(fix.setup());
+
+    // Missing line
+    auto result = fix.reg.execute("get_lsp_references",
+        R"({"path": "/tmp/test.cc", "character": 0})");
+    CHECK_FALSE(result);
+}
+
+// ===================================================================
+// get_lsp_document_symbols
+// ===================================================================
+
+TEST_CASE("get_lsp_document_symbols tree format", "[lsp][tool]") {
+    NavFixture fix;
+    // Set up DocumentSymbol[] response with nesting
+    fix.mock.set_document_symbols_response(json::array({
+        json::object({
+            {"name", "MyClass"},
+            {"kind", 5},  // class
+            {"range", json::object({
+                {"start", json::object({{"line", 0}, {"character", 0}})},
+                {"end", json::object({{"line", 10}, {"character", 1}})}
+            })},
+            {"selectionRange", json::object({
+                {"start", json::object({{"line", 0}, {"character", 0}})},
+                {"end", json::object({{"line", 0}, {"character", 7}})}
+            })},
+            {"children", json::array({
+                json::object({
+                    {"name", "foo"},
+                    {"kind", 6},  // method
+                    {"range", json::object({
+                        {"start", json::object({{"line", 3}, {"character", 2}})},
+                        {"end", json::object({{"line", 5}, {"character", 3}})}
+                    })},
+                    {"selectionRange", json::object({
+                        {"start", json::object({{"line", 3}, {"character", 2}})},
+                        {"end", json::object({{"line", 3}, {"character", 5}})}
+                    })},
+                    {"detail", "void foo(int x)"}
+                }),
+                json::object({
+                    {"name", "bar"},
+                    {"kind", 13},  // variable
+                    {"range", json::object({
+                        {"start", json::object({{"line", 7}, {"character", 4}})},
+                        {"end", json::object({{"line", 7}, {"character", 5}})}
+                    })},
+                    {"selectionRange", json::object({
+                        {"start", json::object({{"line", 7}, {"character", 4}})},
+                        {"end", json::object({{"line", 7}, {"character", 7}})}
+                    })}
+                })
+            })}
+        }),
+        json::object({
+            {"name", "main"},
+            {"kind", 12},  // function
+            {"range", json::object({
+                {"start", json::object({{"line", 12}, {"character", 0}})},
+                {"end", json::object({{"line", 14}, {"character", 1}})}
+            })},
+            {"selectionRange", json::object({
+                {"start", json::object({{"line", 12}, {"character", 0}})},
+                {"end", json::object({{"line", 12}, {"character", 4}})}
+            })},
+            {"detail", "int main()"}
+        })
+    }));
+    REQUIRE(fix.setup());
+
+    auto path = fix.dir + "/test.cc";
+    std::ofstream(path) << "class MyClass {\n  void foo(int x) {}\n  int bar;\n};\nint main() {}\n";
+
+    auto result = fix.reg.execute("get_lsp_document_symbols",
+        json({{"path", path}}).dump());
+    REQUIRE(result);
+
+    // Should show count
+    CHECK(result->find("4 symbols") != std::string::npos);
+
+    // Should show tree structure with kinds and names
+    CHECK(result->find("class MyClass") != std::string::npos);
+    CHECK(result->find("method foo") != std::string::npos);
+    CHECK(result->find("variable bar") != std::string::npos);
+    CHECK(result->find("function main") != std::string::npos);
+
+    // Should show details (function signatures)
+    CHECK(result->find("void foo(int x)") != std::string::npos);
+    CHECK(result->find("int main()") != std::string::npos);
+
+    // Should show line numbers
+    CHECK(result->find("[1:1]") != std::string::npos);  // MyClass at line 0+1, col 0+1
+    CHECK(result->find("[13:1]") != std::string::npos); // main at line 12+1, col 0+1
+}
+
+TEST_CASE("get_lsp_document_symbols empty file", "[lsp][tool]") {
+    NavFixture fix;
+    // Default: null result → no symbols
+    REQUIRE(fix.setup());
+
+    auto path = fix.dir + "/empty.cc";
+    std::ofstream(path) << "// just a comment\n";
+
+    auto result = fix.reg.execute("get_lsp_document_symbols",
+        json({{"path", path}}).dump());
+    REQUIRE(result);
+    CHECK(*result == "(no symbols found)");
+}
+
+TEST_CASE("get_lsp_document_symbols SymbolInformation format", "[lsp][tool]") {
+    NavFixture fix;
+    // Some servers return SymbolInformation[] (flat format with location.uri)
+    fix.mock.set_document_symbols_response(json::array({
+        json::object({
+            {"name", "globalVar"},
+            {"kind", 13},  // variable
+            {"location", json::object({
+                {"uri", lsp::path_to_uri(fix.dir + "/test.cc")},
+                {"range", json::object({
+                    {"start", json::object({{"line", 0}, {"character", 4}})},
+                    {"end", json::object({{"line", 0}, {"character", 13}})}
+                })}
+            })},
+            {"containerName", "my_namespace"}
+        }),
+        json::object({
+            {"name", "helper"},
+            {"kind", 12},  // function
+            {"location", json::object({
+                {"uri", lsp::path_to_uri(fix.dir + "/test.cc")},
+                {"range", json::object({
+                    {"start", json::object({{"line", 2}, {"character", 0}})},
+                    {"end", json::object({{"line", 2}, {"character", 6}})}
+                })}
+            })}
+        })
+    }));
+    REQUIRE(fix.setup());
+
+    auto path = fix.dir + "/test.cc";
+    std::ofstream(path) << "int globalVar;\n\nvoid helper() {}\n";
+
+    auto result = fix.reg.execute("get_lsp_document_symbols",
+        json({{"path", path}}).dump());
+    REQUIRE(result);
+
+    // Should show count
+    CHECK(result->find("2 symbols") != std::string::npos);
+
+    // Should show containerName prefix for namespace-qualified symbols
+    CHECK(result->find("my_namespace::") != std::string::npos);
+    CHECK(result->find("variable globalVar") != std::string::npos);
+    CHECK(result->find("function helper") != std::string::npos);
+}
+
+TEST_CASE("get_lsp_document_symbols respects max_depth", "[lsp][tool]") {
+    NavFixture fix;
+    // Create deeply nested symbols manually (5 levels)
+    // level5 → level4 → level3 → level2 → level1 → leaf
+    json leaf = json::object({
+        {"name", "leaf"},
+        {"kind", 13},
+        {"range", json::object({
+            {"start", json::object({{"line", 0}, {"character", 0}})},
+            {"end", json::object({{"line", 0}, {"character", 1}})}
+        })}
+    });
+    json level1 = json::object({
+        {"name", "level1"},
+        {"kind", 3},
+        {"range", json::object({
+            {"start", json::object({{"line", 0}, {"character", 0}})},
+            {"end", json::object({{"line", 0}, {"character", 1}})}
+        })},
+        {"children", json::array({leaf})}
+    });
+    json level2 = json::object({
+        {"name", "level2"},
+        {"kind", 3},
+        {"range", json::object({{"line", 0}, {"character", 0}})},
+        {"end", json::object({{"line", 0}, {"character", 1}})}
+    });
+    level2["children"] = json::array({level1});
+    json level3 = json::object({
+        {"name", "level3"},
+        {"kind", 3},
+        {"range", json::object({
+            {"start", json::object({{"line", 0}, {"character", 0}})},
+            {"end", json::object({{"line", 0}, {"character", 1}})}
+        })},
+        {"children", json::array({level2})}
+    });
+    json level4 = json::object({
+        {"name", "level4"},
+        {"kind", 3},
+        {"range", json::object({
+            {"start", json::object({{"line", 0}, {"character", 0}})},
+            {"end", json::object({{"line", 0}, {"character", 1}})}
+        })},
+        {"children", json::array({level3})}
+    });
+    json level5 = json::object({
+        {"name", "level5"},
+        {"kind", 3},
+        {"range", json::object({
+            {"start", json::object({{"line", 0}, {"character", 0}})},
+            {"end", json::object({{"line", 0}, {"character", 1}})}
+        })},
+        {"children", json::array({level4})}
+    });
+
+    fix.mock.set_document_symbols_response(json::array({level5}));
+    REQUIRE(fix.setup());
+
+    auto path = fix.dir + "/test.cc";
+    std::ofstream(path) << "int x;\n";
+
+    // With max_depth=2, we should only see level5, level4
+    auto result = fix.reg.execute("get_lsp_document_symbols",
+        json({{"path", path}, {"max_depth", 2}}).dump());
+    REQUIRE(result);
+    CHECK(result->find("level5") != std::string::npos);
+    CHECK(result->find("level4") != std::string::npos);
+    // level3, level2, level1, leaf should be truncated by depth
+    CHECK(result->find("level3") == std::string::npos);
+}

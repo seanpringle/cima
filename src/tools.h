@@ -195,5 +195,7 @@ Tool make_get_lsp_completion_tool(LspClient& lsp);
 Tool make_get_lsp_code_actions_tool(LspClient& lsp);
 Tool make_get_lsp_rename_tool(LspClient& lsp);
 Tool make_get_lsp_format_tool(LspClient& lsp);
+Tool make_get_lsp_references_tool(LspClient& lsp);
+Tool make_get_lsp_document_symbols_tool(LspClient& lsp);
 
 
