@@ -2,6 +2,7 @@
 
 #include "chat.h"
 #include "config.h"
+#include "lsp/lsp_client.h"
 #include "types.h"
 
 #include <SDL3/SDL.h>
@@ -66,6 +67,7 @@ struct ChatUIState {
 
 struct TabInfo {
     std::unique_ptr<ChatSession> session;
+    std::unique_ptr<LspClient> lsp_client;
     std::unique_ptr<AsyncChatState> chat_state;
     ChatUIState ui_state;
     int id = 0;

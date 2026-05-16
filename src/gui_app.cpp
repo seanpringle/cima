@@ -15,6 +15,7 @@ using namespace ImGui;
 
 #include <algorithm>
 #include <csignal>
+#include <iostream>
 
 // ── Helper: save a single tab to its consolidated JSON file ──
 static void save_tab_to_disk(const TabInfo& tab, AppSession& app_session) {
@@ -285,6 +286,22 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
             });
 
         tab.session->set_wiki(&wiki);
+
+        // Start LSP client if enabled in config
+        if (cfg.lsp_enabled) {
+            auto lsp = std::make_unique<LspClient>();
+            auto safe_dir = tab.session->safe_dir();
+            auto result = lsp->start(
+                cfg.clangd_path.empty() ? "clangd" : cfg.clangd_path,
+                cfg.clangd_args,
+                safe_dir);
+            if (result) {
+                tab.lsp_client = std::move(lsp);
+                tab.session->set_lsp_client(tab.lsp_client.get());
+            } else {
+                std::cerr << "Failed to start clangd: " << result.error() << std::endl;
+            }
+        }
 
         // Point to shared config snippets (cima.json)
         tab.snippets = &cfg.snippets;
