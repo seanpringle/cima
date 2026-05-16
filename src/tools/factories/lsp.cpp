@@ -24,7 +24,7 @@ Tool make_get_lsp_diagnostics_tool(LspClient& lsp) {
         "(clangd) language server.\n"
         "The file must already exist on disk. Returns diagnostics "
         "with severity, message, file, line, and column.\n"
-        "Requires 'lsp_enabled: true' in cima.json and clangd installed.";
+        "Start clangd from the Config tab (LSP / clangd: Start LSP button) to use this tool.";
     t.permission = ToolPermission::ReadOnly;
     t.timeout_sec = 15;
     t.parameters = {{"type", "object"},
@@ -37,8 +37,7 @@ Tool make_get_lsp_diagnostics_tool(LspClient& lsp) {
         if (!lsp.is_running()) {
             return std::unexpected(
                 std::string("LSP server is not running. "
-                            "Enable with \"lsp_enabled\": true in cima.json "
-                            "and ensure clangd is installed."));
+                            "Click Start LSP in the Config tab to enable this tool."));
         }
 
         auto raw_path = args.value("path", std::string());
@@ -305,8 +304,7 @@ Tool make_get_lsp_hover_tool(LspClient& lsp) {
         if (!lsp.is_running()) {
             return std::unexpected(
                 std::string("LSP server is not running. "
-                            "Enable with \"lsp_enabled\": true in cima.json "
-                            "and ensure clangd is installed."));
+                            "Click Start LSP in the Config tab to enable this tool."));
         }
 
         auto raw_path = args.value("path", std::string());
@@ -426,8 +424,7 @@ Tool make_get_lsp_definition_tool(LspClient& lsp) {
         if (!lsp.is_running()) {
             return std::unexpected(
                 std::string("LSP server is not running. "
-                            "Enable with \"lsp_enabled\": true in cima.json "
-                            "and ensure clangd is installed."));
+                            "Click Start LSP in the Config tab to enable this tool."));
         }
 
         auto raw_path = args.value("path", std::string());
@@ -589,8 +586,7 @@ Tool make_get_lsp_completion_tool(LspClient& lsp) {
         if (!lsp.is_running()) {
             return std::unexpected(
                 std::string("LSP server is not running. "
-                            "Enable with \"lsp_enabled\": true in cima.json "
-                            "and ensure clangd is installed."));
+                            "Click Start LSP in the Config tab to enable this tool."));
         }
 
         auto raw_path = args.value("path", std::string());
@@ -761,8 +757,7 @@ Tool make_get_lsp_code_actions_tool(LspClient& lsp) {
         if (!lsp.is_running()) {
             return std::unexpected(
                 std::string("LSP server is not running. "
-                            "Enable with \"lsp_enabled\": true in cima.json "
-                            "and ensure clangd is installed."));
+                            "Click Start LSP in the Config tab to enable this tool."));
         }
 
         auto raw_path = args.value("path", std::string());
@@ -1049,7 +1044,7 @@ Tool make_get_lsp_rename_tool(LspClient& lsp) {
         "Specify the file path, line, and character of the symbol to rename, "
         "and the new name.  Uses clangd's rename capability (textDocument/rename).\n"
         "This tool modifies files on disk — use with care.\n"
-        "Requires 'lsp_enabled: true' in cima.json and clangd installed.";
+        "Start clangd from the Config tab (LSP / clangd: Start LSP button) to use this tool.";
     t.permission = ToolPermission::Write;
     t.timeout_sec = 30;
     t.parameters = {{"type", "object"},
@@ -1072,8 +1067,7 @@ Tool make_get_lsp_rename_tool(LspClient& lsp) {
         if (!lsp.is_running()) {
             return std::unexpected(
                 std::string("LSP server is not running. "
-                            "Enable with \"lsp_enabled\": true in cima.json "
-                            "and ensure clangd is installed."));
+                            "Click Start LSP in the Config tab to enable this tool."));
         }
 
         auto raw_path = args.value("path", std::string());
@@ -1217,7 +1211,7 @@ Tool make_get_lsp_format_tool(LspClient& lsp) {
         "If start_line and end_line are provided, only that range is formatted. "
         "Otherwise the entire file is formatted.\n"
         "This tool modifies the file on disk — use with care.\n"
-        "Requires 'lsp_enabled: true' in cima.json and clangd installed.";
+        "Start clangd from the Config tab (LSP / clangd: Start LSP button) to use this tool.";
     t.permission = ToolPermission::Write;
     t.timeout_sec = 15;
     int timeout = t.timeout_sec;
@@ -1239,8 +1233,7 @@ Tool make_get_lsp_format_tool(LspClient& lsp) {
         if (!lsp.is_running()) {
             return std::unexpected(
                 std::string("LSP server is not running. "
-                            "Enable with \"lsp_enabled\": true in cima.json "
-                            "and ensure clangd is installed."));
+                            "Click Start LSP in the Config tab to enable this tool."));
         }
 
         auto raw_path = args.value("path", std::string());
@@ -1449,7 +1442,7 @@ Tool make_get_lsp_references_tool(LspClient& lsp) {
         "Find all references to a symbol at a given file position.\n"
         "Returns locations grouped by file with line and column numbers.\n"
         "Uses the LSP (clangd) language server to query references.\n"
-        "Requires 'lsp_enabled: true' in cima.json and clangd installed.";
+        "Start clangd from the Config tab (LSP / clangd: Start LSP button) to use this tool.";
     t.permission = ToolPermission::ReadOnly;
     t.timeout_sec = 15;
     t.parameters = {{"type", "object"},
@@ -1475,8 +1468,7 @@ Tool make_get_lsp_references_tool(LspClient& lsp) {
         if (!lsp.is_running()) {
             return std::unexpected(
                 std::string("LSP server is not running. "
-                            "Enable with \"lsp_enabled\": true in cima.json "
-                            "and ensure clangd is installed."));
+                            "Click Start LSP in the Config tab to enable this tool."));
         }
 
         auto raw_path = args.value("path", std::string());
@@ -1609,7 +1601,7 @@ Tool make_get_lsp_document_symbols_tool(LspClient& lsp) {
         "Returns a tree of symbols (classes, functions, variables, namespaces, etc.) "
         "with their kinds and locations.\n"
         "Uses the LSP (clangd) language server to query document symbols.\n"
-        "Requires 'lsp_enabled: true' in cima.json and clangd installed.";
+        "Start clangd from the Config tab (LSP / clangd: Start LSP button) to use this tool.";
     t.permission = ToolPermission::ReadOnly;
     t.timeout_sec = 10;
     t.parameters = {{"type", "object"},
@@ -1626,8 +1618,7 @@ Tool make_get_lsp_document_symbols_tool(LspClient& lsp) {
         if (!lsp.is_running()) {
             return std::unexpected(
                 std::string("LSP server is not running. "
-                            "Enable with \"lsp_enabled\": true in cima.json "
-                            "and ensure clangd is installed."));
+                            "Click Start LSP in the Config tab to enable this tool."));
         }
 
         auto raw_path = args.value("path", std::string());

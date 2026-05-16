@@ -287,21 +287,8 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
 
         tab.session->set_wiki(&wiki);
 
-        // Start LSP client if enabled in config
-        if (cfg.lsp_enabled) {
-            auto lsp = std::make_unique<LspClient>();
-            auto safe_dir = tab.session->safe_dir();
-            auto result = lsp->start(
-                cfg.clangd_path.empty() ? "clangd" : cfg.clangd_path,
-                cfg.clangd_args,
-                safe_dir);
-            if (result) {
-                tab.lsp_client = std::move(lsp);
-                tab.session->set_lsp_client(tab.lsp_client.get());
-            } else {
-                std::cerr << "Failed to start clangd: " << result.error() << std::endl;
-            }
-        }
+        // LSP is opt-in per-tab via a button in the Config tab.
+        // No auto-start here.
 
         // Point to shared config snippets (cima.json)
         tab.snippets = &cfg.snippets;

@@ -58,7 +58,6 @@ json Config::to_json() const {
     j["clangd_path"] = clangd_path;
     j["clangd_args"] = clangd_args;
     j["lsp_timeout"] = lsp_timeout;
-    j["lsp_enabled"] = lsp_enabled;
     return j;
 }
 
@@ -187,9 +186,7 @@ Config Config::load() {
             int n = j["lsp_timeout"].get<int>();
             if (n >= 0) cfg.lsp_timeout = n;
         }
-        if (j.contains("lsp_enabled") && j["lsp_enabled"].is_boolean()) {
-            cfg.lsp_enabled = j["lsp_enabled"].get<bool>();
-        }
+
 
         if (j.contains("read_only_paths") && j["read_only_paths"].is_array()) {
             cfg.read_only_paths.clear();

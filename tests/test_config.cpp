@@ -132,7 +132,6 @@ TEST_CASE("Config LSP fields serialize and round-trip", "[config][lsp]") {
     cfg.clangd_path = "/usr/bin/clangd-18";
     cfg.clangd_args = {"--clang-tidy", "--background-index"};
     cfg.lsp_timeout = 60;
-    cfg.lsp_enabled = true;
 
     auto j = cfg.to_json();
 
@@ -143,7 +142,7 @@ TEST_CASE("Config LSP fields serialize and round-trip", "[config][lsp]") {
     CHECK(j["clangd_args"][0] == "--clang-tidy");
     CHECK(j["clangd_args"][1] == "--background-index");
     CHECK(j["lsp_timeout"] == 60);
-    CHECK(j["lsp_enabled"] == true);
+    CHECK_FALSE(j.contains("lsp_enabled")); // removed — LSP is opt-in per tab
 
     // Verify deserialization (simulating what load() does)
     Config loaded;
@@ -155,20 +154,16 @@ TEST_CASE("Config LSP fields serialize and round-trip", "[config][lsp]") {
     }
     if (j.contains("lsp_timeout") && j["lsp_timeout"].is_number_integer())
         loaded.lsp_timeout = j["lsp_timeout"].get<int>();
-    if (j.contains("lsp_enabled") && j["lsp_enabled"].is_boolean())
-        loaded.lsp_enabled = j["lsp_enabled"].get<bool>();
 
     CHECK(loaded.clangd_path == "/usr/bin/clangd-18");
     CHECK(loaded.clangd_args.size() == 2);
     CHECK(loaded.clangd_args[0] == "--clang-tidy");
     CHECK(loaded.clangd_args[1] == "--background-index");
     CHECK(loaded.lsp_timeout == 60);
-    CHECK(loaded.lsp_enabled == true);
 
     // Defaults when not present
     Config default_cfg;
     CHECK(default_cfg.clangd_path.empty());
     CHECK(default_cfg.clangd_args.empty());
     CHECK(default_cfg.lsp_timeout == 30);
-    CHECK(default_cfg.lsp_enabled == false);
 }

@@ -8,6 +8,7 @@
 #include "imgui.h"
 
 #include <algorithm>
+#include <iostream>
 #include <cctype>
 #include <chrono>
 #include <cstdlib>
@@ -715,42 +716,71 @@ void render_config_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
     }
     PopFont();
 
-    // ── LSP status ──
+    // ── LSP control ──
     {
         Separator();
         Text("LSP / clangd:");
-        SameLine();
 
         auto* lsp = session.lsp_client();
-        if (!cfg.lsp_enabled) {
-            PushStyleColor(ImGuiCol_Text, IM_COL32(128, 128, 128, 255));
-            TextUnformatted("disabled (set \"lsp_enabled\": true in cima.json)");
-            PopStyleColor();
-        } else if (!lsp) {
-            PushStyleColor(ImGuiCol_Text, IM_COL32(255, 100, 100, 255));
-            TextUnformatted("failed to start");
-            PopStyleColor();
-        } else if (lsp->is_running()) {
+
+        // Status indicator
+        SameLine();
+        if (lsp && lsp->is_running()) {
             PushStyleColor(ImGuiCol_Text, IM_COL32(100, 255, 100, 255));
             TextUnformatted("\xE2\x97\x89 running"); // ◉
             PopStyleColor();
-            if (IsItemHovered()) {
-                BeginTooltip();
-                Text("clangd path: %s",
-                    cfg.clangd_path.empty() ? "clangd (from PATH)" : cfg.clangd_path.c_str());
-                Text("project root: %s", session.safe_dir().c_str());
-                Text("timeout: %ds", cfg.lsp_timeout);
-                EndTooltip();
+            SameLine();
+            if (Button("Stop LSP")) {
+                lsp->shutdown();
+                tab.lsp_client.reset();
+                session.set_lsp_client(nullptr);
             }
-        } else {
+        } else if (lsp && !lsp->is_running()) {
             PushStyleColor(ImGuiCol_Text, IM_COL32(255, 200, 0, 255));
             TextUnformatted("\xE2\x97\x8B crashed"); // ○
             PopStyleColor();
-            if (IsItemHovered()) {
-                BeginTooltip();
-                TextUnformatted("clangd exited unexpectedly.\nIt will restart automatically on the next LSP query.");
-                EndTooltip();
+            SameLine();
+            if (Button("Restart LSP")) {
+                auto safe_dir = session.safe_dir();
+                auto result = lsp->start(
+                    cfg.clangd_path.empty() ? "clangd" : cfg.clangd_path,
+                    cfg.clangd_args,
+                    safe_dir);
+                if (result) {
+                    session.set_lsp_client(tab.lsp_client.get());
+                } else {
+                    std::cerr << "Failed to restart clangd: " << result.error() << std::endl;
+                }
             }
+        } else {
+            PushStyleColor(ImGuiCol_Text, IM_COL32(128, 128, 128, 255));
+            TextUnformatted("\xE2\x97\x8B stopped"); // ○
+            PopStyleColor();
+            SameLine();
+            if (Button("Start LSP")) {
+                auto lsp = std::make_unique<LspClient>();
+                auto safe_dir = session.safe_dir();
+                auto result = lsp->start(
+                    cfg.clangd_path.empty() ? "clangd" : cfg.clangd_path,
+                    cfg.clangd_args,
+                    safe_dir);
+                if (result) {
+                    tab.lsp_client = std::move(lsp);
+                    session.set_lsp_client(tab.lsp_client.get());
+                } else {
+                    std::cerr << "Failed to start clangd: " << result.error() << std::endl;
+                }
+            }
+        }
+
+        // Tooltip with details when running
+        if (lsp && lsp->is_running() && IsItemHovered()) {
+            BeginTooltip();
+            Text("clangd path: %s",
+                cfg.clangd_path.empty() ? "clangd (from PATH)" : cfg.clangd_path.c_str());
+            Text("project root: %s", session.safe_dir().c_str());
+            Text("timeout: %ds", cfg.lsp_timeout);
+            EndTooltip();
         }
     }
 

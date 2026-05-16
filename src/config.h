@@ -59,7 +59,6 @@ struct Config {
     std::string clangd_path;                 // Path to clangd binary (empty = search PATH)
     std::vector<std::string> clangd_args;    // Extra CLI flags, e.g. ["--clang-tidy"]
     int lsp_timeout = 30;                    // Default timeout for LSP requests (seconds)
-    bool lsp_enabled = false;                // Master switch — clangd is heavy, opt-in
 
     std::string system_prompt =
         "You are an AI coding assistant.\n"
