@@ -290,6 +290,11 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                         }
                     } else {
                         // Parallel execution for read-only tools
+                        // Launch ALL tools first, then collect ALL results.
+                        // This ensures no futures are abandoned if cancellation
+                        // happens mid-collection — abandoned futures would block
+                        // in their destructor and leak background tasks into the
+                        // next turn.
                         std::vector<std::future<Result<std::string>>> futures;
                         futures.reserve(calls.size());
                         for (size_t i = 0; i < calls.size(); i++) {
@@ -298,24 +303,33 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                                     return tools_.execute(calls[i].name, calls[i].arguments);
                                 }));
                         }
-                        for (size_t i = 0; i < calls.size(); i++) {
-                            if (*cancelled_) {
-                                conversation_.truncate_conversation(turn_snapshot);
-                                return std::unexpected("Interrupted during tool execution");
+
+                        // Collect all tool results before checking cancellation,
+                        // so no future is abandoned.
+                        std::vector<Result<std::string>> results;
+                        results.reserve(calls.size());
+                        for (auto& f : futures) {
+                            try {
+                                results.push_back(f.get());
+                            } catch (const std::exception& e) {
+                                results.push_back(
+                                    std::unexpected(std::string(e.what())));
                             }
+                        }
+
+                        if (*cancelled_) {
+                            conversation_.truncate_conversation(turn_snapshot);
+                            return std::unexpected("Interrupted during tool execution");
+                        }
+
+                        for (size_t i = 0; i < calls.size(); i++) {
                             if (output_cb_) {
                                 output_cb_(
                                     "\xE2\x86\x92 " + calls[i].name + "(" + calls[i].arguments +
                                         ")",
                                     OutputType::ToolInvocation);
                             }
-                            Result<std::string> tr;
-                            try {
-                                tr = futures[i].get();
-                            } catch (const std::exception& e) {
-                                tr = std::unexpected(std::string(e.what()));
-                            }
-                            auto result = tr ? *tr : tr.error();
+                            auto result = results[i] ? *results[i] : results[i].error();
                             conversation_.add_tool(msg_id, calls[i].id, result);
                         }
                     }

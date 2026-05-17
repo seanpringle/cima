@@ -1,6 +1,8 @@
 #include "tools.h"
 
 #include <future>
+#include <memory>
+#include <thread>
 
 // ===================================================================
 // ToolRegistry
@@ -168,14 +170,26 @@ Result<std::string> ToolRegistry::execute(const std::string& name, const std::st
     }
 
     if (tool->timeout_sec > 0) {
-        auto future = std::async(
-            std::launch::async, [tool, args = std::move(args)] { return tool->execute(args); });
+        // Use packaged_task + detached thread so we can return on timeout
+        // without blocking in the future destructor (std::async's future
+        // destructor blocks until the task finishes, defeating the timeout).
+        auto task = std::make_shared<std::packaged_task<Result<std::string>()>>(
+            [tool, args = std::move(args)]() { return tool->execute(args); });
+        auto future = task->get_future();
+        std::thread t([task]() { (*task)(); });
+        t.detach();
+
         auto status = future.wait_for(std::chrono::seconds(tool->timeout_sec));
         if (status == std::future_status::timeout) {
             return std::unexpected("tool '" + tool->name + "' timed out after " +
                 std::to_string(tool->timeout_sec) + "s");
         }
-        return future.get();
+        try {
+            return future.get();
+        } catch (const std::exception& e) {
+            return std::unexpected(
+                std::string("tool '") + tool->name + "' threw: " + e.what());
+        }
     }
 
     try {

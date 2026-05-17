@@ -169,6 +169,11 @@ size_t Conversation::estimate_droppable_tokens() const {
 void Conversation::truncate_conversation(size_t n) {
     if (n < messages_.size()) {
         messages_.resize(n);
+        // Reset next_id_ to maintain the invariant that
+        // next_id_ == messages_.size() + 1 (IDs are 1-based).
+        // Without this, repeated rollbacks cause ID drift which can
+        // make add_tool(message_id - 1) silently fail to match.
+        next_id_ = static_cast<int64_t>(n) + 1;
     }
 }
 

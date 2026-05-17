@@ -93,7 +93,8 @@ Tool make_grep_files_tool(std::shared_ptr<std::string> safe_dir_ptr,
             auto end = std::filesystem::recursive_directory_iterator{};
             for (; it != end && count < max_results; it.increment(ec)) {
                 if (cancelled && *cancelled) {
-                    break;
+                    result += "(interrupted)";
+                    return result;
                 }
                 if (it->path().filename() == ".git" && it->is_directory()) {
                     it.disable_recursion_pending();
