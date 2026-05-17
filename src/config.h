@@ -91,21 +91,6 @@ struct Config {
     std::string font_mono;                   // path to monospace font file
     int font_size = 18;                      // base font size in points (before display scaling)
 
-    // LSP / clangd settings
-    std::string clangd_path;                 // Path to clangd binary (empty = search PATH)
-    std::vector<std::string> clangd_args;    // Extra CLI flags, e.g. ["--clang-tidy"]
-    int lsp_timeout = 30;                    // Default timeout for LSP requests (seconds)
-
-    /// LSP prompt snippet — appended to the system prompt only when clangd is running.
-    static constexpr const char* LSP_PROMPT_SNIPPET = R"(
-## LSP tools
-
-Access the language server (clangd) with `get_lsp_diagnostics`, `get_lsp_hover`,
-`get_lsp_definition`, `get_lsp_completion`, `get_lsp_code_actions`,
-`get_lsp_references`, `get_lsp_document_symbols`, `get_lsp_rename`, and
-`get_lsp_format` tools.
-)";
-
     /// CMake prompt snippet — appended to the system prompt only when
     /// CMakeLists.txt exists in the workspace.
     static constexpr const char* CMAKE_PROMPT_SNIPPET = R"(

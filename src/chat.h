@@ -3,7 +3,6 @@
 #include "client.h"
 #include "config.h"
 #include "conversation.h"
-#include "lsp/lsp_client.h"
 #include "mcp/mcp_registry.h"
 #include "notes.h"
 #include "plan.h"
@@ -89,25 +88,12 @@ class ChatSession {
     void set_wiki(Wiki* wiki);
     Wiki* wiki() const { return wiki_; }
 
-    /// Notify the session that a file was modified on disk.
-    /// This triggers LSP sync if an LspClient is attached.
-    void notify_file_modified(const std::string& path);
-
-    /// True when clangd LSP is attached and its process is running.
-    bool lsp_is_running() const {
-        return lsp_client_ && lsp_client_->is_running();
-    }
-
     /// True when a CMakeLists.txt exists in the workspace directory.
     bool has_cmake_project() const;
 
     /// Enable/disable the run_bash tool for this session.
     void set_bash_enabled(bool v) { bash_enabled_ = v; }
     bool bash_enabled() const { return bash_enabled_; }
-
-    /// Set the LSP client and register LSP tools (may be null to disable).
-    void set_lsp_client(LspClient *lsp);
-    LspClient *lsp_client() const { return lsp_client_; }
 
     /// Provider name this session belongs to.
     const std::string& provider_name() const { return provider_name_; }
@@ -139,7 +125,6 @@ class ChatSession {
     std::string agent_name_;
     std::string provider_name_;
     Wiki* wiki_ = nullptr;
-    LspClient* lsp_client_ = nullptr;
     std::shared_ptr<std::string> safe_dir_;
     std::string api_base_;     // API base URL (for creating temp clients)
     std::string api_key_;      // API key for authentication

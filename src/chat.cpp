@@ -1,5 +1,4 @@
 #include "chat.h"
-#include "lsp/json_rpc.h"
 #include "plan.h"
 
 #include <chrono>
@@ -13,20 +12,6 @@
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
-
-// Names of all LSP tools — used to conditionally exclude them from the
-// tool list and system prompt when clangd is not running.
-static const std::unordered_set<std::string> lsp_tool_names = {
-    "get_lsp_diagnostics",
-    "get_lsp_hover",
-    "get_lsp_definition",
-    "get_lsp_completion",
-    "get_lsp_code_actions",
-    "get_lsp_references",
-    "get_lsp_document_symbols",
-    "get_lsp_rename",
-    "get_lsp_format",
-};
 
 // Names of all CMake tools — conditionally published when CMakeLists.txt
 // exists in the workspace.
@@ -65,18 +50,6 @@ ChatSession::ChatSession(const Config& config, const Provider& provider,
     tools_.add(make_write_note_tool(notes_));
     tools_.add(make_delete_note_tool(notes_));
 
-    // LSP tools — always registered; they check *lsp_ptr (lsp_client_) at call time.
-    tools_.add(make_get_lsp_diagnostics_tool(&lsp_client_));
-    tools_.add(make_get_lsp_hover_tool(&lsp_client_));
-    tools_.add(make_get_lsp_definition_tool(&lsp_client_));
-    tools_.add(make_get_lsp_completion_tool(&lsp_client_));
-    tools_.add(make_get_lsp_code_actions_tool(&lsp_client_));
-    tools_.add(make_get_lsp_rename_tool(&lsp_client_));
-    tools_.add(make_get_lsp_format_tool(&lsp_client_));
-    tools_.add(make_get_lsp_references_tool(&lsp_client_));
-    tools_.add(make_get_lsp_document_symbols_tool(&lsp_client_));
-    tools_.add(make_apply_lsp_code_action_tool(&lsp_client_));
-
     // CMake tools — always registered; conditionally published in run_once().
     tools_.add(make_cmake_configure_tool(safe_dir_, config.cmake_configure_timeout, cancelled_));
     tools_.add(make_cmake_build_tool(safe_dir_, config.cmake_build_timeout, cancelled_));
@@ -100,45 +73,6 @@ bool ChatSession::has_cmake_project() const {
     std::error_code ec;
     return std::filesystem::exists(
         std::filesystem::path(*safe_dir_) / "CMakeLists.txt", ec);
-}
-
-void ChatSession::set_lsp_client(LspClient* lsp) {
-    lsp_client_ = lsp;
-    if (lsp_client_) {
-        // Share the cancellation token so LSP requests can be cancelled
-        lsp_client_->set_cancelled(cancelled_);
-
-        // Wire the file-modified callback to sync modified files with the LSP server.
-        // This ensures that after write_file or edit_file, clangd sees the new content.
-        *file_modified_cb_ = [this](const std::string& path) {
-            // Read file content from disk
-            std::ifstream file(path, std::ios::binary | std::ios::ate);
-            if (!file.is_open()) {
-                return; // silently skip — file may have been deleted
-            }
-            auto size = file.tellg();
-            std::string content(static_cast<size_t>(size), '\0');
-            file.seekg(0);
-            file.read(content.data(), size);
-
-            // Sync with LSP
-            std::string uri = lsp::path_to_uri(path);
-            auto lang = LspClient::language_id_from_extension(path);
-            auto result = lsp_client_->ensure_file_synced(uri, lang, content);
-            if (!result) {
-                // Non-fatal: log and continue
-                std::cerr << "notify_file_modified: failed to sync " << path
-                          << " with LSP: " << result.error() << std::endl;
-            }
-        };
-
-    }
-}
-
-void ChatSession::notify_file_modified(const std::string& path) {
-    if (*file_modified_cb_) {
-        (*file_modified_cb_)(path);
-    }
 }
 
 void ChatSession::set_wiki(Wiki* wiki) {
@@ -203,11 +137,8 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
 
     try {
         for (int iter = 0; iter < max_iterations_; iter++) {
-            // Build effective system prompt (conditionally include LSP/CMake sections)
+            // Build effective system prompt (conditionally include CMake/MCP sections)
             std::string effective_prompt = system_prompt_;
-            if (lsp_is_running()) {
-                effective_prompt += Config::LSP_PROMPT_SNIPPET;
-            }
             if (has_cmake_project()) {
                 effective_prompt += Config::CMAKE_PROMPT_SNIPPET;
             }
@@ -219,13 +150,11 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                     "Use them as you would any other tool.\n";
             }
 
-            // Filter tool list: only include LSP/CMake/bash tools when their
+            // Filter tool list: only include CMake/bash tools when their
             // respective conditions are met.
             std::set<std::string> allowed_tools;
             for (const auto& t : tools_.tools()) {
                 bool include = true;
-                if (lsp_tool_names.count(t.name) && !lsp_is_running())
-                    include = false;
                 if (cmake_tool_names.count(t.name) && !has_cmake_project())
                     include = false;
                 if (t.name == "run_bash" && !bash_enabled_)
@@ -489,7 +418,6 @@ Result<void> ChatSession::compact() {
         {"reasoning_effort", reasoning_effort_},
         {"messages", json::array({
             {{"role", "system"}, {"content", sanitize_utf8(system_prompt_
-                + (lsp_is_running() ? std::string(Config::LSP_PROMPT_SNIPPET) : "")
                 + (has_cmake_project() ? std::string(Config::CMAKE_PROMPT_SNIPPET) : ""))}},
             {{"role", "user"}, {"content", sanitize_utf8(summary_prompt)}}
         })},

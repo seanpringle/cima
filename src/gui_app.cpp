@@ -367,35 +367,11 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
 
         tab.session->set_wiki(&wiki);
 
-        // LSP is opt-in per-tab via a button in the Config tab.
-        // No auto-start here.
-
         // Point to shared config snippets (cima.json)
         tab.snippets = &cfg.snippets;
 
         // Load consolidated assistant data from <title>.json
         load_tab_from_disk(tab, *app_session, providers);
-
-        // ── Auto-start LSP if the workspace contains CMakeLists.txt ──
-        {
-            std::error_code ec;
-            auto ws = tab.session->safe_dir();
-            auto cmake_path = std::filesystem::path(ws) / "CMakeLists.txt";
-            if (std::filesystem::exists(cmake_path, ec)) {
-                auto lsp = std::make_unique<LspClient>();
-                auto safe_dir = tab.session->safe_dir();
-                auto result = lsp->start(
-                    cfg.clangd_path.empty() ? "clangd" : cfg.clangd_path,
-                    cfg.clangd_args,
-                    safe_dir);
-                if (result) {
-                    tab.lsp_client = std::move(lsp);
-                    tab.session->set_lsp_client(tab.lsp_client.get());
-                } else {
-                    std::cerr << "Failed to auto-start clangd: " << result.error() << std::endl;
-                }
-            }
-        }
 
         tabs.push_back(std::move(tab));
     };

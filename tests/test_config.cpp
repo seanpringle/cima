@@ -117,48 +117,6 @@ TEST_CASE("Config read_only_paths preserves user entries", "[config]") {
     REQUIRE(cfg.read_only_paths[2] == "/custom/path");
 }
 
-TEST_CASE("Config LSP fields serialize and round-trip", "[config][lsp]") {
-    Config cfg;
-
-    cfg.clangd_path = "/usr/bin/clangd-18";
-    cfg.clangd_args = {"--clang-tidy", "--background-index"};
-    cfg.lsp_timeout = 60;
-
-    auto j = cfg.to_json();
-
-    // Check serialization
-    CHECK(j["clangd_path"] == "/usr/bin/clangd-18");
-    CHECK(j["clangd_args"].is_array());
-    CHECK(j["clangd_args"].size() == 2);
-    CHECK(j["clangd_args"][0] == "--clang-tidy");
-    CHECK(j["clangd_args"][1] == "--background-index");
-    CHECK(j["lsp_timeout"] == 60);
-    CHECK_FALSE(j.contains("lsp_enabled")); // removed — LSP is opt-in per tab
-
-    // Verify deserialization (simulating what load() does)
-    Config loaded;
-    if (j.contains("clangd_path") && j["clangd_path"].is_string())
-        loaded.clangd_path = j["clangd_path"].get<std::string>();
-    if (j.contains("clangd_args") && j["clangd_args"].is_array()) {
-        for (const auto& a : j["clangd_args"])
-            loaded.clangd_args.push_back(a.get<std::string>());
-    }
-    if (j.contains("lsp_timeout") && j["lsp_timeout"].is_number_integer())
-        loaded.lsp_timeout = j["lsp_timeout"].get<int>();
-
-    CHECK(loaded.clangd_path == "/usr/bin/clangd-18");
-    CHECK(loaded.clangd_args.size() == 2);
-    CHECK(loaded.clangd_args[0] == "--clang-tidy");
-    CHECK(loaded.clangd_args[1] == "--background-index");
-    CHECK(loaded.lsp_timeout == 60);
-
-    // Defaults when not present
-    Config default_cfg;
-    CHECK(default_cfg.clangd_path.empty());
-    CHECK(default_cfg.clangd_args.empty());
-    CHECK(default_cfg.lsp_timeout == 30);
-}
-
 // ---------------------------------------------------------------------------
 // MCP endpoint tests
 // ---------------------------------------------------------------------------

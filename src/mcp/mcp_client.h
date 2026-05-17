@@ -28,7 +28,7 @@ using json = nlohmann::json;
 //            (non-streaming, immediate responses)
 //
 // Thread-safe: all public methods can be called from multiple threads.
-// Non-copyable, non-movable (like LspClient).
+// Non-copyable, non-movable.
 // ---------------------------------------------------------------------------
 
 class McpClient {
@@ -54,8 +54,7 @@ public:
     Result<void> connect(int read_fd, int write_fd);
 
     /// Connect to a Streamable HTTP MCP endpoint.
-    /// Does NOT send any requests yet — the first call to initialize(),
-    /// list_tools(), or call_tool() will POST to the URL.
+    /// This performs an immediate initialize handshake to verify connectivity.
     Result<void> start_http(const std::string& url,
                             const std::string& api_key = "",
                             int timeout_sec = 60);

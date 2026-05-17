@@ -76,9 +76,6 @@ json Config::to_json() const {
     j["font_sans"] = font_sans;
     j["font_mono"] = font_mono;
     j["font_size"] = font_size;
-    j["clangd_path"] = clangd_path;
-    j["clangd_args"] = clangd_args;
-    j["lsp_timeout"] = lsp_timeout;
     return j;
 }
 
@@ -235,24 +232,6 @@ Config Config::load() {
             int n = j["font_size"].get<int>();
             if (n > 0) cfg.font_size = n;
         }
-
-        // LSP settings
-        if (j.contains("clangd_path") && j["clangd_path"].is_string()) {
-            cfg.clangd_path = j["clangd_path"].get<std::string>();
-        }
-        if (j.contains("clangd_args") && j["clangd_args"].is_array()) {
-            cfg.clangd_args.clear();
-            for (const auto& a : j["clangd_args"]) {
-                if (a.is_string()) {
-                    cfg.clangd_args.push_back(a.get<std::string>());
-                }
-            }
-        }
-        if (j.contains("lsp_timeout") && j["lsp_timeout"].is_number_integer()) {
-            int n = j["lsp_timeout"].get<int>();
-            if (n >= 0) cfg.lsp_timeout = n;
-        }
-
 
         if (j.contains("read_only_paths") && j["read_only_paths"].is_array()) {
             cfg.read_only_paths.clear();
