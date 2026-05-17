@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <iostream>
+#include <signal.h>
 #include <string>
 
 static void print_usage() {
@@ -23,6 +24,10 @@ static void print_usage() {
 }
 
 int main(int argc, char* argv[]) {
+    // Ignore SIGPIPE — writing to a broken pipe (e.g. MCP server exited)
+    // should return EPIPE, not kill the process with signal 13.
+    signal(SIGPIPE, SIG_IGN);
+
     // Must be called once before any other libcurl function.
     curl_global_init(CURL_GLOBAL_ALL);
 

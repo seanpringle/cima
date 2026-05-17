@@ -158,3 +158,251 @@ TEST_CASE("Config LSP fields serialize and round-trip", "[config][lsp]") {
     CHECK(default_cfg.clangd_args.empty());
     CHECK(default_cfg.lsp_timeout == 30);
 }
+
+// ---------------------------------------------------------------------------
+// MCP endpoint tests
+// ---------------------------------------------------------------------------
+
+TEST_CASE("McpEndpoint defaults", "[config][mcp]") {
+    // Default-constructed McpEndpoint should have sensible defaults.
+    McpEndpoint m;
+    REQUIRE(m.name.empty());
+    REQUIRE(m.transport == "stdio");
+    REQUIRE(m.command.empty());
+    REQUIRE(m.args.empty());
+    REQUIRE(m.cwd.empty());
+    REQUIRE(m.url.empty());
+    REQUIRE(m.api_key.empty());
+    REQUIRE(m.env.empty());
+    REQUIRE(m.timeout_sec == 60);
+}
+
+TEST_CASE("McpEndpoint round-trip serialization", "[config][mcp]") {
+    Config cfg;
+
+    // Stdio endpoint
+    McpEndpoint stdio_mcp;
+    stdio_mcp.name = "my-filesystem";
+    stdio_mcp.transport = "stdio";
+    stdio_mcp.command = "npx";
+    stdio_mcp.args = {"-y", "@modelcontextprotocol/server-filesystem", "/tmp/test"};
+    stdio_mcp.cwd = "/home/user";
+    stdio_mcp.env = {{"NODE_ENV", "production"}};
+    stdio_mcp.timeout_sec = 120;
+    cfg.mcp_servers.push_back(stdio_mcp);
+
+    // Streamable HTTP endpoint
+    McpEndpoint http_mcp;
+    http_mcp.name = "remote-api";
+    http_mcp.transport = "streamable-http";
+    http_mcp.url = "http://localhost:3100/mcp";
+    http_mcp.api_key = "sk-test-key";
+    http_mcp.timeout_sec = 30;
+    cfg.mcp_servers.push_back(http_mcp);
+
+    auto j = cfg.to_json();
+    REQUIRE(j.contains("mcp_servers"));
+    REQUIRE(j["mcp_servers"].is_array());
+    REQUIRE(j["mcp_servers"].size() == 2);
+
+    // Now simulate deserialization (like load() does)
+    Config loaded;
+    if (j.contains("mcp_servers") && j["mcp_servers"].is_array()) {
+        for (const auto& mj : j["mcp_servers"]) {
+            McpEndpoint m;
+            m.name = mj.value("name", std::string());
+            m.transport = mj.value("transport", std::string("stdio"));
+            m.command = mj.value("command", std::string());
+            m.url = mj.value("url", std::string());
+            m.api_key = mj.value("api_key", std::string());
+            m.cwd = mj.value("cwd", std::string());
+            m.timeout_sec = mj.value("timeout_sec", 60);
+
+            if (mj.contains("args") && mj["args"].is_array()) {
+                for (const auto& a : mj["args"]) {
+                    if (a.is_string()) m.args.push_back(a.get<std::string>());
+                }
+            }
+            if (mj.contains("env") && mj["env"].is_object()) {
+                for (auto it = mj["env"].begin(); it != mj["env"].end(); ++it) {
+                    if (it.value().is_string()) m.env[it.key()] = it.value().get<std::string>();
+                }
+            }
+            loaded.mcp_servers.push_back(std::move(m));
+        }
+    }
+
+    REQUIRE(loaded.mcp_servers.size() == 2);
+
+    // Check stdio endpoint
+    CHECK(loaded.mcp_servers[0].name == "my-filesystem");
+    CHECK(loaded.mcp_servers[0].transport == "stdio");
+    CHECK(loaded.mcp_servers[0].command == "npx");
+    CHECK(loaded.mcp_servers[0].args.size() == 3);
+    CHECK(loaded.mcp_servers[0].args[0] == "-y");
+    CHECK(loaded.mcp_servers[0].args[1] == "@modelcontextprotocol/server-filesystem");
+    CHECK(loaded.mcp_servers[0].args[2] == "/tmp/test");
+    CHECK(loaded.mcp_servers[0].cwd == "/home/user");
+    CHECK(loaded.mcp_servers[0].env.size() == 1);
+    CHECK(loaded.mcp_servers[0].env.at("NODE_ENV") == "production");
+    CHECK(loaded.mcp_servers[0].timeout_sec == 120);
+
+    // Check HTTP endpoint
+    CHECK(loaded.mcp_servers[1].name == "remote-api");
+    CHECK(loaded.mcp_servers[1].transport == "streamable-http");
+    CHECK(loaded.mcp_servers[1].url == "http://localhost:3100/mcp");
+    CHECK(loaded.mcp_servers[1].api_key == "sk-test-key");
+    CHECK(loaded.mcp_servers[1].timeout_sec == 30);
+    // HTTP endpoint has no command/args
+    CHECK(loaded.mcp_servers[1].command.empty());
+    CHECK(loaded.mcp_servers[1].args.empty());
+}
+
+TEST_CASE("McpEndpoint missing optional fields load as empty", "[config][mcp]") {
+    // JSON without cwd, api_key, env should load with empty defaults.
+    json j = R"({
+        "mcp_servers": [
+            {
+                "name": "minimal",
+                "command": "my-server"
+            }
+        ]
+    })"_json;
+
+    Config loaded;
+    if (j.contains("mcp_servers") && j["mcp_servers"].is_array()) {
+        for (const auto& mj : j["mcp_servers"]) {
+            McpEndpoint m;
+            m.name = mj.value("name", std::string());
+            m.transport = mj.value("transport", std::string("stdio"));
+            m.command = mj.value("command", std::string());
+            m.url = mj.value("url", std::string());
+            m.api_key = mj.value("api_key", std::string());
+            m.cwd = mj.value("cwd", std::string());
+            m.timeout_sec = mj.value("timeout_sec", 60);
+
+            if (mj.contains("args") && mj["args"].is_array()) {
+                for (const auto& a : mj["args"]) {
+                    if (a.is_string()) m.args.push_back(a.get<std::string>());
+                }
+            }
+            if (mj.contains("env") && mj["env"].is_object()) {
+                for (auto it = mj["env"].begin(); it != mj["env"].end(); ++it) {
+                    if (it.value().is_string()) m.env[it.key()] = it.value().get<std::string>();
+                }
+            }
+            loaded.mcp_servers.push_back(std::move(m));
+        }
+    }
+
+    REQUIRE(loaded.mcp_servers.size() == 1);
+    auto& m = loaded.mcp_servers[0];
+    CHECK(m.name == "minimal");
+    CHECK(m.transport == "stdio");      // default
+    CHECK(m.command == "my-server");
+    CHECK(m.cwd.empty());               // missing → empty
+    CHECK(m.url.empty());               // missing → empty
+    CHECK(m.api_key.empty());           // missing → empty
+    CHECK(m.env.empty());               // missing → empty
+    CHECK(m.args.empty());              // missing → empty
+    CHECK(m.timeout_sec == 60);         // default
+}
+
+TEST_CASE("Config MCP + provider coexistence", "[config][mcp]") {
+    // Existing provider parsing still works when mcp_servers array is present.
+    json j = R"({
+        "providers": [
+            {
+                "name": "test-provider",
+                "api_base": "http://localhost:11000/v1",
+                "api_key": "sk-test",
+                "model": "test-model"
+            }
+        ],
+        "mcp_servers": [
+            {
+                "name": "my-server",
+                "command": "my-server-bin"
+            }
+        ]
+    })"_json;
+
+    // Parse providers
+    Config loaded;
+    if (j.contains("providers") && j["providers"].is_array()) {
+        for (const auto& pj : j["providers"]) {
+            Provider p;
+            p.name = pj.value("name", std::string());
+            p.api_base = pj.value("api_base", std::string());
+            p.api_key = pj.value("api_key", std::string());
+            p.model = pj.value("model", std::string());
+            loaded.providers.push_back(std::move(p));
+        }
+    }
+
+    // Parse MCP servers
+    if (j.contains("mcp_servers") && j["mcp_servers"].is_array()) {
+        for (const auto& mj : j["mcp_servers"]) {
+            McpEndpoint m;
+            m.name = mj.value("name", std::string());
+            m.command = mj.value("command", std::string());
+            loaded.mcp_servers.push_back(std::move(m));
+        }
+    }
+
+    REQUIRE(loaded.providers.size() == 1);
+    CHECK(loaded.providers[0].name == "test-provider");
+    CHECK(loaded.providers[0].api_base == "http://localhost:11000/v1");
+
+    REQUIRE(loaded.mcp_servers.size() == 1);
+    CHECK(loaded.mcp_servers[0].name == "my-server");
+    CHECK(loaded.mcp_servers[0].command == "my-server-bin");
+}
+
+TEST_CASE("Config MCP servers absent does not break providers", "[config][mcp]") {
+    // Without mcp_servers array, provider parsing still works fine.
+    json j = R"({
+        "providers": [
+            {
+                "name": "only-provider",
+                "api_base": "http://localhost:11000/v1",
+                "api_key": "sk-test",
+                "model": "test"
+            }
+        ]
+    })"_json;
+
+    Config loaded;
+    if (j.contains("providers") && j["providers"].is_array()) {
+        for (const auto& pj : j["providers"]) {
+            Provider p;
+            p.name = pj.value("name", std::string());
+            p.api_base = pj.value("api_base", std::string());
+            p.api_key = pj.value("api_key", std::string());
+            p.model = pj.value("model", std::string());
+            loaded.providers.push_back(std::move(p));
+        }
+    }
+
+    REQUIRE(loaded.providers.size() == 1);
+    CHECK(loaded.providers[0].name == "only-provider");
+    // mcp_servers should be empty by default
+    CHECK(loaded.mcp_servers.empty());
+}
+
+TEST_CASE("McpEndpoint equality operator", "[config][mcp]") {
+    McpEndpoint a;
+    a.name = "test";
+    a.command = "server";
+    a.timeout_sec = 60;
+
+    McpEndpoint b;
+    b.name = "test";
+    b.command = "server";
+    b.timeout_sec = 60;
+
+    CHECK(a == b);
+
+    b.timeout_sec = 120;
+    CHECK_FALSE(a == b);
+}

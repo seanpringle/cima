@@ -85,6 +85,12 @@ struct TabInfo {
 
     bool bash_enabled = false;       // run_bash tool enabled for this tab
 
+    // MCP: per-server enabled state (persisted in assistant_data.json)
+    std::map<std::string, bool> mcp_enabled;
+
+    // MCP: per-server error message (transient, not persisted)
+    std::map<std::string, std::string> mcp_error;
+
     /// Snippets from cima.json (shared across all tabs)
     const std::map<std::string, std::string>* snippets = nullptr;
 };

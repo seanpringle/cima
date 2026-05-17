@@ -77,6 +77,9 @@ class ToolRegistry {
     /// Return the names of all registered tools with the given permission.
     std::set<std::string> tool_names_by_permission(ToolPermission perm) const;
 
+    /// Remove a tool by name.  Returns true if the tool was found and removed.
+    bool remove(const std::string& name);
+
   private:
     Tool* find(const std::string& name);
     CancellationToken cancelled_;

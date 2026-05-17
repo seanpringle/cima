@@ -808,6 +808,58 @@ void render_config_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
         }
     }
 
+    // ── MCP Servers section ──
+    if (!cfg.mcp_servers.empty()) {
+        Separator();
+        Text("MCP Servers:");
+        for (const auto& mcp : cfg.mcp_servers) {
+            bool enabled = tab.mcp_enabled[mcp.name];
+            bool changed = Checkbox(mcp.name.c_str(), &enabled);
+            if (changed) {
+                tab.mcp_enabled[mcp.name] = enabled;
+                tab.mcp_error.erase(mcp.name);
+                if (enabled) {
+                    auto result = session.start_mcp_server(mcp);
+                    if (!result) {
+                        tab.mcp_error[mcp.name] = result.error();
+                        tab.mcp_enabled[mcp.name] = false; // revert checkbox
+                    }
+                } else {
+                    session.stop_mcp_server(mcp.name);
+                }
+            }
+
+            // Transport type label
+            SameLine();
+            TextDisabled("(%s)", mcp.transport.c_str());
+
+            // Status / error
+            if (session.mcp_registry().is_running(mcp.name)) {
+                SameLine();
+                TextColored(ImVec4(0,1,0,1), "(*) running");
+            } else if (tab.mcp_error.count(mcp.name)) {
+                SameLine();
+                TextColored(ImVec4(1,0,0,1), "(!) %s", tab.mcp_error[mcp.name].c_str());
+            }
+
+            // Tooltip with server details
+            if (IsItemHovered()) {
+                BeginTooltip();
+                Text("command: %s", mcp.command.c_str());
+                if (!mcp.args.empty()) {
+                    std::string args_str;
+                    for (const auto& a : mcp.args) {
+                        if (!args_str.empty()) args_str += " ";
+                        args_str += a;
+                    }
+                    Text("args: %s", args_str.c_str());
+                }
+                if (!mcp.url.empty()) Text("url: %s", mcp.url.c_str());
+                EndTooltip();
+            }
+        }
+    }
+
     Separator();
 
     // ── Raw checkbox ──

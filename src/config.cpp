@@ -39,6 +39,24 @@ json Config::to_json() const {
         prov_arr.push_back(std::move(pj));
     }
     j["providers"] = std::move(prov_arr);
+
+    // ── MCP servers ──
+    json mcp_arr = json::array();
+    for (const auto& m : mcp_servers) {
+        json mj;
+        mj["name"] = m.name;
+        mj["transport"] = m.transport;
+        mj["command"] = m.command;
+        mj["args"] = m.args;
+        mj["cwd"] = m.cwd;
+        mj["url"] = m.url;
+        mj["api_key"] = m.api_key;
+        mj["env"] = m.env;
+        mj["timeout_sec"] = m.timeout_sec;
+        mcp_arr.push_back(std::move(mj));
+    }
+    j["mcp_servers"] = std::move(mcp_arr);
+
     j["read_only_paths"] = read_only_paths;
     j["max_tool_iterations"] = max_tool_iterations;
     j["snippets"] = snippets;
@@ -143,6 +161,40 @@ Config Config::load() {
         }
         if (cfg.providers.empty()) {
             throw std::runtime_error("cima.json must contain at least one provider in the \"providers\" array");
+        }
+
+        // ── Parse MCP servers array ──
+        if (j.contains("mcp_servers") && j["mcp_servers"].is_array()) {
+            for (const auto& mj : j["mcp_servers"]) {
+                McpEndpoint m;
+                m.name = mj.value("name", std::string());
+                m.transport = mj.value("transport", std::string("stdio"));
+                m.command = mj.value("command", std::string());
+                m.url = mj.value("url", std::string());
+                m.api_key = mj.value("api_key", std::string());
+                m.cwd = mj.value("cwd", std::string());
+                m.timeout_sec = mj.value("timeout_sec", 60);
+
+                // Parse args array
+                if (mj.contains("args") && mj["args"].is_array()) {
+                    for (const auto& a : mj["args"]) {
+                        if (a.is_string()) {
+                            m.args.push_back(a.get<std::string>());
+                        }
+                    }
+                }
+
+                // Parse env map
+                if (mj.contains("env") && mj["env"].is_object()) {
+                    for (auto it = mj["env"].begin(); it != mj["env"].end(); ++it) {
+                        if (it.value().is_string()) {
+                            m.env[it.key()] = it.value().get<std::string>();
+                        }
+                    }
+                }
+
+                cfg.mcp_servers.push_back(std::move(m));
+            }
         }
 
         // ── Other top-level fields ──

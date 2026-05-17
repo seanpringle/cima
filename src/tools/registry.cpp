@@ -193,3 +193,13 @@ Tool* ToolRegistry::find(const std::string& name) {
     }
     return nullptr;
 }
+
+bool ToolRegistry::remove(const std::string& name) {
+    for (auto it = tools_.begin(); it != tools_.end(); ++it) {
+        if (it->name == name) {
+            tools_.erase(it);
+            return true;
+        }
+    }
+    return false;
+}

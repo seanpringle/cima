@@ -211,6 +211,13 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
             if (has_cmake_project()) {
                 effective_prompt += Config::CMAKE_PROMPT_SNIPPET;
             }
+            if (mcp_registry_.has_running_servers()) {
+                effective_prompt +=
+                    "\n## MCP tools\n\n"
+                    "Tools from external MCP servers are available.\n"
+                    "These are listed among your tools with a \"mcp_<servername>_\" prefix.\n"
+                    "Use them as you would any other tool.\n";
+            }
 
             // Filter tool list: only include LSP/CMake/bash tools when their
             // respective conditions are met.
@@ -531,6 +538,48 @@ Result<void> ChatSession::compact() {
             OutputType::Content);
 
    return {};
+}
+
+// ===================================================================
+// MCP server management
+// ===================================================================
+
+Result<void> ChatSession::start_mcp_server(const McpEndpoint& config) {
+    auto result = mcp_registry_.start_server(config);
+    if (!result) {
+        return std::unexpected(
+            std::string("Failed to start MCP server '") + config.name +
+            "': " + result.error());
+    }
+
+    // Register all discovered tools in the ToolRegistry,
+    // wiring execute to route through the McpRegistry.
+    auto tools = mcp_registry_.all_tools();
+    for (auto& tool : tools) {
+        std::string namespaced_name = tool.name;
+        tool.execute = [this, namespaced_name](const json& args) -> Result<std::string> {
+            return mcp_registry_.execute_tool(namespaced_name, args);
+        };
+        tools_.add(std::move(tool));
+    }
+
+    return {};
+}
+
+void ChatSession::stop_mcp_server(const std::string& name) {
+    // Remove all tools belonging to this server from ToolRegistry.
+    std::string prefix = "mcp_" + name + "_";
+    std::vector<std::string> to_remove;
+    for (const auto& t : tools_.tools()) {
+        if (t.name.rfind(prefix, 0) == 0) {
+            to_remove.push_back(t.name);
+        }
+    }
+    for (const auto& tname : to_remove) {
+        tools_.remove(tname);
+    }
+
+    mcp_registry_.stop_server(name);
 }
 
 // ---------------------------------------------------------------------------

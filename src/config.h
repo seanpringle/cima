@@ -23,6 +23,34 @@ inline CancellationToken make_cancellation_token() {
 
 template <typename T> using Result = std::expected<T, std::string>;
 
+/// A single MCP endpoint definition from cima.json.
+struct McpEndpoint {
+    std::string name;                           // unique id, e.g. "my-filesystem-server"
+    std::string transport = "stdio";            // "stdio" or "streamable-http"
+    // For stdio:
+    std::string command;                        // e.g. "npx", "uvx", "/path/to/server"
+    std::vector<std::string> args;              // e.g. ["-y", "@modelcontextprotocol/server-filesystem"]
+    std::string cwd;                            // working directory (empty = inherit)
+    // For HTTP:
+    std::string url;                            // e.g. "http://localhost:3100/mcp"
+    std::string api_key;                        // Bearer token for Authorization header
+    // Common:
+    std::map<std::string, std::string> env;     // extra env vars for stdio
+    int timeout_sec = 60;
+};
+
+inline bool operator==(const McpEndpoint& a, const McpEndpoint& b) {
+    return a.name == b.name
+        && a.transport == b.transport
+        && a.command == b.command
+        && a.args == b.args
+        && a.cwd == b.cwd
+        && a.url == b.url
+        && a.api_key == b.api_key
+        && a.env == b.env
+        && a.timeout_sec == b.timeout_sec;
+}
+
 /// A single provider definition from cima.json.
 struct Provider {
     std::string name;               // unique identifier, e.g. "opencode.go"
@@ -35,6 +63,7 @@ struct Provider {
 
 struct Config {
     std::vector<Provider> providers;
+    std::vector<McpEndpoint> mcp_servers;   // MCP endpoint definitions
     std::vector<std::string> read_only_paths;
     int max_tool_iterations = 100;
     int context_limit = 300000; // model context window (tokens)
@@ -60,7 +89,7 @@ struct Config {
     // Font settings (empty paths = auto-detect via fontconfig)
     std::string font_sans;                   // path to sans-serif font file
     std::string font_mono;                   // path to monospace font file
-    int font_size = 20;                      // base font size in points (before display scaling)
+    int font_size = 18;                      // base font size in points (before display scaling)
 
     // LSP / clangd settings
     std::string clangd_path;                 // Path to clangd binary (empty = search PATH)

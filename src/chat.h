@@ -4,6 +4,7 @@
 #include "config.h"
 #include "conversation.h"
 #include "lsp/lsp_client.h"
+#include "mcp/mcp_registry.h"
 #include "notes.h"
 #include "plan.h"
 #include "tools.h"
@@ -115,6 +116,23 @@ class ChatSession {
     /// Updates api_base, api_key, model, reasoning_effort, and the underlying ChatClient.
     void set_provider(const Provider& provider);
 
+    // ── MCP server management ──
+
+    /// Start an MCP server from its endpoint configuration.
+    /// Discovers tools and registers them in the ToolRegistry with "mcp_" prefix.
+    Result<void> start_mcp_server(const McpEndpoint& config);
+
+    /// Stop a running MCP server by name.
+    /// Removes its tools from the ToolRegistry.
+    void stop_mcp_server(const std::string& name);
+
+    /// Access the underlying MCP registry (for GUI status queries).
+    McpRegistry& mcp_registry() { return mcp_registry_; }
+    const McpRegistry& mcp_registry() const { return mcp_registry_; }
+
+    /// Access the tool registry (for testing and GUI).
+    const ToolRegistry& tools_for_testing() const { return tools_; }
+
   private:
     std::string model_;
     std::string reasoning_effort_;
@@ -139,4 +157,5 @@ class ChatSession {
     int context_limit_ = 300000;           // discovered from API, falls back to Config
     bool context_limit_discovered_ = false;
     bool bash_enabled_ = false;
+    McpRegistry mcp_registry_;
 };
