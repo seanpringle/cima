@@ -8,6 +8,12 @@
 
 std::string sanitize_utf8(const std::string& s);
 
+/// Ensure there is a blank line before table headers for md4c.
+/// md4c requires a blank line before a GFM table header. This function
+/// inserts extra '\n' before "\n|" when no blank line already exists
+/// and the preceding line is not a table row continuation.
+void ensure_table_blank_lines(std::string& s);
+
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;

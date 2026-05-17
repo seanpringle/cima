@@ -426,6 +426,8 @@ void render_content(const string& text, ImFont* mono_font) {
     if (clean.empty())
         return;
 
+    ensure_table_blank_lines(clean);
+
     RenderCtx ctx;
     ctx.mono_font = mono_font;
 

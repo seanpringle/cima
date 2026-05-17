@@ -287,3 +287,67 @@ TEST_CASE("SSEParser flush with no buffered data is safe", "[types][sse]") {
     parser.reset();
     parser.flush();
 }
+
+// ========================================================================
+// ensure_table_blank_lines
+// ========================================================================
+
+TEST_CASE("ensure_table_blank_lines inserts blank before table after text", "[types][table]") {
+    std::string s = "text\n| A |";
+    ensure_table_blank_lines(s);
+    CHECK(s == "text\n\n| A |");
+}
+
+TEST_CASE("ensure_table_blank_lines leaves already-blank line unchanged", "[types][table]") {
+    std::string s = "text\n\n| A |";
+    ensure_table_blank_lines(s);
+    CHECK(s == "text\n\n| A |");
+}
+
+TEST_CASE("ensure_table_blank_lines leaves multiple blank lines unchanged", "[types][table]") {
+    std::string s = "text\n\n\n| A |";
+    ensure_table_blank_lines(s);
+    CHECK(s == "text\n\n\n| A |");
+}
+
+TEST_CASE("ensure_table_blank_lines leaves row continuations unchanged", "[types][table]") {
+    std::string s = "| A |\n| B |";
+    ensure_table_blank_lines(s);
+    CHECK(s == "| A |\n| B |");
+}
+
+TEST_CASE("ensure_table_blank_lines only inserts for first row of table", "[types][table]") {
+    std::string s = "text\n| A |\n| B |";
+    ensure_table_blank_lines(s);
+    CHECK(s == "text\n\n| A |\n| B |");
+}
+
+TEST_CASE("ensure_table_blank_lines leaves leading newline unchanged", "[types][table]") {
+    std::string s = "\n| A |";
+    ensure_table_blank_lines(s);
+    CHECK(s == "\n| A |");
+}
+
+TEST_CASE("ensure_table_blank_lines does nothing with no table", "[types][table]") {
+    std::string s = "no table here";
+    ensure_table_blank_lines(s);
+    CHECK(s == "no table here");
+}
+
+TEST_CASE("ensure_table_blank_lines handles empty string", "[types][table]") {
+    std::string s;
+    ensure_table_blank_lines(s);
+    CHECK(s.empty());
+}
+
+TEST_CASE("ensure_table_blank_lines two separate tables both get blanks", "[types][table]") {
+    std::string s = "a\n| 1 |\n\nb\n| 2 |";
+    ensure_table_blank_lines(s);
+    CHECK(s == "a\n\n| 1 |\n\nb\n\n| 2 |");
+}
+
+TEST_CASE("ensure_table_blank_lines multi-row multi-table", "[types][table]") {
+    std::string s = "x\n| 1 |\n| 2 |\n\ny\n| 3 |";
+    ensure_table_blank_lines(s);
+    CHECK(s == "x\n\n| 1 |\n| 2 |\n\ny\n\n| 3 |");
+}

@@ -230,3 +230,44 @@ void SSEParser::reset() {
     buf_.clear();
     raw_.clear();
 }
+
+// ---------------------------------------------------------------------------
+// Table blank-line fix for md4c
+// ---------------------------------------------------------------------------
+
+void ensure_table_blank_lines(std::string& s) {
+    if (s.size() < 2)
+        return;
+    std::string result;
+    size_t i = 0;
+    while (i < s.size()) {
+        auto pos = s.find("\n|", i);
+        if (pos == std::string::npos) {
+            result += s.substr(i);
+            break;
+        }
+        // Copy up to and including the '\n' before '|'
+        result += s.substr(i, pos - i + 1);
+
+        bool need_newline = true;
+
+        // Condition 1: already preceded by '\n' (blank line exists)
+        if (pos > 0 && s[pos - 1] == '\n')
+            need_newline = false;
+
+        // Condition 2: previous line is a table row continuation
+        if (need_newline) {
+            size_t line_start = s.rfind('\n', pos - 1);
+            line_start = (line_start == std::string::npos) ? 0 : line_start + 1;
+            if (line_start < s.size() && s[line_start] == '|')
+                need_newline = false;
+        }
+
+        if (need_newline)
+            result += '\n';
+
+        // Resume from the '|' position (pos + 1)
+        i = pos + 1;
+    }
+    s = std::move(result);
+}
