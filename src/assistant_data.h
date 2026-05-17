@@ -12,7 +12,6 @@
 ///   <name>.messages.json  — Conversation
 ///   <name>.log            — ChatUIState display log (JSON Lines)
 ///   <name>.plan.json      — PlanBoard
-///   <name>.notes.json     — Notes
 ///
 /// Now all of these are combined into a single <name>.json file.
 struct AssistantData {
@@ -25,7 +24,6 @@ struct AssistantData {
     json conversation;              // serialized Conversation (array of message objects)
     json chat_log;                  // serialized chat log entries (array of entry objects)
     json plan;                      // { "plan": "...", "comments": [...] }
-    json notes;                     // { "note_name": "body", ... }
     bool bash_enabled = false;      // run_bash tool enabled for this session
 
     json to_json() const;

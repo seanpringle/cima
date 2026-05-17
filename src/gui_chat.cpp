@@ -1,6 +1,5 @@
 #include "gui_chat.h"
 #include "client.h"
-#include "notes.h"
 #include "tools.h"
 #include <cassert>
 
@@ -1244,27 +1243,6 @@ void render_chat_ui(TabInfo& tab, bool& done) {
 
         pos = pos - ImVec2(stateSize.x,0);
         GetForegroundDrawList()->AddText(pos, stateColor, stateInfo.c_str());
-    }
-}
-
-// ===================================================================
-// Notes tab — render note bodies inline as markdown documents
-// ===================================================================
-
-void render_notes_tab(Notes& notes, ImFont* mono_font) {
-    auto ids_result = notes.list_notes();
-    if (!ids_result) {
-        TextDisabled("notes unavailable");
-        return;
-    }
-    for (int id : *ids_result) {
-        if (ImGui::CollapsingHeader(
-                ("Note #" + std::to_string(id)).c_str())) {
-            auto body_result = notes.read_note(id);
-            if (body_result) {
-                render_content(*body_result, mono_font);
-            }
-        }
     }
 }
 

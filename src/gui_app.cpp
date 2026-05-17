@@ -124,9 +124,6 @@ static void save_tab_to_disk(const TabInfo& tab, AppSession& app_session) {
     // Plan data
     data.plan = tab.session->plan().to_json();
 
-    // Notes data
-    data.notes = tab.session->notes().to_json();
-
     // Per-tab settings
     data.bash_enabled = tab.bash_enabled;
 
@@ -210,11 +207,6 @@ static void load_tab_from_disk(TabInfo& tab, AppSession& app_session,
     // Restore plan
     if (data.plan.is_object()) {
         tab.session->plan().from_json(data.plan);
-    }
-
-    // Restore notes
-    if (data.notes.is_object()) {
-        tab.session->notes().from_json(data.notes);
     }
 
     // Restore per-tab settings
@@ -548,10 +540,6 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                                     } else {
                                         TextDisabled("(empty plan)");
                                     }
-                                    EndTabItem();
-                                }
-                                if (BeginTabItem("   Notes   ")) {
-                                    render_notes_tab(tab.session->notes(), mono_font);
                                     EndTabItem();
                                 }
                                 EndTabBar();

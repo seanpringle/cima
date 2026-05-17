@@ -116,12 +116,10 @@ add_library(cima_core
     src/chat.cpp
     src/conversation.cpp
     src/plan.cpp
-    src/notes.cpp
     src/app_session.cpp
     src/assistant_data.cpp
     src/wiki.cpp
     src/tools/factories/wiki.cpp
-    src/tools/factories/notes.cpp
     src/mcp/mcp_client.cpp
     src/mcp/mcp_registry.cpp
 )
@@ -177,8 +175,7 @@ target_link_libraries(test_wiki PRIVATE cima_core Catch2::Catch2WithMain)
 add_executable(test_conversation tests/test_conversation.cpp)
 target_link_libraries(test_conversation PRIVATE cima_core Catch2::Catch2WithMain)
 
-add_executable(test_notes tests/test_notes.cpp)
-target_link_libraries(test_notes PRIVATE cima_core Catch2::Catch2WithMain)
+
 
 add_executable(test_mcp_client tests/test_mcp_client.cpp)
 target_link_libraries(test_mcp_client PRIVATE cima_core Catch2::Catch2WithMain)
@@ -195,6 +192,5 @@ catch_discover_tests(test_client)
 catch_discover_tests(test_chat)
 catch_discover_tests(test_wiki)
 catch_discover_tests(test_conversation)
-catch_discover_tests(test_notes)
 catch_discover_tests(test_mcp_client)
 catch_discover_tests(test_mcp_registry)

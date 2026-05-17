@@ -44,12 +44,6 @@ ChatSession::ChatSession(const Config& config, const Provider& provider,
     tools_.add(make_write_plan_tool(plan_));
     tools_.add(make_read_plan_tool(plan_));
 
-    // Each session gets its own notes tools tied to its Notes storage.
-    tools_.add(make_list_notes_tool(notes_));
-    tools_.add(make_read_note_tool(notes_));
-    tools_.add(make_write_note_tool(notes_));
-    tools_.add(make_delete_note_tool(notes_));
-
     // CMake tools — always registered; conditionally published in run_once().
     tools_.add(make_cmake_configure_tool(safe_dir_, config.cmake_configure_timeout, cancelled_));
     tools_.add(make_cmake_build_tool(safe_dir_, config.cmake_build_timeout, cancelled_));

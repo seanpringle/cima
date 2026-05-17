@@ -4,7 +4,6 @@
 #include "config.h"
 #include "conversation.h"
 #include "mcp/mcp_registry.h"
-#include "notes.h"
 #include "plan.h"
 #include "tools.h"
 #include "types.h"
@@ -46,10 +45,6 @@ class ChatSession {
     // Each session has its own PlanBoard (not shared across agents).
     PlanBoard& plan() { return plan_; }
     const PlanBoard& plan() const { return plan_; }
-
-    // Each session has its own Notes storage (local to this agent).
-    Notes& notes() { return notes_; }
-    const Notes& notes() const { return notes_; }
 
     // API connection info (for creating temporary clients in background tasks).
     const std::string& api_base() const { return api_base_; }
@@ -132,7 +127,6 @@ class ChatSession {
     std::shared_ptr<FileModifiedCallback> file_modified_cb_;
     std::string system_prompt_;
     PlanBoard plan_;
-    Notes notes_;
     Conversation conversation_;
     ChatClient client_;
     CancellationToken cancelled_;
