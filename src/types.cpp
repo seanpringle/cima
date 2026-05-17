@@ -1,7 +1,6 @@
 #include "types.h"
 
 #include <algorithm>
-#include <unordered_set>
 
 // ---------------------------------------------------------------------------
 // UTF-8 sanitization — replace invalid byte sequences with U+FFFD.

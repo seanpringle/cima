@@ -9,7 +9,6 @@ using json = nlohmann::json;
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <set>
 #include <stdexcept>
 #include <string>
 #include <unistd.h>

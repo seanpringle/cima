@@ -15,9 +15,7 @@ using namespace ImGui;
 
 #include <fontconfig/fontconfig.h>
 
-#include <algorithm>
 #include <csignal>
-#include <iostream>
 
 // ── Font lookup helpers (fontconfig) ──
 
@@ -278,7 +276,7 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
 
         float scale = display_scale;
         ImGui::GetStyle().ScaleAllSizes(scale);
-
+/*
         static const ImWchar latin[] = {
             0x0020,
             0x00ff,
@@ -289,12 +287,12 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
             0x1ffff,
             0,
         };
-
+*/
         ImFontConfig font_cfg;
         font_cfg.OversampleH = 2;
-        ImFontConfig merge;
-        merge.OversampleH = 2;
-        merge.MergeMode = true;
+//        ImFontConfig merge;
+//        merge.OversampleH = 2;
+//        merge.MergeMode = true;
 
         float fs = static_cast<float>(cfg.font_size) * scale;
 
@@ -304,16 +302,16 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
             ImGui::GetIO().Fonts->Clear();
 
             // Sans
-            ImGui::GetIO().Fonts->AddFontFromFileTTF(sans_path.c_str(), fs, &font_cfg, latin);
-            ImGui::GetIO().Fonts->AddFontFromFileTTF(sans_path.c_str(), fs, &merge, unicode);
+            ImGui::GetIO().Fonts->AddFontFromFileTTF(sans_path.c_str(), fs, &font_cfg); //, latin);
+//            ImGui::GetIO().Fonts->AddFontFromFileTTF(sans_path.c_str(), fs, &merge, unicode);
 
             // Mono
             mono_font = ImGui::GetIO().Fonts->AddFontFromFileTTF(
-                mono_path.c_str(), fs, &font_cfg, latin);
-            if (mono_font) {
-                ImGui::GetIO().Fonts->AddFontFromFileTTF(
-                    mono_path.c_str(), fs, &merge, unicode);
-            }
+                mono_path.c_str(), fs, &font_cfg); //, latin);
+//            if (mono_font) {
+//                ImGui::GetIO().Fonts->AddFontFromFileTTF(
+//                    mono_path.c_str(), fs, &merge, unicode);
+//            }
         }
 
         // Fallback: if fontconfig failed or mono didn't load, use ImGui's default.
