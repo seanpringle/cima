@@ -17,7 +17,9 @@ Tool make_web_search_tool(int timeout, CancellationToken cancelled) {
     t.description =
         "Search the web using DuckDuckGo. "
         "Returns up to 10 results with titles, snippets, and URLs. "
-        "No API key required.";
+        "No API key required. "
+        "DuckDuckGo rate-limits requests; at least 3 seconds must elapse "
+        "between successive calls. If you need multiple searches, space them out.";
     t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},
         {"properties",
@@ -32,21 +34,18 @@ Tool make_web_search_tool(int timeout, CancellationToken cancelled) {
         if (query.size() > 500)
             query = query.substr(0, 500);
 
-        // ── Rate-limit with jitter ──
-        // DDG requests must be spaced at least ~1s apart; add random jitter
-        // to avoid accidental DoS.
+        // ── Rate-limit (3s gap) ──
+        // DDG aggressively rate-limits requests; enforce a minimum 3-second
+        // gap between successive calls. The mutex also serializes concurrent
+        // calls so only one web_search runs at a time.
         {
             std::lock_guard<std::mutex> lock(g_ddg_mutex);
             auto now = std::chrono::steady_clock::now();
             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                 now - g_last_ddg_request);
 
-            // Jitter: random 0..500ms added to base 1000ms
-            auto jitter = std::chrono::milliseconds(std::rand() % DDG_JITTER_MAX.count());
-            auto total_delay = DDG_MIN_INTERVAL + jitter;
-
-            if (elapsed < total_delay) {
-                std::this_thread::sleep_for(total_delay - elapsed);
+            if (elapsed < DDG_MIN_INTERVAL) {
+                std::this_thread::sleep_for(DDG_MIN_INTERVAL - elapsed);
             }
             g_last_ddg_request = std::chrono::steady_clock::now();
         }
