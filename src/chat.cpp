@@ -1,15 +1,11 @@
 #include "chat.h"
 #include "plan.h"
 
-#include <chrono>
 #include <exception>
 #include <filesystem>
-#include <fstream>
 #include <future>
-#include <iostream>
 #include <mutex>
 #include <set>
-#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -41,8 +37,8 @@ ChatSession::ChatSession(const Config& config, const Provider& provider,
     tools_.add_defaults(safe_dir_, config, /*include_write=*/true, *file_modified_cb_);
 
     // Each session gets its own plan tools tied to its PlanBoard
-    tools_.add(make_write_plan_tool(plan_));
-    tools_.add(make_read_plan_tool(plan_));
+    tools_.add(make_write_plan_tool(::plan));
+    tools_.add(make_read_plan_tool(::plan));
 
     // CMake tools — always registered; conditionally published in run_once().
     tools_.add(make_cmake_configure_tool(safe_dir_, config.cmake_configure_timeout, cancelled_));
@@ -57,7 +53,7 @@ ChatSession::ChatSession(const Config& config, const Provider& provider,
 
 std::unique_ptr<ChatSession> ChatSession::create_subagent(
     const Config& config, const Provider& provider, bool read_only,
-    CancellationToken cancelled, PlanBoard* primary_plan) {
+    CancellationToken cancelled) {
     // Build a simpler system prompt for subagents
     std::string sp = Config::SUBAGENT_SYSTEM_PROMPT;
 
@@ -95,13 +91,6 @@ std::unique_ptr<ChatSession> ChatSession::create_subagent(
         session->tools_.remove("git_commit");
         session->tools_.remove("git_restore");
         session->tools_.remove("git_show");
-    }
-
-    // If a primary PlanBoard is given, rebind read_plan to read from it
-    // instead of the subagent's own (empty) plan.
-    if (primary_plan) {
-        session->tools_.remove("read_plan");
-        session->tools_.add(make_read_plan_tool(*primary_plan));
     }
 
     return session;

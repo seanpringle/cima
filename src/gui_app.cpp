@@ -314,7 +314,7 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
 
             tab.chat_state = std::make_unique<AsyncChatState>();
             tab.session = ChatSession::create_subagent(
-                cfg, provider, sa.read_only, tab.chat_state->cancelled, primary_plan);
+                cfg, provider, sa.read_only, tab.chat_state->cancelled);
             tab.ui_state.mono_font = mono_font;
             tab.session->set_agent_name(sa.name);
             tab.session->set_output_callback(

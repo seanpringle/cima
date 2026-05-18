@@ -34,6 +34,8 @@ class PlanBoard {
     std::string plan_;
 };
 
+extern PlanBoard plan;
+
 // Tool factory declarations — each takes a PlanBoard reference to operate on.
 Tool make_write_plan_tool(PlanBoard& board);
 Tool make_read_plan_tool(PlanBoard& board);

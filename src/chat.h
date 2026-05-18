@@ -39,7 +39,7 @@ class ChatSession {
     /// that PlanBoard (typically the primary agent's plan) instead of its own.
     static std::unique_ptr<ChatSession> create_subagent(
         const Config& config, const Provider& provider, bool read_only,
-        CancellationToken cancelled, PlanBoard* primary_plan = nullptr);
+        CancellationToken cancelled);
 
     Result<ChatResult> run_once(const std::string& user_input);
     void set_model(const std::string& m) { model_ = m; }
@@ -50,8 +50,8 @@ class ChatSession {
     const Usage& last_usage() const { return last_usage_; }
 
     // Each session has its own PlanBoard (not shared across agents).
-    PlanBoard& plan() { return plan_; }
-    const PlanBoard& plan() const { return plan_; }
+    PlanBoard& plan() { return ::plan; }
+    const PlanBoard& plan() const { return ::plan; }
 
     // API connection info (for creating temporary clients in background tasks).
     const std::string& api_base() const { return api_base_; }
@@ -142,7 +142,6 @@ class ChatSession {
     int max_iterations_ = 100; // overridden by config.max_tool_iterations
     std::shared_ptr<FileModifiedCallback> file_modified_cb_;
     std::string system_prompt_;
-    PlanBoard plan_;
     Conversation conversation_;
     ChatClient client_;
     CancellationToken cancelled_;
