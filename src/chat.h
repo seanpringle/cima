@@ -130,6 +130,37 @@ class ChatSession {
     const ToolRegistry& tools_for_testing() const { return tools_; }
 
   private:
+    // ── Refactored run_once() helpers ──
+
+    /// Result of a single streaming turn (content + reasoning + tool calls).
+    struct StreamResult {
+        std::string content;
+        std::string reasoning;
+        std::vector<ToolCall> calls;
+    };
+
+    /// Discover and cache the model's context limit (one-time per model/endpoint).
+    void discover_context_limit();
+
+    /// Build the effective system prompt with conditional CMake/MCP sections.
+    std::string build_effective_prompt() const;
+
+    /// Return tool names permitted for this iteration (CMake/bash conditional).
+    std::set<std::string> filter_allowed_tools() const;
+
+    /// Assemble the OpenAI-compatible request payload.
+    json build_payload(const std::set<std::string>& allowed_tools) const;
+
+    /// Stream a chat completion and return the accumulated content/reasoning/tool_calls.
+    /// On error the caller handles rollback.
+    Result<StreamResult> stream_chat(const json& payload);
+
+    /// Execute tool calls for a single assistant message — serial for write tools,
+    /// parallel for read-only, single for one call.
+    /// Results are added to the conversation via add_tool().
+    /// Returns an error only if the user cancels (caller should rollback).
+    Result<void> execute_tool_calls(int64_t msg_id, const std::vector<ToolCall>& calls,
+        int remaining_iters);
     std::string model_;
     std::string reasoning_effort_;
     std::string agent_name_;

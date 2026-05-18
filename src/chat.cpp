@@ -125,39 +125,246 @@ int ChatSession::context_usage_percent() const {
     return static_cast<int>(tokens * 100 / context_limit_);
 }
 
-Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
-    // ── Discover context limit (once per model/endpoint) ──
-    if (!context_limit_discovered_) {
-        static std::mutex cache_mutex;
-        static std::unordered_map<std::string, int> cache;
+// ===================================================================
+// run_once() helpers
+// ===================================================================
 
-        std::string cache_key = client_.url() + ":" + model_;
-        {
-            std::lock_guard<std::mutex> lock(cache_mutex);
-            auto it = cache.find(cache_key);
-            if (it != cache.end()) {
-                context_limit_ = it->second;
-                context_limit_discovered_ = true;
-            }
-        }
-        if (!context_limit_discovered_) {
-            int discovered = client_.fetch_model_context_limit(model_);
-            std::lock_guard<std::mutex> lock(cache_mutex);
-            if (discovered > 0) {
-                cache[cache_key] = discovered;
-                context_limit_ = discovered;
-            }
+void ChatSession::discover_context_limit() {
+    if (context_limit_discovered_) return;
+
+    static std::mutex cache_mutex;
+    static std::unordered_map<std::string, int> cache;
+
+    std::string cache_key = client_.url() + ":" + model_;
+    {
+        std::lock_guard<std::mutex> lock(cache_mutex);
+        auto it = cache.find(cache_key);
+        if (it != cache.end()) {
+            context_limit_ = it->second;
             context_limit_discovered_ = true;
+            return;
         }
     }
 
-    // ── Single turn processing ──
-    // Snapshot before adding this turn's prompt.  If anything goes wrong
-    // we roll back to here.
-    auto turn_snapshot = conversation_.message_count();
+    int discovered = client_.fetch_model_context_limit(model_);
+    std::lock_guard<std::mutex> lock(cache_mutex);
+    if (discovered > 0) {
+        cache[cache_key] = discovered;
+        context_limit_ = discovered;
+    }
+    context_limit_discovered_ = true;
+}
 
-    // Add the user input as a message
+std::string ChatSession::build_effective_prompt() const {
+    std::string prompt = system_prompt_;
+    if (has_cmake_project()) {
+        prompt += Config::CMAKE_PROMPT_SNIPPET;
+    }
+    if (mcp_registry_.has_running_servers()) {
+        prompt +=
+            "\n## MCP tools\n\n"
+            "Tools from external MCP servers are available.\n"
+            "These are listed among your tools with a \"mcp_<servername>_\" prefix.\n"
+            "Use them as you would any other tool.\n";
+    }
+    return prompt;
+}
+
+std::set<std::string> ChatSession::filter_allowed_tools() const {
+    std::set<std::string> allowed;
+    for (const auto& t : tools_.tools()) {
+        bool include = true;
+        if (cmake_tool_names.count(t.name) && !has_cmake_project())
+            include = false;
+        if (t.name == "run_bash" && !bash_enabled_)
+            include = false;
+        if (include)
+            allowed.insert(t.name);
+    }
+    return allowed;
+}
+
+json ChatSession::build_payload(const std::set<std::string>& allowed_tools) const {
+    json payload = {{"model", model_},
+        {"messages", conversation_.build_openai_payload(build_effective_prompt())},
+        {"tools", tools_.to_openai_tools(&allowed_tools)},
+        {"stream", true}};
+    if (!reasoning_effort_.empty())
+        payload["reasoning_effort"] = reasoning_effort_;
+    payload["stream_options"] = {{"include_usage", true}};
+    return payload;
+}
+
+Result<ChatSession::StreamResult> ChatSession::stream_chat(const json& payload) {
+    StreamResult result;
+    ToolAccumulator tool_acc;
+    bool stream_errored = false;
+    std::string stream_error;
+
+    auto on_data = [&](const json& data) {
+        // Capture token usage if present (may appear in the final chunk).
+        auto usage_it = data.find("usage");
+        if (usage_it != data.end() && usage_it->is_object()) {
+            try {
+                last_usage_ = usage_it->get<Usage>();
+            } catch (...) {
+            }
+        }
+
+        if (!data.contains("choices") || data["choices"].empty())
+            return;
+        const auto& delta = data["choices"][0]["delta"];
+
+        auto rc_it = delta.find("reasoning_content");
+        if (rc_it != delta.end() && rc_it->is_string()) {
+            auto text = rc_it->get<std::string>();
+            result.reasoning += text;
+            if (output_cb_)
+                output_cb_(text, OutputType::Reasoning);
+        }
+
+        auto tc_it = delta.find("tool_calls");
+        if (tc_it != delta.end() && tc_it->is_array()) {
+            tool_acc.apply(delta);
+        }
+
+        auto c_it = delta.find("content");
+        if (c_it != delta.end() && c_it->is_string()) {
+            auto text = c_it->get<std::string>();
+            result.content += text;
+            if (output_cb_)
+                output_cb_(text, OutputType::Content);
+        }
+    };
+
+    SSEParser::Callbacks callbacks({
+        .on_data = on_data,
+        .on_done = []() {},
+        .on_error = [&](const std::string& err) {
+            stream_errored = true;
+            stream_error = err;
+        },
+    });
+
+    auto stream_result = client_.stream_chat(payload, callbacks);
+    if (!stream_result) {
+        return std::unexpected(stream_result.error());
+    }
+
+    if (stream_errored && result.content.empty()) {
+        return std::unexpected(stream_error);
+    }
+
+    result.calls = tool_acc.finalize();
+    return result;
+}
+
+Result<void> ChatSession::execute_tool_calls(int64_t msg_id,
+    const std::vector<ToolCall>& calls, int remaining_iters) {
+    (void)remaining_iters;
+
+    if (*cancelled_) {
+        return std::unexpected("Interrupted during tool execution");
+    }
+
+    auto write_tools = tools_.tool_names_by_permission(ToolPermission::Write);
+    bool has_write = false;
+    for (const auto& call : calls) {
+        if (write_tools.count(call.name)) {
+            has_write = true;
+            break;
+        }
+    }
+
+    if (calls.size() <= 1) {
+        // Single call — simple execution
+        for (const auto& call : calls) {
+            if (*cancelled_) {
+                return std::unexpected("Interrupted during tool execution");
+            }
+            if (output_cb_) {
+                output_cb_("\xE2\x86\x92 " + call.name + "(" + call.arguments + ")",
+                    OutputType::ToolInvocation);
+            }
+            Result<std::string> tr;
+            try {
+                tr = tools_.execute(call.name, call.arguments);
+            } catch (const std::exception& e) {
+                tr = std::unexpected(std::string(e.what()));
+            }
+            conversation_.add_tool(msg_id, call.id, tr ? *tr : tr.error());
+        }
+    } else if (has_write) {
+        // Serial execution for batch with write tools
+        // (avoids race conditions on shared resources e.g. .git/index.lock)
+        for (const auto& call : calls) {
+            if (*cancelled_) {
+                return std::unexpected("Interrupted during tool execution");
+            }
+            if (output_cb_) {
+                output_cb_("\xE2\x86\x92 " + call.name + "(" + call.arguments + ")",
+                    OutputType::ToolInvocation);
+            }
+            Result<std::string> tr;
+            try {
+                tr = tools_.execute(call.name, call.arguments);
+            } catch (const std::exception& e) {
+                tr = std::unexpected(std::string(e.what()));
+            }
+            conversation_.add_tool(msg_id, call.id, tr ? *tr : tr.error());
+        }
+    } else {
+        // Parallel execution for read-only batch.
+        // Launch ALL tools first, then collect ALL results.
+        // This ensures no futures are abandoned if cancellation
+        // happens mid-collection.
+        std::vector<std::future<Result<std::string>>> futures;
+        futures.reserve(calls.size());
+        for (size_t i = 0; i < calls.size(); i++) {
+            futures.push_back(std::async(std::launch::async,
+                [&, i] {
+                    return tools_.execute(calls[i].name, calls[i].arguments);
+                }));
+        }
+
+        std::vector<Result<std::string>> results;
+        results.reserve(calls.size());
+        for (auto& f : futures) {
+            try {
+                results.push_back(f.get());
+            } catch (const std::exception& e) {
+                results.push_back(std::unexpected(std::string(e.what())));
+            }
+        }
+
+        if (*cancelled_) {
+            return std::unexpected("Interrupted during tool execution");
+        }
+
+        for (size_t i = 0; i < calls.size(); i++) {
+            if (output_cb_) {
+                output_cb_("\xE2\x86\x92 " + calls[i].name + "(" + calls[i].arguments + ")",
+                    OutputType::ToolInvocation);
+            }
+            conversation_.add_tool(msg_id, calls[i].id,
+                results[i] ? *results[i] : results[i].error());
+        }
+    }
+
+    return {};
+}
+
+// ===================================================================
+// run_once() — high-level orchestrator
+// ===================================================================
+
+Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
+    discover_context_limit();
+
+    auto turn_snapshot = conversation_.message_count();
     conversation_.add_user(user_input);
+
+    auto rollback = [&] { conversation_.truncate_conversation(turn_snapshot); };
 
     std::string last_content;
     std::string last_reasoning;
@@ -165,97 +372,12 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
 
     try {
         for (int iter = 0; iter < max_iterations_; iter++) {
-            // Build effective system prompt (conditionally include CMake/MCP sections)
-            std::string effective_prompt = system_prompt_;
-            if (has_cmake_project()) {
-                effective_prompt += Config::CMAKE_PROMPT_SNIPPET;
-            }
-            if (mcp_registry_.has_running_servers()) {
-                effective_prompt +=
-                    "\n## MCP tools\n\n"
-                    "Tools from external MCP servers are available.\n"
-                    "These are listed among your tools with a \"mcp_<servername>_\" prefix.\n"
-                    "Use them as you would any other tool.\n";
-            }
+            auto allowed = filter_allowed_tools();
+            auto payload = build_payload(allowed);
 
-            // Filter tool list: only include CMake/bash tools when their
-            // respective conditions are met.
-            std::set<std::string> allowed_tools;
-            for (const auto& t : tools_.tools()) {
-                bool include = true;
-                if (cmake_tool_names.count(t.name) && !has_cmake_project())
-                    include = false;
-                if (t.name == "run_bash" && !bash_enabled_)
-                    include = false;
-                if (include)
-                    allowed_tools.insert(t.name);
-            }
-
-            json payload = {{"model", model_},
-                {"messages", conversation_.build_openai_payload(effective_prompt)},
-                {"tools", tools_.to_openai_tools(&allowed_tools)},
-                {"stream", true}};
-            if (!reasoning_effort_.empty())
-                payload["reasoning_effort"] = reasoning_effort_;
-            payload["stream_options"] = {{"include_usage", true}};
-            std::string content;
-            std::string reasoning;
-            ToolAccumulator tool_acc;
-            bool stream_errored = false;
-            std::string stream_error;
-
-            auto on_data = [&](const json& data) {
-                // Capture token usage if present (may appear in the final chunk).
-                auto usage_it = data.find("usage");
-                if (usage_it != data.end() && usage_it->is_object()) {
-                    try {
-                        last_usage_ = usage_it->get<Usage>();
-                    } catch (...) {
-                        // Ignore malformed usage data.
-                    }
-                }
-
-                if (!data.contains("choices") || data["choices"].empty())
-                    return;
-                const auto& delta = data["choices"][0]["delta"];
-
-                auto rc_it = delta.find("reasoning_content");
-                if (rc_it != delta.end() && rc_it->is_string()) {
-                    auto text = rc_it->get<std::string>();
-                    reasoning += text;
-                    if (output_cb_)
-                        output_cb_(text, OutputType::Reasoning);
-                }
-
-                auto tc_it = delta.find("tool_calls");
-                if (tc_it != delta.end() && tc_it->is_array()) {
-                    tool_acc.apply(delta);
-                }
-
-                auto c_it = delta.find("content");
-                if (c_it != delta.end() && c_it->is_string()) {
-                    auto text = c_it->get<std::string>();
-                    content += text;
-                    if (output_cb_)
-                        output_cb_(text, OutputType::Content);
-                }
-            };
-
-            SSEParser::Callbacks callbacks({
-                .on_data = on_data,
-                .on_done = []() {},
-                .on_error =
-                    [&](const std::string& err) {
-                        stream_errored = true;
-                        stream_error = err;
-                    },
-            });
-
-            auto stream_result = client_.stream_chat(payload, callbacks);
-
+            auto stream_result = stream_chat(payload);
             if (!stream_result) {
-                // Stream transport error — roll back only this turn
-                conversation_.truncate_conversation(turn_snapshot);
+                rollback();
                 auto msg = stream_result.error();
                 auto raw = client_.last_raw_response();
                 if (!raw.empty()) {
@@ -264,128 +386,21 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
                 return std::unexpected(std::move(msg));
             }
 
-            if (stream_errored && content.empty()) {
-                // Stream error with no content — roll back only this turn
-                conversation_.truncate_conversation(turn_snapshot);
-                return std::unexpected(stream_error);
-            }
+            auto& [content, reasoning, calls] = *stream_result;
 
-            auto calls = tool_acc.finalize();
             if (!calls.empty()) {
                 auto msg_id = conversation_.add_assistant("", reasoning, calls);
 
-                if (*cancelled_) {
-                    // User cancelled — roll back only this turn
-                    conversation_.truncate_conversation(turn_snapshot);
-                    return std::unexpected("Interrupted during tool execution");
-                }
-
-                int remaining = max_iterations_ - iter - 1;
-
-                if (calls.size() > 1) {
-                    // If any tool in the batch has Write permission, serialize
-                    // the batch to avoid race conditions on shared resources
-                    // (e.g. .git/index.lock) that the per-tool mutex can't
-                    // fully protect (e.g. git_add + git_commit with all:true).
-                    auto write_tools = tools_.tool_names_by_permission(ToolPermission::Write);
-                    bool has_write = false;
-                    for (const auto& call : calls) {
-                        if (write_tools.count(call.name)) {
-                            has_write = true;
-                            break;
-                        }
-                    }
-
-                    if (has_write) {
-                        // Serial execution for write tools
-                        for (const auto& call : calls) {
-                            if (*cancelled_) {
-                                conversation_.truncate_conversation(turn_snapshot);
-                                return std::unexpected("Interrupted during tool execution");
-                            }
-                            if (output_cb_) {
-                                output_cb_(
-                                    "\xE2\x86\x92 " + call.name + "(" + call.arguments + ")",
-                                    OutputType::ToolInvocation);
-                            }
-                            Result<std::string> tr;
-                            try {
-                                tr = tools_.execute(call.name, call.arguments);
-                            } catch (const std::exception& e) {
-                                tr = std::unexpected(std::string(e.what()));
-                            }
-                            auto result = tr ? *tr : tr.error();
-                            conversation_.add_tool(msg_id, call.id, result);
-                        }
-                    } else {
-                        // Parallel execution for read-only tools
-                        // Launch ALL tools first, then collect ALL results.
-                        // This ensures no futures are abandoned if cancellation
-                        // happens mid-collection — abandoned futures would block
-                        // in their destructor and leak background tasks into the
-                        // next turn.
-                        std::vector<std::future<Result<std::string>>> futures;
-                        futures.reserve(calls.size());
-                        for (size_t i = 0; i < calls.size(); i++) {
-                            futures.push_back(std::async(std::launch::async,
-                                [&, i] {
-                                    return tools_.execute(calls[i].name, calls[i].arguments);
-                                }));
-                        }
-
-                        // Collect all tool results before checking cancellation,
-                        // so no future is abandoned.
-                        std::vector<Result<std::string>> results;
-                        results.reserve(calls.size());
-                        for (auto& f : futures) {
-                            try {
-                                results.push_back(f.get());
-                            } catch (const std::exception& e) {
-                                results.push_back(
-                                    std::unexpected(std::string(e.what())));
-                            }
-                        }
-
-                        if (*cancelled_) {
-                            conversation_.truncate_conversation(turn_snapshot);
-                            return std::unexpected("Interrupted during tool execution");
-                        }
-
-                        for (size_t i = 0; i < calls.size(); i++) {
-                            if (output_cb_) {
-                                output_cb_(
-                                    "\xE2\x86\x92 " + calls[i].name + "(" + calls[i].arguments +
-                                        ")",
-                                    OutputType::ToolInvocation);
-                            }
-                            auto result = results[i] ? *results[i] : results[i].error();
-                            conversation_.add_tool(msg_id, calls[i].id, result);
-                        }
-                    }
-                } else {
-                    for (const auto& call : calls) {
-                        if (*cancelled_) {
-                            conversation_.truncate_conversation(turn_snapshot);
-                            return std::unexpected("Interrupted during tool execution");
-                        }
-                        if (output_cb_) {
-                            output_cb_("\xE2\x86\x92 " + call.name + "(" + call.arguments + ")",
-                                OutputType::ToolInvocation);
-                        }
-                        Result<std::string> tr;
-                        try {
-                            tr = tools_.execute(call.name, call.arguments);
-                        } catch (const std::exception& e) {
-                            tr = std::unexpected(std::string(e.what()));
-                        }
-                        auto result = tr ? *tr : tr.error();
-                        conversation_.add_tool(msg_id, call.id, result);
-                    }
+                auto exec_result = execute_tool_calls(msg_id, calls,
+                    max_iterations_ - iter - 1);
+                if (!exec_result) {
+                    rollback();
+                    return std::unexpected(exec_result.error());
                 }
                 continue;
             }
 
-            // No tool calls — content response.
+            // No tool calls — content response
             conversation_.add_assistant(content, reasoning);
             last_content = content;
             last_reasoning = reasoning;
@@ -393,7 +408,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
             break;
         }
     } catch (const std::exception& e) {
-        conversation_.truncate_conversation(turn_snapshot);
+        rollback();
         return std::unexpected(std::string(e.what()));
     }
 
@@ -412,7 +427,6 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
             output_cb_("(compacting...)", OutputType::ToolInvocation);
         auto compact_result = compact();
         if (!compact_result) {
-            // Compaction failed — log but don't fail the overall turn
             if (output_cb_)
                 output_cb_("compact() failed: " + compact_result.error(), OutputType::ToolInvocation);
         }
