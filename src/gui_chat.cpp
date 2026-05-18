@@ -1,5 +1,6 @@
 #include "gui_chat.h"
 #include "client.h"
+#include "plan.h"
 #include "tools.h"
 #include <cassert>
 
@@ -740,18 +741,31 @@ void render_config_tab(PrimaryAgent& tab, const Config& cfg, ImFont* mono_font) 
         }
     }
 
-    // ── Clear button ──
+    // ── Clear Messages button ──
     {
         if (ui.clearing) {
             TextDisabled("Clearing...");
         } else if (session.conversation().message_count() > 0) {
             int msg_count = static_cast<int>(session.conversation().message_count());
-            string btn_label = "Clear (" + std::to_string(msg_count) + " messages)";
+            string btn_label = "Clear Messages (" + std::to_string(msg_count) + ")";
             if (Button(btn_label.c_str())) {
                 ui.clear_requested = true;
             }
         } else {
             TextDisabled("No messages to clear");
+        }
+    }
+
+    // ── Clear Plan button ──
+    {
+        auto plan_content = ::plan.read_plan();
+        bool has_plan = plan_content && *plan_content != "(empty plan)";
+        if (has_plan) {
+            if (Button("Clear Plan")) {
+                ::plan.write_plan("");
+            }
+        } else {
+            TextDisabled("No plan to clear");
         }
     }
 
