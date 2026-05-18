@@ -52,6 +52,13 @@ inline bool operator==(const McpEndpoint& a, const McpEndpoint& b) {
 }
 
 /// A single provider definition from cima.json.
+/// A single subagent definition from cima.json.
+struct SubagentConfig {
+    std::string name;        // unique identifier, used as tab title
+    std::string description; // shown in tool description
+    bool read_only = false;  // if true, no write tools (file, git, wiki)
+};
+
 struct Provider {
     std::string name;               // unique identifier, e.g. "opencode.go"
     std::string api_base;           // e.g. "https://api.opencode.go/v1"
@@ -69,6 +76,7 @@ struct Config {
     int max_tool_iterations = 100;
     int context_limit = 300000; // model context window (tokens)
     std::map<std::string, std::string> snippets; // from cima.json
+    std::vector<SubagentConfig> subagents;       // from cima.json
 
     // Tool timeouts (seconds, 0 = no timeout)
     int bash_timeout = 30;
@@ -94,6 +102,10 @@ struct Config {
 
     /// CMake prompt snippet — appended to the system prompt only when
     /// CMakeLists.txt exists in the workspace.
+    /// Subagent system prompt — simpler, no plan tools or wiki descriptions.
+    static constexpr const char* SUBAGENT_SYSTEM_PROMPT =
+        "You are an AI coding assistant working as a subagent.\n";
+
     static constexpr const char* CMAKE_PROMPT_SNIPPET = R"(
 ## CMake tools
 

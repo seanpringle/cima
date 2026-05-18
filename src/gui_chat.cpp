@@ -898,6 +898,223 @@ static std::string expand_tags(std::string input, Wiki* wiki,
     return result;
 }
 
+void render_subagent_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
+    auto& ui = tab.ui_state;
+    auto& session = *tab.session;
+
+    // ── Helper: start fetching models for the current provider ──
+    auto trigger_model_fetch = [&]() {
+        ui.models_loaded = true;
+        ui.models_validated = false;
+        ui.models_fetched->store(false, std::memory_order_release);
+        ui.available_models.clear();
+        ui.models_error.clear();
+
+        std::string api_base;
+        std::string api_key;
+        for (const auto& p : cfg.providers) {
+            if (p.name == tab.provider_name) {
+                api_base = p.api_base;
+                api_key = p.api_key;
+                break;
+            }
+        }
+        if (api_base.empty()) {
+            api_base = cfg.providers[0].api_base;
+            api_key = cfg.providers[0].api_key;
+        }
+
+        std::packaged_task<void()> task([&ui, api_base, api_key]() {
+            ChatClient client(api_base, api_key);
+            auto result = client.fetch_models();
+            if (result) {
+                ui.available_models = std::move(*result);
+            } else {
+                ui.models_error = std::move(result.error());
+            }
+            ui.models_fetched->store(true, std::memory_order_release);
+        });
+        ui.models_future = task.get_future();
+        std::thread(std::move(task)).detach();
+    };
+
+    // ── Fetch models on first render ──
+    if (!ui.models_loaded) {
+        trigger_model_fetch();
+    }
+
+    // ── Provider combo ──
+    PushFont(mono_font);
+    {
+        string label = tab.provider_name.empty() ? cfg.providers[0].name : tab.provider_name;
+        if (BeginCombo("Provider", label.c_str())) {
+            for (const auto& p : cfg.providers) {
+                bool is_selected = (p.name == tab.provider_name);
+                if (Selectable(p.name.c_str(), is_selected)) {
+                    if (p.name != tab.provider_name) {
+                        session.set_provider(p);
+                        tab.provider_name = p.name;
+                        tab.model_name = p.model;
+                        tab.reasoning_effort = p.reasoning_effort;
+                        trigger_model_fetch();
+                    }
+                }
+                if (is_selected) SetItemDefaultFocus();
+            }
+            EndCombo();
+        }
+    }
+    PopFont();
+
+    // ── Model combo (or manual text input if fetch failed) ──
+    PushFont(mono_font);
+
+    if (!ui.models_fetched->load(std::memory_order_acquire)) {
+        PushStyleColor(ImGuiCol_Text, IM_COL32(128, 128, 128, 255));
+        Text("Model:");
+        SameLine();
+        TextUnformatted("Loading models...");
+        PopStyleColor();
+    } else if (!ui.models_error.empty() || ui.available_models.empty()) {
+        PushStyleColor(ImGuiCol_Text, IM_COL32(255, 100, 100, 255));
+        Text("Model:");
+        SameLine();
+        if (!ui.models_error.empty()) {
+            TextUnformatted(ui.models_error.c_str());
+        } else {
+            TextDisabled("(no models returned)");
+        }
+        PopStyleColor();
+        char buf[256];
+        strncpy(buf, session.model().c_str(), sizeof(buf) - 1);
+        buf[sizeof(buf) - 1] = '\0';
+        if (InputText("##model-manual", buf, sizeof(buf), ImGuiInputTextFlags_EnterReturnsTrue)) {
+            std::string new_model(buf);
+            if (!new_model.empty()) {
+                session.set_model(new_model);
+                tab.model_name = new_model;
+            }
+        }
+    } else {
+        if (BeginCombo("Model", session.model().c_str())) {
+            for (const auto& m : ui.available_models) {
+                bool is_selected = (m == session.model());
+                if (Selectable(m.c_str(), is_selected)) {
+                    session.set_model(m);
+                    tab.model_name = m;
+                }
+                if (is_selected) SetItemDefaultFocus();
+            }
+            EndCombo();
+        }
+    }
+    PopFont();
+
+    // Validate current model selection (auto-select first if current not found)
+    if (ui.models_fetched->load(std::memory_order_acquire) && !ui.models_validated &&
+        !ui.available_models.empty()) {
+        ui.models_validated = true;
+        const auto& current = session.model();
+        bool found = std::any_of(ui.available_models.begin(), ui.available_models.end(),
+            [&current](const std::string& m) { return m == current; });
+        if (!found) {
+            session.set_model(ui.available_models.front());
+            tab.model_name = ui.available_models.front();
+        }
+    }
+
+    Separator();
+
+    // ── Reasoning effort combo ──
+    PushFont(mono_font);
+    {
+        std::string re = tab.reasoning_effort.empty()
+                             ? session.reasoning_effort()
+                             : tab.reasoning_effort;
+
+        std::vector<std::string> efforts;
+        for (const auto& p : cfg.providers) {
+            if (p.name == tab.provider_name) {
+                efforts = p.reasoning_efforts;
+                break;
+            }
+        }
+
+        if (BeginCombo("Reasoning Effort", re.empty() ? "(unset)" : re.c_str())) {
+            if (Selectable("(unset)", re.empty())) {
+                tab.reasoning_effort.clear();
+                session.set_reasoning_effort("");
+            }
+            for (const auto& e : efforts) {
+                bool is_selected = (e == re);
+                if (Selectable(e.c_str(), is_selected)) {
+                    tab.reasoning_effort = e;
+                    session.set_reasoning_effort(e);
+                }
+                if (is_selected) SetItemDefaultFocus();
+            }
+            EndCombo();
+        }
+    }
+    PopFont();
+
+    Separator();
+
+    // ── Read-only chat history ──
+    // Drain any pending streaming output first
+    drain_pending(ui, *tab.chat_state);
+
+    // Check if subagent chat finished
+    if (tab.chat_state->running && tab.chat_state->future.valid() &&
+        tab.chat_state->future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        try {
+            auto result = tab.chat_state->future.get();
+            (void)result; // result already streamed via callbacks
+        } catch (const std::exception& e) {
+            push_entry(ui, EntryType::Content, "Error: " + std::string(e.what()), false);
+        }
+        tab.chat_state->running = false;
+    }
+
+    // Render entries
+    BeginChild("##subagent-chat", ImVec2(0, 0), ImGuiChildFlags_None, ImGuiWindowFlags_None);
+    for (const auto& entry : ui.entries) {
+        switch (entry.type) {
+        case EntryType::UserText:
+            PushStyleColor(ImGuiCol_Text, IM_COL32(150, 200, 255, 255));
+            TextUnformatted(("User: " + entry.text).c_str());
+            PopStyleColor();
+            break;
+        case EntryType::Reasoning:
+            PushStyleColor(ImGuiCol_Text, IM_COL32(180, 180, 140, 255));
+            if (entry.is_streaming) {
+                TextUnformatted(("Reasoning: " + entry.text).c_str());
+            } else {
+                render_content(entry.text, mono_font);
+            }
+            PopStyleColor();
+            break;
+        case EntryType::Content:
+            if (entry.is_streaming) {
+                TextUnformatted(("Response: " + entry.text).c_str());
+            } else {
+                render_content(entry.text, mono_font);
+            }
+            break;
+        case EntryType::ToolCall:
+            TextDisabled("[%s]", entry.text.c_str());
+            break;
+        }
+    }
+
+    if (tab.chat_state->running) {
+        SameLine();
+        TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Subagent is thinking...");
+    }
+
+    EndChild();
+}
+
 void render_chat_ui(TabInfo& tab, bool& done) {
     auto& ui = tab.ui_state;
     auto& chat = *tab.chat_state;

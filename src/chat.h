@@ -34,6 +34,12 @@ class ChatSession {
     ChatSession(ChatSession&&) = delete;
     ChatSession& operator=(ChatSession&&) = delete;
 
+    /// Create a subagent session with restricted tools and a simpler system prompt.
+    /// If read_only is true, write tools (file, git, wiki) are excluded.
+    static std::unique_ptr<ChatSession> create_subagent(
+        const Config& config, const Provider& provider, bool read_only,
+        CancellationToken cancelled, Wiki* wiki);
+
     Result<ChatResult> run_once(const std::string& user_input);
     void set_model(const std::string& m) { model_ = m; }
     const std::string& model() const { return model_; }
@@ -110,6 +116,12 @@ class ChatSession {
     /// Access the underlying MCP registry (for GUI status queries).
     McpRegistry& mcp_registry() { return mcp_registry_; }
     const McpRegistry& mcp_registry() const { return mcp_registry_; }
+
+    /// Register the call_subagent tool in this session's tool registry.
+    /// The lookup callable receives a subagent name and returns its ChatSession*.
+    void register_call_subagent_tool(SubagentLookup lookup, SubagentRunningCheck is_running) {
+        tools_.add(make_call_subagent_tool(std::move(lookup), std::move(is_running)));
+    }
 
     /// Access the tool registry (for testing and GUI).
     const ToolRegistry& tools_for_testing() const { return tools_; }

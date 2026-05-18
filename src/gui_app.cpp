@@ -385,6 +385,68 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
         }
     }
 
+    // ── Subagent tab creation ──
+    // (must happen after regular tabs are created so we have a main session to register the tool in)
+    auto add_subagent_tab = [&](const SubagentConfig& sa, int provider_idx) {
+        const auto& provider = providers[provider_idx];
+
+        TabInfo tab;
+        tab.id = next_tab_id++;
+        tab.is_subagent = true;
+        tab.subagent_name = sa.name;
+        tab.title = sa.name;
+        tab.read_only_tools = sa.read_only;
+        tab.provider_name = provider.name;
+        tab.model_name = provider.model;
+        tab.reasoning_effort = provider.reasoning_effort;
+
+        tab.chat_state = std::make_unique<AsyncChatState>();
+        tab.session = ChatSession::create_subagent(
+            cfg, provider, sa.read_only, tab.chat_state->cancelled, &wiki);
+        tab.ui_state.mono_font = mono_font;
+        tab.session->set_agent_name(sa.name);
+        tab.session->set_output_callback(
+            [cs = tab.chat_state.get()](const std::string& text, OutputType type) {
+                std::lock_guard<std::mutex> lock(cs->mutex);
+                cs->pending.emplace_back(text, type);
+            });
+
+        tabs.push_back(std::move(tab));
+    };
+
+    // Create subagent tabs from config
+    for (const auto& sa : cfg.subagents) {
+        add_subagent_tab(sa, 0);
+    }
+
+    // Register call_subagent tool in the first (main) session
+    // so the primary agent can invoke subagents.
+    if (!tabs.empty()) {
+        // Find the first non-subagent tab (primary agent)
+        for (auto& t : tabs) {
+            if (!t.is_subagent) {
+                t.session->register_call_subagent_tool(
+                    [&tabs](const std::string& name) -> ChatSession* {
+                            for (auto& t2 : tabs) {
+                                if (t2.is_subagent && t2.subagent_name == name) {
+                                    return t2.session.get();
+                                }
+                            }
+                            return nullptr;
+                        },
+                        [&tabs](const std::string& name) -> bool {
+                            for (auto& t2 : tabs) {
+                                if (t2.is_subagent && t2.subagent_name == name) {
+                                    return t2.chat_state->running;
+                                }
+                            }
+                            return false;
+                        });
+                break;
+            }
+        }
+    }
+
     // Focus the first chat tab
     if (!tabs.empty()) {
         focus_tab_id = tabs.back().id;
@@ -526,6 +588,11 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                                 ImGuiChildFlags_None,
                                 ImGuiWindowFlags_None);
 
+                            // Track which subagent tab is selected in the session-tabs
+                            // -1 = Config/Plan selected (show regular chat), otherwise the
+                            // TabInfo::id of the selected subagent tab
+                            int selected_subagent_id = -1;
+
                             if (BeginTabBar("##session-tabs")) {
                                 // Config first so it's the default focus — model list loads
                                 // as soon as the assistant tab is created.
@@ -533,6 +600,20 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                                     render_config_tab(tab, cfg, mono_font);
                                     EndTabItem();
                                 }
+
+                                // Subagent tabs between Config and Plan
+                                for (auto& sa_tab : tabs) {
+                                    if (!sa_tab.is_subagent) continue;
+                                    PushID(sa_tab.id);
+                                    if (BeginTabItem(("   " + sa_tab.title + "   ##sa-" +
+                                                          std::to_string(sa_tab.id))
+                                                         .c_str())) {
+                                        selected_subagent_id = sa_tab.id;
+                                        EndTabItem();
+                                    }
+                                    PopID();
+                                }
+
                                 if (BeginTabItem("   Plan   ")) {
                                     auto plan_result = tab.session->plan().read_plan();
                                     if (plan_result) {
@@ -552,7 +633,7 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                                 GetColorU32(ImGuiCol_Separator),
                                 GetStyle().ChildBorderSize);
 
-                            // Right panel: Chat UI
+                            // Right panel: Chat UI or subagent UI
                             PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
                             SetCursorPos(chatPos);
                             BeginChild("##tab_chat",
@@ -560,7 +641,19 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                                 ImGuiChildFlags_None,
                                 ImGuiWindowFlags_None);
                             PopStyleVar();
-                            render_chat_ui(tab, done);
+
+                            // Determine what to render in the right panel
+                            // If a subagent tab is selected in session-tabs, show its content
+                            if (selected_subagent_id >= 0) {
+                                for (auto& sa_tab : tabs) {
+                                    if (sa_tab.is_subagent && sa_tab.id == selected_subagent_id) {
+                                        render_subagent_tab(sa_tab, cfg, mono_font);
+                                        break;
+                                    }
+                                }
+                            } else {
+                                render_chat_ui(tab, done);
+                            }
                             EndChild();
                         }
 
@@ -604,9 +697,11 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
         }
     }
 
-    // ── Save all tabs to consolidated JSON files ──
+    // ── Save all non-subagent tabs to consolidated JSON files ──
     for (auto& tab : tabs) {
-        save_tab_to_disk(tab, *app_session);
+        if (!tab.is_subagent) {
+            save_tab_to_disk(tab, *app_session);
+        }
     }
 
     // ── Update manifest with current tabs ──
@@ -617,11 +712,13 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
             app_session->set_last_cwd(cwd.string());
         }
 
-        // Rebuild assistant file list from tabs and persist once
+        // Rebuild assistant file list from tabs and persist once (skip subagents)
         std::vector<std::string> filenames;
         filenames.reserve(tabs.size());
         for (const auto& tab : tabs) {
-            filenames.push_back(tab.title + ".json");
+            if (!tab.is_subagent) {
+                filenames.push_back(tab.title + ".json");
+            }
         }
         app_session->set_assistant_files(filenames);  // calls save_manifest() internally
     }

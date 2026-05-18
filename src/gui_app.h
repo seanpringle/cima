@@ -91,6 +91,11 @@ struct TabInfo {
 
     /// Snippets from cima.json (shared across all tabs)
     const std::map<std::string, std::string>* snippets = nullptr;
+
+    // Subagent-specific fields
+    bool is_subagent = false;        // true for subagent tabs
+    std::string subagent_name;       // mapped name from SubagentConfig
+    bool read_only_tools = false;    // from SubagentConfig.read_only
 };
 
 int gui_main(Config cfg, const std::string& session_name, bool force = false);

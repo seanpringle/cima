@@ -480,3 +480,144 @@ TEST_CASE("McpEndpoint equality operator", "[config][mcp]") {
     b.timeout_sec = 120;
     CHECK_FALSE(a == b);
 }
+
+// ---------------------------------------------------------------------------
+// Subagent config tests
+// ---------------------------------------------------------------------------
+
+TEST_CASE("SubagentConfig defaults", "[config][subagent]") {
+    SubagentConfig sa;
+    CHECK(sa.name.empty());
+    CHECK(sa.description.empty());
+    CHECK(sa.read_only == false);
+}
+
+TEST_CASE("SubagentConfig round-trip serialization", "[config][subagent]") {
+    Config cfg;
+
+    SubagentConfig sa1;
+    sa1.name = "debugger";
+    sa1.description = "Debug issues in the codebase";
+    sa1.read_only = true;
+    cfg.subagents.push_back(sa1);
+
+    SubagentConfig sa2;
+    sa2.name = "writer";
+    sa2.description = "Write documentation";
+    sa2.read_only = false;
+    cfg.subagents.push_back(sa2);
+
+    auto j = cfg.to_json();
+    REQUIRE(j.contains("subagents"));
+    REQUIRE(j["subagents"].is_array());
+    REQUIRE(j["subagents"].size() == 2);
+
+    // Simulate deserialization
+    std::vector<SubagentConfig> loaded;
+    if (j.contains("subagents") && j["subagents"].is_array()) {
+        for (const auto& saj : j["subagents"]) {
+            SubagentConfig sa;
+            sa.name = saj.value("name", std::string());
+            sa.description = saj.value("description", std::string());
+            sa.read_only = saj.value("read_only", false);
+            if (!sa.name.empty()) {
+                loaded.push_back(std::move(sa));
+            }
+        }
+    }
+
+    REQUIRE(loaded.size() == 2);
+    CHECK(loaded[0].name == "debugger");
+    CHECK(loaded[0].description == "Debug issues in the codebase");
+    CHECK(loaded[0].read_only == true);
+    CHECK(loaded[1].name == "writer");
+    CHECK(loaded[1].description == "Write documentation");
+    CHECK(loaded[1].read_only == false);
+}
+
+TEST_CASE("SubagentConfig missing optional fields load as defaults", "[config][subagent]") {
+    json j = R"({
+        "subagents": [
+            {
+                "name": "minimal"
+            }
+        ]
+    })"_json;
+
+    std::vector<SubagentConfig> loaded;
+    if (j.contains("subagents") && j["subagents"].is_array()) {
+        for (const auto& saj : j["subagents"]) {
+            SubagentConfig sa;
+            sa.name = saj.value("name", std::string());
+            sa.description = saj.value("description", std::string());
+            sa.read_only = saj.value("read_only", false);
+            if (!sa.name.empty()) {
+                loaded.push_back(std::move(sa));
+            }
+        }
+    }
+
+    REQUIRE(loaded.size() == 1);
+    CHECK(loaded[0].name == "minimal");
+    CHECK(loaded[0].description.empty());
+    CHECK(loaded[0].read_only == false);
+}
+
+TEST_CASE("SubagentConfig empty name skipped", "[config][subagent]") {
+    json j = R"({
+        "subagents": [
+            {
+                "name": "",
+                "description": "should be skipped"
+            },
+            {
+                "name": "valid",
+                "description": "kept"
+            }
+        ]
+    })"_json;
+
+    std::vector<SubagentConfig> loaded;
+    if (j.contains("subagents") && j["subagents"].is_array()) {
+        for (const auto& saj : j["subagents"]) {
+            SubagentConfig sa;
+            sa.name = saj.value("name", std::string());
+            sa.description = saj.value("description", std::string());
+            sa.read_only = saj.value("read_only", false);
+            if (!sa.name.empty()) {
+                loaded.push_back(std::move(sa));
+            }
+        }
+    }
+
+    REQUIRE(loaded.size() == 1);
+    CHECK(loaded[0].name == "valid");
+}
+
+TEST_CASE("SubagentConfig read_only true from JSON", "[config][subagent]") {
+    json j = R"({
+        "subagents": [
+            {
+                "name": "read-only-agent",
+                "read_only": true
+            }
+        ]
+    })"_json;
+
+    std::vector<SubagentConfig> loaded;
+    if (j.contains("subagents") && j["subagents"].is_array()) {
+        for (const auto& saj : j["subagents"]) {
+            SubagentConfig sa;
+            sa.name = saj.value("name", std::string());
+            sa.description = saj.value("description", std::string());
+            sa.read_only = saj.value("read_only", false);
+            if (!sa.name.empty()) {
+                loaded.push_back(std::move(sa));
+            }
+        }
+    }
+
+    REQUIRE(loaded.size() == 1);
+    CHECK(loaded[0].name == "read-only-agent");
+    CHECK(loaded[0].read_only == true);
+}

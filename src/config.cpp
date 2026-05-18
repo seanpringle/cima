@@ -74,9 +74,17 @@ json Config::to_json() const {
     j["grep_timeout"] = grep_timeout;
     j["web_search_timeout"] = web_search_timeout;
     j["web_fetch_timeout"] = web_fetch_timeout;
-    j["font_sans"] = font_sans;
-    j["font_mono"] = font_mono;
-    j["font_size"] = font_size;
+    // ── Subagents ──
+    json sa_arr = json::array();
+    for (const auto& sa : subagents) {
+        json saj;
+        saj["name"] = sa.name;
+        saj["description"] = sa.description;
+        saj["read_only"] = sa.read_only;
+        sa_arr.push_back(std::move(saj));
+    }
+    j["subagents"] = std::move(sa_arr);
+
     return j;
 }
 
@@ -193,6 +201,19 @@ Config Config::load() {
                 }
 
                 cfg.mcp_servers.push_back(std::move(m));
+            }
+        }
+
+        // ── Parse subagents array ──
+        if (j.contains("subagents") && j["subagents"].is_array()) {
+            for (const auto& saj : j["subagents"]) {
+                SubagentConfig sa;
+                sa.name = saj.value("name", std::string());
+                sa.description = saj.value("description", std::string());
+                sa.read_only = saj.value("read_only", false);
+                if (!sa.name.empty()) {
+                    cfg.subagents.push_back(std::move(sa));
+                }
             }
         }
 

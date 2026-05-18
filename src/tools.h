@@ -203,6 +203,8 @@ Tool make_write_wiki_page_tool(Wiki& wiki);
 Tool make_edit_wiki_page_tool(Wiki& wiki);
 Tool make_delete_wiki_page_tool(Wiki& wiki);
 
+class ChatSession; // forward decl for SubagentLookup
+
 // ── CMake tools ──
 Tool make_cmake_configure_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout,
     CancellationToken cancelled);
@@ -210,5 +212,13 @@ Tool make_cmake_build_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeou
     CancellationToken cancelled);
 Tool make_cmake_ctest_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout,
     CancellationToken cancelled);
+
+// ── Subagent tool ──
+// The execute callback receives (name, request) JSON.
+// `lookup_subagent(name)` must return a pointer to the subagent's ChatSession
+// or nullptr if not found.  Returns true if the subagent is currently running.
+using SubagentLookup = std::function<ChatSession*(const std::string& name)>;
+using SubagentRunningCheck = std::function<bool(const std::string& name)>;
+Tool make_call_subagent_tool(SubagentLookup lookup, SubagentRunningCheck is_running);
 
 

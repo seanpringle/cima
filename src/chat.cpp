@@ -51,6 +51,67 @@ ChatSession::ChatSession(const Config& config, const Provider& provider,
 
 }
 
+// ===================================================================
+// Subagent factory
+// ===================================================================
+
+std::unique_ptr<ChatSession> ChatSession::create_subagent(
+    const Config& config, const Provider& provider, bool read_only,
+    CancellationToken cancelled, Wiki* wiki) {
+    // Build a simpler system prompt for subagents
+    std::string sp = Config::SUBAGENT_SYSTEM_PROMPT;
+
+    if (!read_only) {
+        sp += "You have access to read and write file tools, wiki tools, and git tools.\n";
+    }
+
+    // Check for CMake project and append CMake snippet if present
+    std::error_code ec;
+    if (std::filesystem::exists(
+            std::filesystem::current_path() / "CMakeLists.txt", ec)) {
+        sp += Config::CMAKE_PROMPT_SNIPPET;
+    }
+
+    // Create the session using the private constructor via a wrapper
+    // We construct in-place since the constructor is complex.
+    auto session = std::make_unique<ChatSession>(
+        config, provider, std::move(cancelled));
+    session->system_prompt_ = std::move(sp);
+
+    // Remove bash and plan tools
+    session->tools_.remove("run_bash");
+    session->tools_.remove("write_plan");
+    session->tools_.remove("read_plan");
+
+    // Conditionally remove write tools
+    if (read_only) {
+        // File write tools
+        session->tools_.remove("write_file");
+        session->tools_.remove("edit_file");
+        session->tools_.remove("delete_file");
+        session->tools_.remove("move_file");
+        session->tools_.remove("rename_file");
+        // Git write tools
+        session->tools_.remove("git_add");
+        session->tools_.remove("git_commit");
+        session->tools_.remove("git_restore");
+        session->tools_.remove("git_show");
+        // Wiki write tools — removed after set_wiki below if wiki is set
+    }
+
+    // Set up wiki (with restricted write tools if read_only)
+    if (wiki) {
+        session->set_wiki(wiki);
+        if (read_only) {
+            session->tools_.remove("write_wiki_page");
+            session->tools_.remove("edit_wiki_page");
+            session->tools_.remove("delete_wiki_page");
+        }
+    }
+
+    return session;
+}
+
 void ChatSession::set_provider(const Provider& provider) {
     provider_name_ = provider.name;
     api_base_ = provider.api_base;
