@@ -481,7 +481,7 @@ void drain_pending(ChatUIState& ui, AsyncChatState& chat) {
     chat.pending.clear();
 }
 
-void render_config_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
+void render_config_tab(PrimaryAgent& tab, const Config& cfg, ImFont* mono_font) {
     auto& ui = tab.ui_state;
     auto& session = *tab.session;
 
@@ -792,7 +792,7 @@ static std::string expand_tags(std::string input) {
     return result;
 }
 
-void render_subagent_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
+void render_subagent_tab(SubAgent& tab, const Config& cfg, ImFont* mono_font) {
     auto& ui = tab.ui_state;
     auto& session = *tab.session;
 
@@ -958,7 +958,7 @@ void render_subagent_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
 
 }
 
-void render_subagent_chat(TabInfo& tab, ImFont* mono_font) {
+void render_subagent_chat(SubAgent& tab, ImFont* mono_font) {
     auto& ui = tab.ui_state;
     auto& chat = *tab.chat_state;
 
@@ -1009,13 +1009,13 @@ void render_subagent_chat(TabInfo& tab, ImFont* mono_font) {
         case EntryType::ToolCall:
             PushStyleColor(ImGuiCol_Text, IM_COL32(255, 165, 0, 255));
             PushTextWrapPos(0);
-            if (mono_font) PushFont(mono_font);
+            PushFont(mono_font);
             text_unformatted_ellipsis(entry.text);
             for (; i + 1 < ui.entries.size() && ui.entries[i + 1].type == EntryType::ToolCall;
                 i++) {
                 text_unformatted_ellipsis(ui.entries[i + 1].text);
             }
-            if (mono_font) PopFont();
+            PopFont();
             NewLine();
             PopTextWrapPos();
             PopStyleColor();
@@ -1035,7 +1035,7 @@ void render_subagent_chat(TabInfo& tab, ImFont* mono_font) {
     EndChild();
 }
 
-void render_chat_ui(TabInfo& tab, bool& done) {
+void render_chat_ui(Agent& tab, bool& done) {
     auto& ui = tab.ui_state;
     auto& chat = *tab.chat_state;
     auto& session = *tab.session;
@@ -1135,24 +1135,24 @@ void render_chat_ui(TabInfo& tab, bool& done) {
                 break;
             case EntryType::Reasoning:
                 PushStyleColor(ImGuiCol_Text, IM_COL32(160, 160, 160, 255));
-                render_content("Thinking: " + entry.text, ui.mono_font);
+                render_content("Thinking: " + entry.text);
                 PopStyleColor();
                 break;
             case EntryType::Content:
                 PushStyleColor(ImGuiCol_Text, GetColorU32(ImGuiCol_Text));
-                render_content(entry.text, ui.mono_font);
+                render_content(entry.text);
                 PopStyleColor();
                 break;
             case EntryType::ToolCall:
                 PushStyleColor(ImGuiCol_Text, IM_COL32(255, 165, 0, 255));
                 PushTextWrapPos(0);
-                if (ui.mono_font) PushFont(ui.mono_font);
+                PushFont(mono_font);
                 text_unformatted_ellipsis(entry.text);
                 for (; i + 1 < ui.entries.size() && ui.entries[i + 1].type == EntryType::ToolCall;
                     i++) {
                     text_unformatted_ellipsis(ui.entries[i + 1].text);
                 }
-                if (ui.mono_font) PopFont();
+                PopFont();
                 NewLine();
                 PopTextWrapPos();
                 PopStyleColor();
@@ -1228,7 +1228,7 @@ void render_chat_ui(TabInfo& tab, bool& done) {
 
     SetNextItemWidth(GetContentRegionAvail().x);
 
-    PushFont(ui.mono_font);
+    PushFont(mono_font);
 
     auto trimWhite = [](string_view cur) -> string_view {
         while (cur.size() && isspace(cur.front())) cur.remove_prefix(1);

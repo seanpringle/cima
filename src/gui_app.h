@@ -29,7 +29,6 @@ struct ChatUIState {
     std::vector<DisplayEntry> entries;
     bool auto_scroll = true;
     bool request_cancel = false;
-    ImFont* mono_font = nullptr;
     int next_seq = 1;
     // show_raw removed
     /// Load entries from the JSON Lines log file into `entries`.
@@ -73,29 +72,4 @@ struct ChatUIState {
     // (workspace_path_buf removed — safe_dir locked to cwd)
 };
 
-struct TabInfo {
-    std::unique_ptr<ChatSession> session;
-    std::unique_ptr<AsyncChatState> chat_state;
-    ChatUIState ui_state;
-    int id = 0;
-    std::string title;          // Culture ship name (display label)
-    std::string model_name;     // actual model name (shown in dropdown)
-    std::string provider_name;  // which provider this tab belongs to
-    std::string reasoning_effort; // per-tab reasoning effort override
-    std::string git_branch;
-
-    bool bash_enabled = false;       // run_bash tool enabled for this tab
-
-    // MCP: per-server enabled state (persisted in assistant_data.json)
-    std::map<std::string, bool> mcp_enabled;
-
-    // MCP: per-server error message (transient, not persisted)
-    std::map<std::string, std::string> mcp_error;
-
-    // Subagent-specific fields
-    bool is_subagent = false;        // true for subagent tabs
-    std::string subagent_name;       // mapped name from SubagentConfig
-    bool read_only_tools = false;    // from SubagentConfig.read_only
-};
-
-int gui_main(const std::string& session_name, bool force = false);
+int gui_main(const std::string& session_name);

@@ -35,9 +35,7 @@ std::filesystem::path AppSession::sessions_base_dir() {
 // Constructor
 // -----------------------------------------------------------------------
 
-AppSession::AppSession(const std::string& name, bool force) : session_name_(name) {
-    (void)force;
-
+AppSession::AppSession(const std::string& name) : session_name_{name} {
     if (name.empty()) {
         throw std::invalid_argument("session name must not be empty");
     }
@@ -59,7 +57,7 @@ AppSession::AppSession(const std::string& name, bool force) : session_name_(name
         // Existing session — load last_cwd from it
         auto result = load_session();
         if (result) {
-            last_cwd_ = result->last_cwd;
+            last_cwd_ = session_data_.last_cwd;
         }
     } else {
         // Fresh session — record current working directory
@@ -67,6 +65,10 @@ AppSession::AppSession(const std::string& name, bool force) : session_name_(name
         last_cwd_ = ec ? std::string() : cwd.string();
         is_new_ = true;
     }
+}
+
+AppSession::~AppSession() {
+    save_session();
 }
 
 // -----------------------------------------------------------------------
@@ -81,7 +83,7 @@ std::string AppSession::session_file_path() const {
 // Session data persistence
 // -----------------------------------------------------------------------
 
-Result<void> AppSession::save_session(const SessionData& data) {
+Result<void> AppSession::save_session() {
     try {
         auto path = std::filesystem::path(session_file_path());
         auto tmp_path = path;
@@ -94,7 +96,7 @@ Result<void> AppSession::save_session(const SessionData& data) {
                 return std::unexpected("Failed to open temporary file for writing: " +
                                        tmp_path.string());
             }
-            file << data.to_json().dump(2) << std::endl;
+            file << session_data_.to_json().dump(2) << std::endl;
         }
 
         // Atomic rename (POSIX)
@@ -105,21 +107,20 @@ Result<void> AppSession::save_session(const SessionData& data) {
             return std::unexpected("Failed to rename session file: " + ec.message());
         }
 
-        last_cwd_ = data.last_cwd;
+        last_cwd_ = session_data_.last_cwd;
         return {};
     } catch (const std::exception& e) {
         return std::unexpected(std::string("Failed to save session: ") + e.what());
     }
 }
 
-Result<SessionData> AppSession::load_session() {
+Result<void> AppSession::load_session() {
     auto path = session_file_path();
-    SessionData data;
-    auto result = data.load_from_file(path);
+    auto result = session_data_.load_from_file(path);
     if (!result) {
         return std::unexpected(result.error());
     }
-    return data;
+    return {};
 }
 
 // -----------------------------------------------------------------------

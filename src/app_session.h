@@ -16,7 +16,8 @@ class AppSession {
     /// Construct/resume or create a new session.
     /// @param name   User-chosen session name (used as <session>.json filename)
     /// @param force  If true, integrity check failures produce warnings instead of errors
-    AppSession(const std::string& name, bool force = false);
+    AppSession(const std::string& name);
+    ~AppSession();
 
     AppSession(const AppSession&) = delete;
     AppSession& operator=(const AppSession&) = delete;
@@ -35,15 +36,13 @@ class AppSession {
     std::string session_file_path() const;
 
     // ── Session data persistence ──
-
     /// Save session data atomically to the session file.
     /// Writes to a .tmp file, then renames atomically on POSIX.
-    Result<void> save_session(const SessionData& data);
+    Result<void> save_session();
+    Result<void> load_session();
 
-    /// Load session data from the session file.
-    /// Returns a default-constructed SessionData if the file doesn't exist
-    /// (first-run behaviour).  On parse error returns an error result.
-    Result<SessionData> load_session();
+    SessionData& session_data() { return session_data_; }
+    const SessionData& session_data() const { return session_data_; }
 
     // ── Metadata ──
 
@@ -63,4 +62,5 @@ class AppSession {
     std::string session_name_;
     std::string last_cwd_;
     bool is_new_ = false;
+    SessionData session_data_;
 };

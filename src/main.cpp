@@ -10,12 +10,11 @@
 
 static void print_usage() {
     std::cout
-        << "Usage: cima [--force] [<session>]\n\n"
+        << "Usage: cima [<session>]\n\n"
         << "Arguments:\n"
         << "  <session>           Session name (default: \"default\")\n"
         << "                      Stored in ~/.local/state/cima/<session>/\n\n"
         << "Options:\n"
-        << "  --force             Skip session integrity checks (warn + continue)\n"
         << "  -h, --help          Print this help\n\n"
         << "Configuration file: ~/.config/cima/cima.json\n"
         << "  Created automatically on first run with default values.\n"
@@ -35,7 +34,6 @@ int main(int argc, char* argv[]) {
     std::srand(static_cast<unsigned>(std::time(nullptr)));
 
     std::string session_name;
-    bool force = false;
 
     // Load config from file first
     cfg = Config::load();
@@ -46,9 +44,7 @@ int main(int argc, char* argv[]) {
             print_usage();
             return 0;
         }
-        if (arg == "--force") {
-            force = true;
-        } else if (arg[0] == '-') {
+        if (arg[0] == '-') {
             std::cerr << "Unknown option: " << arg << "\n\n";
             print_usage();
             return 1;
@@ -68,7 +64,7 @@ int main(int argc, char* argv[]) {
 
     int exit_code = 0;
     try {
-        exit_code = gui_main(session_name, force);
+        exit_code = gui_main(session_name);
     } catch (const std::exception& e) {
         std::cerr << "fatal: " << e.what() << std::endl;
         exit_code = 1;
