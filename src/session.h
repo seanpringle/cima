@@ -15,7 +15,6 @@ class Session {
   public:
     /// Construct/resume or create a new session.
     /// @param name   User-chosen session name (used as <session>.json filename)
-    /// @param force  If true, integrity check failures produce warnings instead of errors
     Session(const std::string& name);
     ~Session();
 

@@ -45,7 +45,6 @@ inline bool operator==(const McpEndpoint& a, const McpEndpoint& b) {
         a.env == b.env && a.timeout_sec == b.timeout_sec;
 }
 
-/// A single provider definition from cima.json.
 /// A single subagent definition from cima.json.
 struct SubagentConfig {
     std::string name;        // unique identifier, used as tab title

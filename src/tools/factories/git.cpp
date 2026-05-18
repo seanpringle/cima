@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-// Global mutex to serialize git index write operations (git_add, git_commit --all).
+// Global mutex to serialize git index write operations (git_add, git_commit, git_restore).
 // libgit2 acquires a file lock on .git/index.lock when opening the index;
 // concurrent index writes from parallel tool calls cause GIT_ELOCKED errors.
 static std::mutex g_git_index_mutex;

@@ -35,8 +35,6 @@ class ChatSession {
 
     /// Create a subagent session with restricted tools and a simpler system prompt.
     /// If read_only is true, write tools (file, git) are excluded.
-    /// If primary_plan is non-null, the subagent's read_plan tool reads from
-    /// that PlanBoard (typically the primary agent's plan) instead of its own.
     static std::unique_ptr<ChatSession> create_subagent(const Config& config,
         const Provider& provider,
         bool read_only,
@@ -50,7 +48,7 @@ class ChatSession {
     void set_output_callback(OutputCallback cb) { output_cb_ = std::move(cb); }
     const Usage& last_usage() const { return last_usage_; }
 
-    // Each session has its own PlanBoard (not shared across agents).
+    /// Access the global PlanBoard (shared across all sessions).
     PlanBoard& plan() { return ::plan; }
     const PlanBoard& plan() const { return ::plan; }
 
@@ -114,10 +112,9 @@ class ChatSession {
     const McpRegistry& mcp_registry() const { return mcp_registry_; }
 
     /// Register the call_subagent tool in this session's tool registry.
-    /// The lookup callable receives a subagent name and returns its ChatSession*.
-    /// clear_ui resets the subagent's UI state; push_entry pushes a UserText entry
-    /// (the primary agent's request).  subagent_configs are used to build the
-    /// tool description with available names.
+    /// The tool clears the subagent's UI state before forwarding the primary
+    /// agent's request as a UserText entry.  subagent_configs are used to build
+    /// the tool description with available names.
     void register_call_subagent_tool(
         PrimaryAgent& primary, const std::vector<SubagentConfig>& subagent_configs = {}) {
         tools_.add(make_call_subagent_tool(primary, subagent_configs));

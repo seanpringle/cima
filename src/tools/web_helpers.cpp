@@ -29,7 +29,6 @@ int web_search_progress_cb(void* clientp,
 
 // ── DuckDuckGo rate limiter ──
 // Enforces a minimum gap between successive requests to the free DDG API.
-std::chrono::steady_clock::time_point g_last_ddg_request;
 std::mutex g_ddg_mutex;
 
 // ── Shared HTTP GET helper (used by web_search and web_fetch) ──

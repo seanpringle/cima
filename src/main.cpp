@@ -29,7 +29,7 @@ int main(int argc, char* argv[]) {
     // Must be called once before any other libcurl function.
     curl_global_init(CURL_GLOBAL_ALL);
 
-    // Seed RNG for DDG rate-limit jitter
+    // Seed C rand() for any legacy uses
     std::srand(static_cast<unsigned>(std::time(nullptr)));
 
     std::string session_name;

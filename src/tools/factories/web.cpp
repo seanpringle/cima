@@ -20,7 +20,7 @@ Tool make_web_search_tool(int timeout, CancellationToken cancelled) {
         "Search the web using DuckDuckGo. "
         "Returns up to 10 results with titles, snippets, and URLs. "
         "No API key required. "
-        "DuckDuckGo aggressively rate-limits requests; at least 10 seconds "
+        "DuckDuckGo aggressively rate-limits requests; at least 3 seconds "
         "must elapse between successive calls. If you need multiple searches, "
         "space them out — parallel calls are serialized with enforced delays.";
     t.timeout_sec = timeout;
