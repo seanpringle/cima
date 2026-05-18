@@ -380,36 +380,47 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
 
     // ── Subagent tab creation ──
     // (must happen after regular tabs are created so we have a main session to register the tool in)
-    auto add_subagent_tab = [&](const SubagentConfig& sa, int provider_idx) {
-        const auto& provider = providers[provider_idx];
+    // Subagent read_plan is bound to the primary agent's PlanBoard.
+    {
+        // Find the first non-subagent tab (primary agent) to share its plan.
+        PlanBoard* primary_plan = nullptr;
+        for (auto& t : tabs) {
+            if (!t.is_subagent) {
+                primary_plan = &t.session->plan();
+                break;
+            }
+        }
+        // Override the lambda to pass primary_plan
+        auto add_subagent_tab_with_plan = [&](const SubagentConfig& sa, int provider_idx) {
+            const auto& provider = providers[provider_idx];
 
-        TabInfo tab;
-        tab.id = next_tab_id++;
-        tab.is_subagent = true;
-        tab.subagent_name = sa.name;
-        tab.title = sa.name;
-        tab.read_only_tools = sa.read_only;
-        tab.provider_name = provider.name;
-        tab.model_name = provider.model;
-        tab.reasoning_effort = provider.reasoning_effort;
+            TabInfo tab;
+            tab.id = next_tab_id++;
+            tab.is_subagent = true;
+            tab.subagent_name = sa.name;
+            tab.title = sa.name;
+            tab.read_only_tools = sa.read_only;
+            tab.provider_name = provider.name;
+            tab.model_name = provider.model;
+            tab.reasoning_effort = provider.reasoning_effort;
 
-        tab.chat_state = std::make_unique<AsyncChatState>();
-        tab.session = ChatSession::create_subagent(
-            cfg, provider, sa.read_only, tab.chat_state->cancelled);
-        tab.ui_state.mono_font = mono_font;
-        tab.session->set_agent_name(sa.name);
-        tab.session->set_output_callback(
-            [cs = tab.chat_state.get()](const std::string& text, OutputType type) {
-                std::lock_guard<std::mutex> lock(cs->mutex);
-                cs->pending.emplace_back(text, type);
-            });
+            tab.chat_state = std::make_unique<AsyncChatState>();
+            tab.session = ChatSession::create_subagent(
+                cfg, provider, sa.read_only, tab.chat_state->cancelled, primary_plan);
+            tab.ui_state.mono_font = mono_font;
+            tab.session->set_agent_name(sa.name);
+            tab.session->set_output_callback(
+                [cs = tab.chat_state.get()](const std::string& text, OutputType type) {
+                    std::lock_guard<std::mutex> lock(cs->mutex);
+                    cs->pending.emplace_back(text, type);
+                });
 
-        tabs.push_back(std::move(tab));
-    };
+            tabs.push_back(std::move(tab));
+        };
 
-    // Create subagent tabs from config
-    for (const auto& sa : cfg.subagents) {
-        add_subagent_tab(sa, 0);
+        for (const auto& sa : cfg.subagents) {
+            add_subagent_tab_with_plan(sa, 0);
+        }
     }
 
     // Register call_subagent tool in the first (main) session

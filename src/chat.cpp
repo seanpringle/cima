@@ -57,7 +57,7 @@ ChatSession::ChatSession(const Config& config, const Provider& provider,
 
 std::unique_ptr<ChatSession> ChatSession::create_subagent(
     const Config& config, const Provider& provider, bool read_only,
-    CancellationToken cancelled) {
+    CancellationToken cancelled, PlanBoard* primary_plan) {
     // Build a simpler system prompt for subagents
     std::string sp = Config::SUBAGENT_SYSTEM_PROMPT;
 
@@ -95,6 +95,13 @@ std::unique_ptr<ChatSession> ChatSession::create_subagent(
         session->tools_.remove("git_commit");
         session->tools_.remove("git_restore");
         session->tools_.remove("git_show");
+    }
+
+    // If a primary PlanBoard is given, rebind read_plan to read from it
+    // instead of the subagent's own (empty) plan.
+    if (primary_plan) {
+        session->tools_.remove("read_plan");
+        session->tools_.add(make_read_plan_tool(*primary_plan));
     }
 
     return session;

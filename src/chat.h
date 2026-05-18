@@ -35,9 +35,11 @@ class ChatSession {
 
     /// Create a subagent session with restricted tools and a simpler system prompt.
     /// If read_only is true, write tools (file, git) are excluded.
+    /// If primary_plan is non-null, the subagent's read_plan tool reads from
+    /// that PlanBoard (typically the primary agent's plan) instead of its own.
     static std::unique_ptr<ChatSession> create_subagent(
         const Config& config, const Provider& provider, bool read_only,
-        CancellationToken cancelled);
+        CancellationToken cancelled, PlanBoard* primary_plan = nullptr);
 
     Result<ChatResult> run_once(const std::string& user_input);
     void set_model(const std::string& m) { model_ = m; }
