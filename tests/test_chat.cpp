@@ -137,6 +137,28 @@ TEST_CASE("ChatSession payload includes reasoning_effort", "[chat]") {
     CHECK(body["reasoning_effort"] == "high");
 }
 
+TEST_CASE("ChatSession omits reasoning_effort when empty", "[chat]") {
+    std::string last_request;
+    MockServer server(
+        [&](const std::string& req) -> std::string {
+            last_request = req;
+            return make_content_sse("Hello!");
+        },
+        true);
+
+    auto tc = make_test_config(server.base_url());
+    tc.provider.reasoning_effort = "";   // empty — should omit
+    tc.provider.context_limit = 1000;    // avoid model discovery request
+
+    ChatSession session(tc.cfg, tc.provider);
+    auto result = session.run_once("Say hi");
+    REQUIRE(result);
+
+    auto body = parse_request_body(last_request);
+    REQUIRE(!body.is_discarded());
+    REQUIRE_FALSE(body.contains("reasoning_effort"));
+}
+
 // ===================================================================
 // Tool call triggered
 // ===================================================================

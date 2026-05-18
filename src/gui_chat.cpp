@@ -617,18 +617,37 @@ void render_config_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
 
     Separator();
 
-    // ── Reasoning effort input ──
+    // ── Reasoning effort combo ──
     PushFont(mono_font);
     {
         std::string re = tab.reasoning_effort.empty() ? session.reasoning_effort() : tab.reasoning_effort;
-        char buf[128];
-        strncpy(buf, re.c_str(), sizeof(buf) - 1);
-        buf[sizeof(buf) - 1] = '\0';
-        if (InputText("Reasoning Effort", buf, sizeof(buf),
-                ImGuiInputTextFlags_EnterReturnsTrue)) {
-            std::string new_re(buf);
-            tab.reasoning_effort = new_re;
-            session.set_reasoning_effort(new_re);
+
+        // Find which provider this tab uses so we can get its reasoning_efforts list
+        std::vector<std::string> efforts;
+        for (const auto& p : cfg.providers) {
+            if (p.name == tab.provider_name) {
+                efforts = p.reasoning_efforts;
+                break;
+            }
+        }
+        if (efforts.empty()) {
+            efforts = {"low", "medium", "high"};
+        }
+
+        if (BeginCombo("Reasoning Effort", re.empty() ? "(unset)" : re.c_str())) {
+            if (Selectable("(unset)", re.empty())) {
+                tab.reasoning_effort.clear();
+                session.set_reasoning_effort("");
+            }
+            for (const auto& e : efforts) {
+                bool is_selected = (e == re);
+                if (Selectable(e.c_str(), is_selected)) {
+                    tab.reasoning_effort = e;
+                    session.set_reasoning_effort(e);
+                }
+                if (is_selected) SetItemDefaultFocus();
+            }
+            EndCombo();
         }
     }
     PopFont();

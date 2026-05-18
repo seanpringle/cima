@@ -35,6 +35,7 @@ json Config::to_json() const {
         pj["api_key"] = p.api_key;
         pj["model"] = p.model;
         pj["reasoning_effort"] = p.reasoning_effort;
+        pj["reasoning_efforts"] = p.reasoning_efforts;
         pj["context_limit"] = p.context_limit;
         prov_arr.push_back(std::move(pj));
     }
@@ -134,8 +135,15 @@ Config Config::load() {
                 p.api_base = pj.value("api_base", std::string());
                 p.api_key = pj.value("api_key", std::string());
                 p.model = pj.value("model", std::string());
-                p.reasoning_effort = pj.value("reasoning_effort", std::string("high"));
+                p.reasoning_effort = pj.value("reasoning_effort", std::string());
+                p.reasoning_efforts = pj.value("reasoning_efforts", std::vector<std::string>());
                 p.context_limit = pj.value("context_limit", 300000);
+
+                // Fallback for reasoning_efforts: if absent or empty, default to {"low", "medium", "high"}
+                if (p.reasoning_efforts.empty()) {
+                    p.reasoning_efforts = {"low", "medium", "high"};
+                }
+
                 cfg.providers.push_back(std::move(p));
             }
         }
@@ -260,7 +268,7 @@ Config Config::load() {
             def.name = "default";
             def.api_base = "http://127.0.0.1:11000/v1";
             def.model = "deepseek-v4-flash";
-            def.reasoning_effort = "high";
+            def.reasoning_efforts = {"low", "medium", "high"};
             def.context_limit = 300000;
             cfg.providers.push_back(std::move(def));
 

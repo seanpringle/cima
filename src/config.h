@@ -57,7 +57,8 @@ struct Provider {
     std::string api_base;           // e.g. "https://api.opencode.go/v1"
     std::string api_key;
     std::string model;              // default model for this provider
-    std::string reasoning_effort = "high";
+    std::string reasoning_effort;   // reasoning effort (empty = not set / omit from API)
+    std::vector<std::string> reasoning_efforts; // allowed values for the dropdown
     int context_limit = 300000;     // model context window (tokens)
 };
 

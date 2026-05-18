@@ -158,10 +158,11 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
             }
 
             json payload = {{"model", model_},
-                {"reasoning_effort", reasoning_effort_},
                 {"messages", conversation_.build_openai_payload(effective_prompt)},
                 {"tools", tools_.to_openai_tools(&allowed_tools)},
                 {"stream", true}};
+            if (!reasoning_effort_.empty())
+                payload["reasoning_effort"] = reasoning_effort_;
             payload["stream_options"] = {{"include_usage", true}};
             std::string content;
             std::string reasoning;
@@ -423,7 +424,6 @@ Result<void> ChatSession::compact() {
     // Send to LLM via client_
     json payload = {
         {"model", model_},
-        {"reasoning_effort", reasoning_effort_},
         {"messages", json::array({
             {{"role", "system"}, {"content", sanitize_utf8(system_prompt_
                 + (has_cmake_project() ? std::string(Config::CMAKE_PROMPT_SNIPPET) : ""))}},
@@ -431,6 +431,8 @@ Result<void> ChatSession::compact() {
         })},
         {"stream", true}
     };
+    if (!reasoning_effort_.empty())
+        payload["reasoning_effort"] = reasoning_effort_;
     payload["stream_options"] = {{"include_usage", true}};
 
     std::string summary;

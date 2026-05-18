@@ -31,6 +31,7 @@ TEST_CASE("Config to_json / round-trip", "[config]") {
     p.api_key = "sk-test123";
     p.model = "gpt-4";
     p.reasoning_effort = "low";
+    p.reasoning_efforts = {"low", "high"};
     p.context_limit = 64000;
     cfg.providers.push_back(p);
 
@@ -52,7 +53,11 @@ TEST_CASE("Config to_json / round-trip", "[config]") {
             lp.api_base = pj.value("api_base", std::string());
             lp.api_key = pj.value("api_key", std::string());
             lp.model = pj.value("model", std::string());
-            lp.reasoning_effort = pj.value("reasoning_effort", std::string("high"));
+            lp.reasoning_effort = pj.value("reasoning_effort", std::string());
+            lp.reasoning_efforts = pj.value("reasoning_efforts", std::vector<std::string>());
+            if (lp.reasoning_efforts.empty()) {
+                lp.reasoning_efforts = {"low", "medium", "high"};
+            }
             lp.context_limit = pj.value("context_limit", 300000);
             loaded.providers.push_back(std::move(lp));
         }
@@ -72,6 +77,9 @@ TEST_CASE("Config to_json / round-trip", "[config]") {
     REQUIRE(loaded.providers[0].api_key == "sk-test123");
     REQUIRE(loaded.providers[0].model == "gpt-4");
     REQUIRE(loaded.providers[0].reasoning_effort == "low");
+    REQUIRE(loaded.providers[0].reasoning_efforts.size() == 2);
+    REQUIRE(loaded.providers[0].reasoning_efforts[0] == "low");
+    REQUIRE(loaded.providers[0].reasoning_efforts[1] == "high");
     REQUIRE(loaded.providers[0].context_limit == 64000);
     // read_only_paths was replaced; load() will add defaults back, but our
     // manual overlay didn't — just check the JSON value was read
@@ -346,6 +354,114 @@ TEST_CASE("Config MCP servers absent does not break providers", "[config][mcp]")
     CHECK(loaded.providers[0].name == "only-provider");
     // mcp_servers should be empty by default
     CHECK(loaded.mcp_servers.empty());
+}
+
+// ---------------------------------------------------------------------------
+// Reasoning efforts tests
+// ---------------------------------------------------------------------------
+
+TEST_CASE("reasoning_effort defaults to empty when absent", "[config]") {
+    json j = R"({
+        "providers": [
+            {
+                "name": "test",
+                "api_base": "http://test/v1",
+                "api_key": "sk-test",
+                "model": "gpt-4"
+            }
+        ]
+    })"_json;
+
+    Provider p;
+    if (j.contains("providers") && j["providers"].is_array()) {
+        for (const auto& pj : j["providers"]) {
+            p.name = pj.value("name", std::string());
+            p.api_base = pj.value("api_base", std::string());
+            p.api_key = pj.value("api_key", std::string());
+            p.model = pj.value("model", std::string());
+            p.reasoning_effort = pj.value("reasoning_effort", std::string());
+            p.reasoning_efforts = pj.value("reasoning_efforts", std::vector<std::string>());
+            if (p.reasoning_efforts.empty()) {
+                p.reasoning_efforts = {"low", "medium", "high"};
+            }
+        }
+    }
+
+    CHECK(p.reasoning_effort.empty());
+    CHECK(p.reasoning_efforts.size() == 3);
+    CHECK(p.reasoning_efforts[0] == "low");
+    CHECK(p.reasoning_efforts[1] == "medium");
+    CHECK(p.reasoning_efforts[2] == "high");
+}
+
+TEST_CASE("reasoning_efforts empty array defaults to low/medium/high", "[config]") {
+    json j = R"({
+        "providers": [
+            {
+                "name": "test",
+                "api_base": "http://test/v1",
+                "api_key": "sk-test",
+                "model": "gpt-4",
+                "reasoning_efforts": []
+            }
+        ]
+    })"_json;
+
+    Provider p;
+    if (j.contains("providers") && j["providers"].is_array()) {
+        for (const auto& pj : j["providers"]) {
+            p.name = pj.value("name", std::string());
+            p.api_base = pj.value("api_base", std::string());
+            p.api_key = pj.value("api_key", std::string());
+            p.model = pj.value("model", std::string());
+            p.reasoning_effort = pj.value("reasoning_effort", std::string());
+            p.reasoning_efforts = pj.value("reasoning_efforts", std::vector<std::string>());
+            if (p.reasoning_efforts.empty()) {
+                p.reasoning_efforts = {"low", "medium", "high"};
+            }
+        }
+    }
+
+    CHECK(p.reasoning_efforts.size() == 3);
+    CHECK(p.reasoning_efforts[0] == "low");
+    CHECK(p.reasoning_efforts[1] == "medium");
+    CHECK(p.reasoning_efforts[2] == "high");
+}
+
+TEST_CASE("reasoning_efforts custom values preserved", "[config]") {
+    json j = R"({
+        "providers": [
+            {
+                "name": "test",
+                "api_base": "http://test/v1",
+                "api_key": "sk-test",
+                "model": "gpt-4",
+                "reasoning_effort": "conservative",
+                "reasoning_efforts": ["conservative", "balanced", "creative"]
+            }
+        ]
+    })"_json;
+
+    Provider p;
+    if (j.contains("providers") && j["providers"].is_array()) {
+        for (const auto& pj : j["providers"]) {
+            p.name = pj.value("name", std::string());
+            p.api_base = pj.value("api_base", std::string());
+            p.api_key = pj.value("api_key", std::string());
+            p.model = pj.value("model", std::string());
+            p.reasoning_effort = pj.value("reasoning_effort", std::string());
+            p.reasoning_efforts = pj.value("reasoning_efforts", std::vector<std::string>());
+            if (p.reasoning_efforts.empty()) {
+                p.reasoning_efforts = {"low", "medium", "high"};
+            }
+        }
+    }
+
+    CHECK(p.reasoning_effort == "conservative");
+    REQUIRE(p.reasoning_efforts.size() == 3);
+    CHECK(p.reasoning_efforts[0] == "conservative");
+    CHECK(p.reasoning_efforts[1] == "balanced");
+    CHECK(p.reasoning_efforts[2] == "creative");
 }
 
 TEST_CASE("McpEndpoint equality operator", "[config][mcp]") {
