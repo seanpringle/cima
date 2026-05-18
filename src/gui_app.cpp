@@ -3,7 +3,7 @@
 #include "assistant_data.h"
 #include "gui_chat.h"
 #include "plan.h"
-#include "ship_name.h"
+// ship_name.h removed
 
 #include "imgui.h"
 #include "backends/imgui_impl_sdl3.h"
@@ -335,9 +335,8 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
 
         if (!restore_title.empty()) {
             tab.title = restore_title;
-            reserve_lotr_name(tab.title);
         } else {
-            tab.title = generate_lotr_name();
+            tab.title = "Assistant";
         }
 
         tab.chat_state = std::make_unique<AsyncChatState>();
@@ -552,7 +551,6 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                         app_session->session_file_path(closed_title + ".json"), ec);
                 }
 
-                free_lotr_name(closed_title);
                 tabs.erase(tabs.begin() + active_tab);
                 if (active_tab >= (int)tabs.size())
                     active_tab = (int)tabs.size() - 1;

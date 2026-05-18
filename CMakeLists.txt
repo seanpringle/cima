@@ -100,7 +100,7 @@ endif()
 add_library(cima_core
     src/config.cpp
     src/types.cpp
-    src/ship_name.cpp
+    # src/ship_name.cpp removed
     src/tools/path.cpp
     src/tools/git_helpers.cpp
     src/tools/web_helpers.cpp
