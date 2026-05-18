@@ -70,8 +70,7 @@ struct ChatUIState {
     std::vector<char> input_buffer = {0};
     int cursor_pos = 0; // tracked by InputText callback for insert-at-cursor
 
-    // Workspace path input state
-    std::string workspace_path_buf; // local editor buffer, synced from session when inactive
+    // (workspace_path_buf removed — safe_dir locked to cwd)
 };
 
 struct TabInfo {
@@ -84,7 +83,6 @@ struct TabInfo {
     std::string provider_name;  // which provider this tab belongs to
     std::string reasoning_effort; // per-tab reasoning effort override
     std::string git_branch;
-    std::string workspace_path;
 
     bool bash_enabled = false;       // run_bash tool enabled for this tab
 

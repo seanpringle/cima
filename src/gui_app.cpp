@@ -106,9 +106,7 @@ static void restore_tab_from_data(TabInfo& tab, const SessionData& data,
         tab.session->set_reasoning_effort(data.reasoning_effort);
     }
 
-    if (!data.workspace_path.empty()) {
-        tab.session->set_safe_dir(data.workspace_path);
-    }
+    // workspace_path / set_safe_dir removed — safe_dir locked to cwd
 
     tab.session->conversation().from_json(data.conversation);
 
@@ -149,7 +147,7 @@ static SessionData build_session_data(const TabInfo& tab) {
     data.provider_name = tab.provider_name;
     data.model = tab.model_name;
     data.reasoning_effort = tab.reasoning_effort;
-    data.workspace_path = tab.session->safe_dir();
+    // workspace_path removed — safe_dir locked to cwd
     data.conversation = tab.session->conversation().to_json();
 
     json log_arr = json::array();

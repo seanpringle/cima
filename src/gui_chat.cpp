@@ -655,92 +655,7 @@ void render_config_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
 
     Separator();
 
-    // ── Workspace path (safe directory) ──
-    PushFont(mono_font);
-    {
-        // Sync buffer from session when the input is NOT active
-        // (avoids overwriting the user's in-progress edit)
-        if (!IsItemActive()) {
-            ui.workspace_path_buf = session.safe_dir();
-        }
-
-        char buf[1024];
-        strncpy(buf, ui.workspace_path_buf.c_str(), sizeof(buf) - 1);
-        buf[sizeof(buf) - 1] = '\0';
-
-        bool was_active = IsItemActive();
-        bool committed = InputText("Workspace", buf, sizeof(buf),
-            ImGuiInputTextFlags_EnterReturnsTrue);
-        bool now_active = IsItemActive();
-        bool focus_lost = was_active && !now_active;
-
-        if (committed || focus_lost) {
-            std::string new_ws(buf);
-            // Normalise: resolve to absolute path, keep as-is if it fails
-            if (!new_ws.empty()) {
-                try {
-                    std::error_code ec;
-                    auto p = std::filesystem::weakly_canonical(
-                        std::filesystem::path(new_ws), ec);
-                    if (!ec) {
-                        new_ws = p.string();
-                    }
-                } catch (...) {
-                }
-            }
-            ui.workspace_path_buf = new_ws;
-            session.set_safe_dir(new_ws);
-        }
-
-        // Validate and show status indicator
-        if (!ui.workspace_path_buf.empty()) {
-            std::error_code ec;
-            bool exists = std::filesystem::exists(ui.workspace_path_buf, ec);
-            if (ec) {
-                // exists() failed — likely invalid characters
-                SameLine();
-                PushStyleColor(ImGuiCol_Text, IM_COL32(255, 200, 0, 255));
-                TextUnformatted("(!)");
-                PopStyleColor();
-                if (IsItemHovered()) {
-                    BeginTooltip();
-                    TextUnformatted("Invalid path");
-                    EndTooltip();
-                }
-            } else if (!exists) {
-                SameLine();
-                PushStyleColor(ImGuiCol_Text, IM_COL32(255, 100, 100, 255));
-                TextUnformatted("(x)");
-                PopStyleColor();
-                if (IsItemHovered()) {
-                    BeginTooltip();
-                    TextUnformatted("Path does not exist");
-                    EndTooltip();
-                }
-            } else if (!std::filesystem::is_directory(ui.workspace_path_buf, ec)) {
-                SameLine();
-                PushStyleColor(ImGuiCol_Text, IM_COL32(255, 100, 100, 255));
-                TextUnformatted("(x)");
-                PopStyleColor();
-                if (IsItemHovered()) {
-                    BeginTooltip();
-                    TextUnformatted("Not a directory");
-                    EndTooltip();
-                }
-            } else {
-                SameLine();
-                PushStyleColor(ImGuiCol_Text, IM_COL32(100, 255, 100, 255));
-                TextUnformatted("(v)");
-                PopStyleColor();
-                if (IsItemHovered()) {
-                    BeginTooltip();
-                    TextUnformatted("Valid directory");
-                    EndTooltip();
-                }
-            }
-        }
-    }
-    PopFont();
+    // Workspace path editing removed — safe_dir locked to cwd at startup
 
     Separator();
 
@@ -1429,17 +1344,13 @@ void render_chat_ui(TabInfo& tab, bool& done) {
         }
         string tokenInfo = std::to_string(tokens) + " tokens";
 
-        // Git branch (refresh if workspace changed)
+        // Git branch (safe_dir locked to cwd, fetched each render loop)
         {
-            auto current_safe_dir = session.safe_dir();
-            if (current_safe_dir != tab.workspace_path) {
-                tab.workspace_path = current_safe_dir;
-                auto branch_result = get_current_git_branch(current_safe_dir);
-                if (branch_result) {
-                    tab.git_branch = std::move(*branch_result);
-                } else {
-                    tab.git_branch.clear();
-                }
+            auto branch_result = get_current_git_branch(session.safe_dir());
+            if (branch_result) {
+                tab.git_branch = std::move(*branch_result);
+            } else {
+                tab.git_branch.clear();
             }
         }
         string branchInfo = tab.git_branch;

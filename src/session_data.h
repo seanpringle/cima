@@ -21,7 +21,7 @@ struct SessionData {
     std::string provider_name;          // which provider this session belongs to
     std::string model;                  // model name
     std::string reasoning_effort;       // reasoning effort override
-    std::string workspace_path;         // safe directory for tool calls (overrides cwd)
+    // workspace_path removed — safe_dir is always the cwd at startup
     json conversation;                  // serialized Conversation (array of message objects)
     json chat_log;                      // serialized chat log entries (array of entry objects)
     json plan;                          // { "plan": "...", "comments": [...] }
