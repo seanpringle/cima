@@ -1,5 +1,5 @@
 #include "gui_app.h"
-#include "app_session.h"
+#include "session.h"
 #include "session_data.h"
 #include "gui_chat.h"
 #include "agent.h"
@@ -263,7 +263,7 @@ int gui_main(const std::string& session_name) {
     GuiBootstrap gfx(session_name);
     if (gfx.result_code) return gfx.result_code;
 
-    AppSession session(session_name);
+    Session session(session_name);
     session.print_welcome();
 
     PrimaryAgent primary(session.session_data());

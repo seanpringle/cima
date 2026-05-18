@@ -1,4 +1,4 @@
-#include "app_session.h"
+#include "session.h"
 
 #include <nlohmann/json.hpp>
 
@@ -27,7 +27,7 @@ static std::filesystem::path get_home_dir() {
     return std::filesystem::path(home);
 }
 
-std::filesystem::path AppSession::sessions_base_dir() {
+std::filesystem::path Session::sessions_base_dir() {
     return get_home_dir() / ".local" / "state" / "cima";
 }
 
@@ -35,7 +35,7 @@ std::filesystem::path AppSession::sessions_base_dir() {
 // Constructor
 // -----------------------------------------------------------------------
 
-AppSession::AppSession(const std::string& name) : session_name_{name} {
+Session::Session(const std::string& name) : session_name_{name} {
     if (name.empty()) {
         throw std::invalid_argument("session name must not be empty");
     }
@@ -67,7 +67,7 @@ AppSession::AppSession(const std::string& name) : session_name_{name} {
     }
 }
 
-AppSession::~AppSession() {
+Session::~Session() {
     save_session();
 }
 
@@ -75,7 +75,7 @@ AppSession::~AppSession() {
 // Path accessors
 // -----------------------------------------------------------------------
 
-std::string AppSession::session_file_path() const {
+std::string Session::session_file_path() const {
     return (sessions_base_dir() / (session_name_ + ".json")).string();
 }
 
@@ -83,7 +83,7 @@ std::string AppSession::session_file_path() const {
 // Session data persistence
 // -----------------------------------------------------------------------
 
-Result<void> AppSession::save_session() {
+Result<void> Session::save_session() {
     try {
         auto path = std::filesystem::path(session_file_path());
         auto tmp_path = path;
@@ -114,7 +114,7 @@ Result<void> AppSession::save_session() {
     }
 }
 
-Result<void> AppSession::load_session() {
+Result<void> Session::load_session() {
     auto path = session_file_path();
     auto result = session_data_.load_from_file(path);
     if (!result) {
@@ -127,7 +127,7 @@ Result<void> AppSession::load_session() {
 // Metadata
 // -----------------------------------------------------------------------
 
-void AppSession::print_welcome() const {
+void Session::print_welcome() const {
     auto session_path = session_file_path();
     if (is_new_) {
         std::cout << "Starting new session '" << session_name_ << "'\n"

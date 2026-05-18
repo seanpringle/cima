@@ -5,24 +5,24 @@
 #include <filesystem>
 #include <string>
 
-/// Manages a single app session persisted to ~/.local/state/cima/<session>.json.
+/// Manages a single session persisted to ~/.local/state/cima/<session>.json.
 ///
 /// The session is a single JSON file containing the entire state:
 /// conversation, chat log, plan, provider, model, workspace, etc.
 /// (version 2 format).
 ///
-class AppSession {
+class Session {
   public:
     /// Construct/resume or create a new session.
     /// @param name   User-chosen session name (used as <session>.json filename)
     /// @param force  If true, integrity check failures produce warnings instead of errors
-    AppSession(const std::string& name);
-    ~AppSession();
+    Session(const std::string& name);
+    ~Session();
 
-    AppSession(const AppSession&) = delete;
-    AppSession& operator=(const AppSession&) = delete;
-    AppSession(AppSession&&) = delete;
-    AppSession& operator=(AppSession&&) = delete;
+    Session(const Session&) = delete;
+    Session& operator=(const Session&) = delete;
+    Session(Session&&) = delete;
+    Session& operator=(Session&&) = delete;
 
     // ── Path accessors ──
 
