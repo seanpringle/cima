@@ -1,6 +1,6 @@
 #include "gui_app.h"
 #include "app_session.h"
-#include "assistant_data.h"
+#include "session_data.h"
 #include "gui_chat.h"
 #include "plan.h"
 // ship_name.h removed
@@ -92,8 +92,7 @@ static bool find_font_pair(const Config& cfg,
 static void save_tab_to_disk(const TabInfo& tab, AppSession& app_session) {
     std::string json_path = app_session.session_file_path(tab.title + ".json");
 
-    AssistantData data;
-    data.name = tab.title;
+    SessionData data;
     data.provider_name = tab.provider_name;
     data.model = tab.model_name;
     data.reasoning_effort = tab.reasoning_effort;
@@ -133,7 +132,7 @@ static void load_tab_from_disk(TabInfo& tab, AppSession& app_session,
     const std::vector<Provider>& providers) {
     std::string json_path = app_session.session_file_path(tab.title + ".json");
 
-    AssistantData data;
+    SessionData data;
     auto result = data.load_from_file(json_path);
     if (!result) {
         // File doesn't exist or is corrupt — start fresh

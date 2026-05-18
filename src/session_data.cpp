@@ -1,4 +1,4 @@
-#include "assistant_data.h"
+#include "session_data.h"
 
 #include <fstream>
 
@@ -8,10 +8,10 @@ using json = nlohmann::json;
 // Serialization
 // ===================================================================
 
-json AssistantData::to_json() const {
+json SessionData::to_json() const {
     json j;
     j["version"] = version;
-    j["name"] = name;
+    j["last_cwd"] = last_cwd;
     j["provider_name"] = provider_name;
     j["model"] = model;
     j["reasoning_effort"] = reasoning_effort;
@@ -20,14 +20,22 @@ json AssistantData::to_json() const {
     j["chat_log"] = chat_log;
     j["plan"] = plan;
     j["bash_enabled"] = bash_enabled;
+
+    // Serialise mcp_enabled map
+    json mcp = json::object();
+    for (const auto& [name, enabled] : mcp_enabled) {
+        mcp[name] = enabled;
+    }
+    j["mcp_enabled"] = std::move(mcp);
+
     return j;
 }
 
-void AssistantData::from_json(const json& j) {
+void SessionData::from_json(const json& j) {
     if (!j.is_object()) return;
 
-    version = j.value("version", 1);
-    name = j.value("name", std::string());
+    version = j.value("version", 2);
+    last_cwd = j.value("last_cwd", std::string());
     provider_name = j.value("provider_name", std::string());
     model = j.value("model", std::string());
     reasoning_effort = j.value("reasoning_effort", std::string());
@@ -36,13 +44,23 @@ void AssistantData::from_json(const json& j) {
     chat_log = j.value("chat_log", json::array());
     plan = j.value("plan", json::object());
     bash_enabled = j.value("bash_enabled", false);
+
+    // Deserialise mcp_enabled map
+    mcp_enabled.clear();
+    if (j.contains("mcp_enabled") && j["mcp_enabled"].is_object()) {
+        for (auto it = j["mcp_enabled"].begin(); it != j["mcp_enabled"].end(); ++it) {
+            if (it.value().is_boolean()) {
+                mcp_enabled[it.key()] = it.value().get<bool>();
+            }
+        }
+    }
 }
 
 // ===================================================================
 // File persistence
 // ===================================================================
 
-Result<void> AssistantData::save_to_file(const std::string& path) const {
+Result<void> SessionData::save_to_file(const std::string& path) const {
     try {
         auto j = to_json();
         std::ofstream file(path);
@@ -52,11 +70,11 @@ Result<void> AssistantData::save_to_file(const std::string& path) const {
         file << j.dump(2) << std::endl;
         return {};
     } catch (const std::exception& e) {
-        return std::unexpected(std::string("Failed to save assistant data: ") + e.what());
+        return std::unexpected(std::string("Failed to save session data: ") + e.what());
     }
 }
 
-Result<void> AssistantData::load_from_file(const std::string& path) {
+Result<void> SessionData::load_from_file(const std::string& path) {
     try {
         std::ifstream file(path);
         if (!file.is_open()) {
@@ -67,6 +85,6 @@ Result<void> AssistantData::load_from_file(const std::string& path) {
         from_json(j);
         return {};
     } catch (const std::exception& e) {
-        return std::unexpected(std::string("Failed to load assistant data: ") + e.what());
+        return std::unexpected(std::string("Failed to load session data: ") + e.what());
     }
 }

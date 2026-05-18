@@ -117,7 +117,7 @@ add_library(cima_core
     src/conversation.cpp
     src/plan.cpp
     src/app_session.cpp
-    src/assistant_data.cpp
+    src/session_data.cpp
     src/tools/factories/subagent.cpp
     src/mcp/mcp_client.cpp
     src/mcp/mcp_registry.cpp
