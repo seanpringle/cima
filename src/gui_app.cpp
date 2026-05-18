@@ -222,7 +222,7 @@ static void render_frame(PrimaryAgent& primary, bool& done) {
             if (BeginTabItem("   Plan   ")) {
                 auto plan_result = primary.session->plan().read_plan();
                 if (plan_result) {
-                    render_content(*plan_result, mono_font);
+                    render_content(*plan_result);
                 } else {
                     TextDisabled("(empty plan)");
                 }
@@ -230,7 +230,7 @@ static void render_frame(PrimaryAgent& primary, bool& done) {
             }
 
             if (BeginTabItem("   Config   ")) {
-                render_config_tab(primary, cfg, mono_font);
+                render_config_tab(primary);
                 EndTabItem();
             }
 
@@ -238,8 +238,8 @@ static void render_frame(PrimaryAgent& primary, bool& done) {
                 PushID(sa_tab.id);
                 if (BeginTabItem(
                         ("   " + sa_tab.title + "   ##sa-" + std::to_string(sa_tab.id)).c_str())) {
-                    render_subagent_tab(sa_tab, cfg, mono_font);
-                    render_subagent_chat(sa_tab, mono_font);
+                    render_subagent_tab(sa_tab);
+                    render_subagent_chat(sa_tab);
                     EndTabItem();
                 }
                 PopID();

@@ -1,5 +1,4 @@
 #include "gui_chat.h"
-#include "client.h"
 #include "plan.h"
 #include "tools.h"
 #include <cassert>
@@ -390,7 +389,7 @@ static int text_cb(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* us
 
 } // anonymous namespace
 
-void render_content(const string& text, ImFont* mono_font) {
+void render_content(const string& text) {
     string_view trim(text);
     while (trim.size() && std::isspace(trim.back()))
         trim.remove_suffix(1);
@@ -425,7 +424,7 @@ void render_content(const string& text, ImFont* mono_font) {
 
 
 
-void render_config_tab(PrimaryAgent& tab, const Config& cfg, ImFont* mono_font) {
+void render_config_tab(PrimaryAgent& tab) {
     auto& ui = tab.ui_state;
     auto& session = *tab.session;
 
@@ -701,7 +700,7 @@ static std::string expand_tags(std::string input) {
     return result;
 }
 
-void render_subagent_tab(SubAgent& tab, const Config& cfg, ImFont* mono_font) {
+void render_subagent_tab(SubAgent& tab) {
     auto& ui = tab.ui_state;
     auto& session = *tab.session;
 
@@ -817,7 +816,7 @@ void render_subagent_tab(SubAgent& tab, const Config& cfg, ImFont* mono_font) {
     PopFont();
 }
 
-void render_subagent_chat(SubAgent& tab, ImFont* mono_font) {
+void render_subagent_chat(SubAgent& tab) {
     auto& ui = tab.ui_state;
     auto& chat = *tab.chat_state;
 
@@ -853,12 +852,12 @@ void render_subagent_chat(SubAgent& tab, ImFont* mono_font) {
             break;
         case EntryType::Reasoning:
             PushStyleColor(ImGuiCol_Text, IM_COL32(160, 160, 160, 255));
-            render_content("Thinking: " + entry.text, mono_font);
+            render_content("Thinking: " + entry.text);
             PopStyleColor();
             break;
         case EntryType::Content:
             PushStyleColor(ImGuiCol_Text, GetColorU32(ImGuiCol_Text));
-            render_content(entry.text, mono_font);
+            render_content(entry.text);
             PopStyleColor();
             break;
         case EntryType::ToolCall:
