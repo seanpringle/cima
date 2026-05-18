@@ -11,10 +11,6 @@
 /// conversation, chat log, plan, provider, model, workspace, etc.
 /// (version 2 format).
 ///
-/// If an old directory-based session exists at ~/.local/state/cima/<session>/
-/// (version 1 format), it is automatically migrated to the new single-file
-/// format on construction, and the old directory is renamed to a .bak/ suffix.
-///
 class AppSession {
   public:
     /// Construct/resume or create a new session.
@@ -37,9 +33,6 @@ class AppSession {
 
     /// Return the full path to the single session JSON file.
     std::string session_file_path() const;
-
-    /// Return the full path to a backup directory (old format moved aside).
-    std::string backup_dir_path() const;
 
     // ── Session data persistence ──
 
@@ -67,10 +60,6 @@ class AppSession {
     void print_welcome() const;
 
   private:
-    /// Attempt to migrate an old directory-format session to the new single-file format.
-    /// Returns true if migration was performed, false if no migration was needed.
-    bool try_migrate_old_format();
-
     std::string session_name_;
     std::string last_cwd_;
     bool is_new_ = false;
