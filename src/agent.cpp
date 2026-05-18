@@ -229,15 +229,11 @@ void PrimaryAgent::register_subagent_tools() {
 void ChatUIState::push_entry(EntryType type, const std::string& text, bool streaming) {
     DisplayEntry entry{type, text, streaming, next_seq++};
     entries.push_back(entry);
-    if (!streaming) {
-        append_chat_log_entry(entry);
-    }
 }
 
 void ChatUIState::finalize_streaming_entry() {
     if (!entries.empty() && entries.back().is_streaming) {
         entries.back().is_streaming = false;
-        append_chat_log_entry(entries.back());
     }
 }
 

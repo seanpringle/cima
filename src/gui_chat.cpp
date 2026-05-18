@@ -9,35 +9,18 @@
 
 #include <algorithm>
 #include <cctype>
-#include <chrono>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
-#include <future>
 #include <map>
 #include <md4c.h>
 #include <string>
-#include <thread>
 
 using namespace ImGui;
 using std::string;
 using std::string_view;
 using std::stringstream;
 using std::vector;
-
-// ── Chat UI log persistence (now handled via AssistantData) ──────────────
-
-void ChatUIState::load_chat_log(const std::string& /*path*/) {
-    // No-op: chat log persistence is now handled externally via AssistantData.
-    // Entries are managed in-memory; they are loaded/saved as part of the
-    // consolidated per-assistant JSON file.
-}
-
-void ChatUIState::append_chat_log_entry(const DisplayEntry& /*entry*/) {
-    // No-op: chat log persistence is now handled externally via AssistantData.
-    // Entries remain in the in-memory `entries` vector and are saved during
-    // tab close / application shutdown.
-}
 
 // ── InputText callback: track cursor position for insert-at-cursor ──────
 static int InputTextCallback(ImGuiInputTextCallbackData* data) {

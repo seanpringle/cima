@@ -30,13 +30,6 @@ struct ChatUIState {
     bool auto_scroll = true;
     bool request_cancel = false;
     int next_seq = 1;
-    // show_raw removed
-    /// Load entries from the JSON Lines log file into `entries`.
-    /// Sets `next_seq` to max seq + 1.  Silently ignores corrupt lines.
-    void load_chat_log(const std::string& path);
-
-    /// Append a single entry to the JSON Lines log file.
-    void append_chat_log_entry(const DisplayEntry& entry);
 
     /// Create a DisplayEntry with the given type/text/streaming flag, assign
     /// next_seq, push to entries, and log non-streaming entries immediately.
