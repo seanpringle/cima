@@ -133,10 +133,8 @@ Result<std::pair<std::string, long>> http_get(
 /// Returns true if the scheme is http or https (case-insensitive).
 bool is_valid_fetch_scheme(const std::string& url);
 
-// ── DuckDuckGo rate limiter globals ──
-extern std::chrono::steady_clock::time_point g_last_ddg_request;
+// ── DuckDuckGo rate serialization and rate-limiting ──
 extern std::mutex g_ddg_mutex;
-inline constexpr std::chrono::milliseconds DDG_MIN_INTERVAL = std::chrono::milliseconds(3000);
 
 // ── web_fetch cache globals ──
 extern std::mutex g_fetch_cache_mutex;

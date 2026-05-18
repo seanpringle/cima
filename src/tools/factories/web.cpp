@@ -7,6 +7,8 @@
 #include <thread>
 #include <unordered_map>
 
+using namespace std::chrono_literals;
+
 // ===================================================================
 // web_search — single backend: DuckDuckGo HTML interface
 // ===================================================================
@@ -18,8 +20,9 @@ Tool make_web_search_tool(int timeout, CancellationToken cancelled) {
         "Search the web using DuckDuckGo. "
         "Returns up to 10 results with titles, snippets, and URLs. "
         "No API key required. "
-        "DuckDuckGo rate-limits requests; at least 3 seconds must elapse "
-        "between successive calls. If you need multiple searches, space them out.";
+        "DuckDuckGo aggressively rate-limits requests; at least 10 seconds "
+        "must elapse between successive calls. If you need multiple searches, "
+        "space them out — parallel calls are serialized with enforced delays.";
     t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},
         {"properties",
@@ -34,55 +37,21 @@ Tool make_web_search_tool(int timeout, CancellationToken cancelled) {
         if (query.size() > 500)
             query = query.substr(0, 500);
 
-        // ── Rate-limit (3s gap) ──
-        // DDG aggressively rate-limits requests; enforce a minimum 3-second
-        // gap between successive calls. The mutex also serializes concurrent
-        // calls so only one web_search runs at a time.
-        {
-            std::lock_guard<std::mutex> lock(g_ddg_mutex);
-            auto now = std::chrono::steady_clock::now();
-            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-                now - g_last_ddg_request);
-
-            if (elapsed < DDG_MIN_INTERVAL) {
-                std::this_thread::sleep_for(DDG_MIN_INTERVAL - elapsed);
-            }
-            g_last_ddg_request = std::chrono::steady_clock::now();
-        }
-
-        // ── Build form data ──
+        // ── Build GET URL (no shared state, safe outside lock) ──
         char* enc_q = curl_easy_escape(nullptr, query.c_str(), static_cast<int>(query.size()));
         if (!enc_q)
             return std::unexpected("curl_easy_escape failed");
-        std::string form_data = std::string("q=") + enc_q;
+        std::string url = std::string("https://html.duckduckgo.com/html/?q=") + enc_q;
         curl_free(enc_q);
 
-        // ── Retry loop with exponential backoff on HTTP 429 ──
-        std::string body;
-        long http_code = 0;
-        int max_retries = 3;
-        int delay_ms = 1000;
+        std::lock_guard<std::mutex> lock(g_ddg_mutex);
+        // Ensure we can't hammer DDG
+        std::this_thread::sleep_for(3s);
 
-        for (int attempt = 0; attempt <= max_retries; attempt++) {
-            auto resp = http_post_form(
-                "https://html.duckduckgo.com/html/", form_data,
-                timeout, cancelled.get());
-            if (!resp) {
-                if (attempt == max_retries)
-                    return std::unexpected(resp.error());
-                std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-                delay_ms *= 2;
-                continue;
-            }
-            body = resp->first;
-            http_code = resp->second;
-            if (http_code != 429)
-                break;
-            if (attempt < max_retries) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-                delay_ms *= 2;
-            }
-        }
+        // 2. Execute HTTP GET request (POST triggers DDG challenge page)
+        auto resp = http_get(url, timeout, cancelled.get());
+        std::string body = resp->first;
+        long http_code = resp->second;
 
         if (http_code != 200) {
             std::string msg = "web_search HTTP " + std::to_string(http_code);
@@ -97,7 +66,6 @@ Tool make_web_search_tool(int timeout, CancellationToken cancelled) {
             return std::unexpected(msg);
         }
 
-        // ── Parse HTML results ──
         return ddg_html_parse(body);
     };
     return t;
@@ -155,7 +123,7 @@ Tool make_web_fetch_tool(int timeout, CancellationToken cancelled) {
         curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
         curl_easy_setopt(curl, CURLOPT_TIMEOUT, 15L);
         curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
-        curl_easy_setopt(curl, CURLOPT_USERAGENT, "cima/0.1");
+        curl_easy_setopt(curl, CURLOPT_USERAGENT, "cima/1.0");
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
         curl_easy_setopt(curl, CURLOPT_CAINFO, nullptr);

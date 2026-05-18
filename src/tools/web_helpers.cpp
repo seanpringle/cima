@@ -48,7 +48,7 @@ Result<std::pair<std::string, long>> http_get(const std::string& url, int timeou
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, static_cast<long>(timeout_sec));
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
-    curl_easy_setopt(curl, CURLOPT_USERAGENT, "cima/0.1");
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "cima/1.0");
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
     // Use system default CA bundle — do NOT set a custom CA path so that
@@ -111,8 +111,7 @@ Result<std::pair<std::string, long>> http_post_form(const std::string& url,
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, static_cast<long>(timeout_sec));
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
-    curl_easy_setopt(curl, CURLOPT_USERAGENT,
-        "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0");
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "cima/1.0");
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 2L);
     curl_easy_setopt(curl, CURLOPT_CAINFO, nullptr);
