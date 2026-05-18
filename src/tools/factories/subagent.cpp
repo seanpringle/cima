@@ -5,13 +5,30 @@
 // Tool: call_subagent
 // ===================================================================
 
-Tool make_call_subagent_tool(SubagentLookup lookup, SubagentRunningCheck is_running) {
+Tool make_call_subagent_tool(SubagentLookup lookup, SubagentRunningCheck is_running,
+    const std::vector<SubagentConfig>& subagent_configs) {
     Tool t;
     t.name = "call_subagent";
-    t.description = "Call a subagent by name with a request. The subagent will "
-                    "execute the request using its own configured model and tools, "
-                    "and return the response. The subagent's conversation appears "
-                    "in its own tab in the UI.";
+
+    // Build a description that includes available subagent names
+    std::string desc = "Call a subagent by name with a request. The subagent will "
+                       "execute the request using its own configured model and tools, "
+                       "and return the response. The subagent's conversation appears "
+                       "in its own tab in the UI.\n\n"
+                       "Available subagents:\n";
+    if (subagent_configs.empty()) {
+        desc += "  (none configured — add a \"subagents\" array to cima.json)\n";
+    } else {
+        for (const auto& sa : subagent_configs) {
+            desc += "  - \"" + sa.name + "\"";
+            if (!sa.description.empty()) {
+                desc += ": " + sa.description;
+            }
+            desc += "\n";
+        }
+    }
+    t.description = desc;
+
     t.permission = ToolPermission::ReadOnly;
     t.timeout_sec = 600; // 10 minutes
     t.parameters = {{"type", "object"},

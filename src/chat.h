@@ -119,8 +119,11 @@ class ChatSession {
 
     /// Register the call_subagent tool in this session's tool registry.
     /// The lookup callable receives a subagent name and returns its ChatSession*.
-    void register_call_subagent_tool(SubagentLookup lookup, SubagentRunningCheck is_running) {
-        tools_.add(make_call_subagent_tool(std::move(lookup), std::move(is_running)));
+    /// subagent_configs are used to build the tool description with available names.
+    void register_call_subagent_tool(SubagentLookup lookup, SubagentRunningCheck is_running,
+        const std::vector<SubagentConfig>& subagent_configs = {}) {
+        tools_.add(make_call_subagent_tool(std::move(lookup), std::move(is_running),
+            subagent_configs));
     }
 
     /// Access the tool registry (for testing and GUI).

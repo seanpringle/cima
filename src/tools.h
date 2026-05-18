@@ -216,9 +216,12 @@ Tool make_cmake_ctest_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeou
 // ── Subagent tool ──
 // The execute callback receives (name, request) JSON.
 // `lookup_subagent(name)` must return a pointer to the subagent's ChatSession
-// or nullptr if not found.  Returns true if the subagent is currently running.
+// or nullptr if not found.  `is_running(name)` returns true if the subagent
+// is currently busy.  `subagent_names` is a list of available subagent names
+// (with optional descriptions) used to build the tool description.
 using SubagentLookup = std::function<ChatSession*(const std::string& name)>;
 using SubagentRunningCheck = std::function<bool(const std::string& name)>;
-Tool make_call_subagent_tool(SubagentLookup lookup, SubagentRunningCheck is_running);
+Tool make_call_subagent_tool(SubagentLookup lookup, SubagentRunningCheck is_running,
+    const std::vector<SubagentConfig>& subagent_configs = {});
 
 
