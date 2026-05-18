@@ -17,17 +17,14 @@ static const std::unordered_set<std::string> cmake_tool_names = {
     "cmake_ctest",
 };
 
-ChatSession::ChatSession(const Config& config, const Provider& provider,
-    CancellationToken cancelled)
+ChatSession::ChatSession(
+    const Config& config, const Provider& provider, CancellationToken cancelled)
     : model_(provider.model), reasoning_effort_(provider.reasoning_effort),
       provider_name_(provider.name),
-      safe_dir_(std::make_shared<std::string>(
-          std::filesystem::current_path().string())),
+      safe_dir_(std::make_shared<std::string>(std::filesystem::current_path().string())),
       api_base_(provider.api_base), api_key_(provider.api_key),
-      max_iterations_(config.max_tool_iterations),
-      context_limit_(provider.context_limit),
-      system_prompt_(config.SYSTEM_PROMPT),
-      client_(provider.api_base, provider.api_key),
+      max_iterations_(config.max_tool_iterations), context_limit_(provider.context_limit),
+      system_prompt_(config.SYSTEM_PROMPT), client_(provider.api_base, provider.api_key),
       file_modified_cb_(std::make_shared<FileModifiedCallback>()),
       cancelled_(cancelled ? std::move(cancelled) : make_cancellation_token()) {
     // Share the cancellation token with tools and client
@@ -44,7 +41,6 @@ ChatSession::ChatSession(const Config& config, const Provider& provider,
     tools_.add(make_cmake_configure_tool(safe_dir_, config.cmake_configure_timeout, cancelled_));
     tools_.add(make_cmake_build_tool(safe_dir_, config.cmake_build_timeout, cancelled_));
     tools_.add(make_cmake_ctest_tool(safe_dir_, config.cmake_ctest_timeout, cancelled_));
-
 }
 
 // ===================================================================
@@ -52,8 +48,7 @@ ChatSession::ChatSession(const Config& config, const Provider& provider,
 // ===================================================================
 
 std::unique_ptr<ChatSession> ChatSession::create_subagent(
-    const Config& config, const Provider& provider, bool read_only,
-    CancellationToken cancelled) {
+    const Config& config, const Provider& provider, bool read_only, CancellationToken cancelled) {
     // Build a simpler system prompt for subagents
     std::string sp = Config::SUBAGENT_SYSTEM_PROMPT;
 
@@ -63,15 +58,13 @@ std::unique_ptr<ChatSession> ChatSession::create_subagent(
 
     // Check for CMake project and append CMake snippet if present
     std::error_code ec;
-    if (std::filesystem::exists(
-            std::filesystem::current_path() / "CMakeLists.txt", ec)) {
+    if (std::filesystem::exists(std::filesystem::current_path() / "CMakeLists.txt", ec)) {
         sp += Config::CMAKE_PROMPT_SNIPPET;
     }
 
     // Create the session using the private constructor via a wrapper
     // We construct in-place since the constructor is complex.
-    auto session = std::make_unique<ChatSession>(
-        config, provider, std::move(cancelled));
+    auto session = std::make_unique<ChatSession>(config, provider, std::move(cancelled));
     session->system_prompt_ = std::move(sp);
 
     // Remove bash and write_plan tools (read_plan is kept for subagents)
@@ -110,12 +103,12 @@ void ChatSession::set_provider(const Provider& provider) {
 
 bool ChatSession::has_cmake_project() const {
     std::error_code ec;
-    return std::filesystem::exists(
-        std::filesystem::path(*safe_dir_) / "CMakeLists.txt", ec);
+    return std::filesystem::exists(std::filesystem::path(*safe_dir_) / "CMakeLists.txt", ec);
 }
 
 int ChatSession::context_usage_percent() const {
-    if (context_limit_ <= 0) return 0;
+    if (context_limit_ <= 0)
+        return 0;
     // Use the API-reported token count when available (more accurate),
     // fall back to the conversation estimate after restart.
     int tokens = last_usage_.total_tokens;
@@ -130,7 +123,8 @@ int ChatSession::context_usage_percent() const {
 // ===================================================================
 
 void ChatSession::discover_context_limit() {
-    if (context_limit_discovered_) return;
+    if (context_limit_discovered_)
+        return;
 
     static std::mutex cache_mutex;
     static std::unordered_map<std::string, int> cache;
@@ -161,11 +155,10 @@ std::string ChatSession::build_effective_prompt() const {
         prompt += Config::CMAKE_PROMPT_SNIPPET;
     }
     if (mcp_registry_.has_running_servers()) {
-        prompt +=
-            "\n## MCP tools\n\n"
-            "Tools from external MCP servers are available.\n"
-            "These are listed among your tools with a \"mcp_<servername>_\" prefix.\n"
-            "Use them as you would any other tool.\n";
+        prompt += "\n## MCP tools\n\n"
+                  "Tools from external MCP servers are available.\n"
+                  "These are listed among your tools with a \"mcp_<servername>_\" prefix.\n"
+                  "Use them as you would any other tool.\n";
     }
     return prompt;
 }
@@ -240,10 +233,11 @@ Result<ChatSession::StreamResult> ChatSession::stream_chat(const json& payload) 
     SSEParser::Callbacks callbacks({
         .on_data = on_data,
         .on_done = []() {},
-        .on_error = [&](const std::string& err) {
-            stream_errored = true;
-            stream_error = err;
-        },
+        .on_error =
+            [&](const std::string& err) {
+                stream_errored = true;
+                stream_error = err;
+            },
     });
 
     auto stream_result = client_.stream_chat(payload, callbacks);
@@ -259,8 +253,8 @@ Result<ChatSession::StreamResult> ChatSession::stream_chat(const json& payload) 
     return result;
 }
 
-Result<void> ChatSession::execute_tool_calls(int64_t msg_id,
-    const std::vector<ToolCall>& calls, int remaining_iters) {
+Result<void> ChatSession::execute_tool_calls(
+    int64_t msg_id, const std::vector<ToolCall>& calls, int remaining_iters) {
     (void)remaining_iters;
 
     if (*cancelled_) {
@@ -322,9 +316,7 @@ Result<void> ChatSession::execute_tool_calls(int64_t msg_id,
         futures.reserve(calls.size());
         for (size_t i = 0; i < calls.size(); i++) {
             futures.push_back(std::async(std::launch::async,
-                [&, i] {
-                    return tools_.execute(calls[i].name, calls[i].arguments);
-                }));
+                [&, i] { return tools_.execute(calls[i].name, calls[i].arguments); }));
         }
 
         std::vector<Result<std::string>> results;
@@ -346,8 +338,8 @@ Result<void> ChatSession::execute_tool_calls(int64_t msg_id,
                 output_cb_("\xE2\x86\x92 " + calls[i].name + "(" + calls[i].arguments + ")",
                     OutputType::ToolInvocation);
             }
-            conversation_.add_tool(msg_id, calls[i].id,
-                results[i] ? *results[i] : results[i].error());
+            conversation_.add_tool(
+                msg_id, calls[i].id, results[i] ? *results[i] : results[i].error());
         }
     }
 
@@ -391,8 +383,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
             if (!calls.empty()) {
                 auto msg_id = conversation_.add_assistant("", reasoning, calls);
 
-                auto exec_result = execute_tool_calls(msg_id, calls,
-                    max_iterations_ - iter - 1);
+                auto exec_result = execute_tool_calls(msg_id, calls, max_iterations_ - iter - 1);
                 if (!exec_result) {
                     rollback();
                     return std::unexpected(exec_result.error());
@@ -413,8 +404,8 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
     }
 
     if (!produced_content) {
-        std::string msg = "Tool call budget exhausted (" +
-            std::to_string(max_iterations_) + " iterations).";
+        std::string msg =
+            "Tool call budget exhausted (" + std::to_string(max_iterations_) + " iterations).";
         conversation_.add_assistant(msg, "");
         last_content = msg;
         last_reasoning = "";
@@ -428,7 +419,8 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
         auto compact_result = compact();
         if (!compact_result) {
             if (output_cb_)
-                output_cb_("compact() failed: " + compact_result.error(), OutputType::ToolInvocation);
+                output_cb_(
+                    "compact() failed: " + compact_result.error(), OutputType::ToolInvocation);
         }
     }
 
@@ -445,13 +437,15 @@ Result<void> ChatSession::compact() {
     }
 
     // Build a summarization prompt from the conversation
-    std::string summary_prompt = "Please provide a comprehensive summary of the following conversation. "
+    std::string summary_prompt =
+        "Please provide a comprehensive summary of the following conversation. "
         "Preserve all important context, decisions, code changes, file paths, "
         "and outstanding tasks. Be detailed enough that the conversation can "
         "continue seamlessly from this summary.\n\n---\n";
 
     for (const auto& msg : msgs) {
-        if (msg.role == "system") continue; // skip system messages
+        if (msg.role == "system")
+            continue; // skip system messages
 
         summary_prompt += "[" + msg.role + "]: ";
         if (msg.content.has_value()) {
@@ -473,16 +467,17 @@ Result<void> ChatSession::compact() {
     // Build the full tool list so the model sees a consistent prompt.
     // The model won't actually use tools in a summarization request,
     // but some models may behave oddly when tools are suddenly absent.
-    json payload = {
-        {"model", model_},
-        {"messages", json::array({
-            {{"role", "system"}, {"content", sanitize_utf8(system_prompt_
-                + (has_cmake_project() ? std::string(Config::CMAKE_PROMPT_SNIPPET) : ""))}},
-            {{"role", "user"}, {"content", sanitize_utf8(summary_prompt)}}
-        })},
+    json payload = {{"model", model_},
+        {"messages",
+            json::array(
+                {{{"role", "system"},
+                     {"content",
+                         sanitize_utf8(system_prompt_ +
+                             (has_cmake_project() ? std::string(Config::CMAKE_PROMPT_SNIPPET)
+                                                  : ""))}},
+                    {{"role", "user"}, {"content", sanitize_utf8(summary_prompt)}}})},
         {"tools", tools_.to_openai_tools()},
-        {"stream", true}
-    };
+        {"stream", true}};
     if (!reasoning_effort_.empty())
         payload["reasoning_effort"] = reasoning_effort_;
     payload["stream_options"] = {{"include_usage", true}};
@@ -505,10 +500,11 @@ Result<void> ChatSession::compact() {
     SSEParser::Callbacks callbacks({
         .on_data = on_data,
         .on_done = []() {},
-        .on_error = [&](const std::string& err) {
-            stream_errored = true;
-            stream_error = err;
-        },
+        .on_error =
+            [&](const std::string& err) {
+                stream_errored = true;
+                stream_error = err;
+            },
     });
 
     auto stream_result = client_.stream_chat(payload, callbacks);
@@ -521,13 +517,12 @@ Result<void> ChatSession::compact() {
 
     // Replace the conversation with just the summary
     conversation_.replace_with_summary(summary);
-    last_usage_ = Usage{};  // reset so UI falls back to conversation estimate
+    last_usage_ = Usage{}; // reset so UI falls back to conversation estimate
 
     if (output_cb_)
-        output_cb_("(conversation compacted — summary follows)\n\n" + summary,
-            OutputType::Content);
+        output_cb_("(conversation compacted — summary follows)\n\n" + summary, OutputType::Content);
 
-   return {};
+    return {};
 }
 
 // ===================================================================
@@ -538,8 +533,7 @@ Result<void> ChatSession::start_mcp_server(const McpEndpoint& config) {
     auto result = mcp_registry_.start_server(config);
     if (!result) {
         return std::unexpected(
-            std::string("Failed to start MCP server '") + config.name +
-            "': " + result.error());
+            std::string("Failed to start MCP server '") + config.name + "': " + result.error());
     }
 
     // Register all discovered tools in the ToolRegistry,
@@ -577,7 +571,8 @@ void ChatSession::stop_mcp_server(const std::string& name) {
 // ---------------------------------------------------------------------------
 
 void ChatSession::clear() {
-    if (*cancelled_) return;  // honour cancellation token
+    if (*cancelled_)
+        return; // honour cancellation token
     conversation_.clear();
-    last_usage_ = Usage{};  // reset so context pct falls back to estimate(0)
+    last_usage_ = Usage{}; // reset so context pct falls back to estimate(0)
 }

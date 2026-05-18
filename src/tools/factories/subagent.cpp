@@ -1,12 +1,12 @@
 #include "chat.h"
 #include "tools.h"
+#include "agent.h"
 
 // ===================================================================
 // Tool: call_subagent
 // ===================================================================
 
-Tool make_call_subagent_tool(SubagentLookup lookup, SubagentRunningCheck is_running,
-    SubagentClearUI clear_ui, SubagentPushEntry push_entry,
+Tool make_call_subagent_tool(PrimaryAgent& primary,
     const std::vector<SubagentConfig>& subagent_configs) {
     Tool t;
     t.name = "call_subagent";
@@ -40,10 +40,7 @@ Tool make_call_subagent_tool(SubagentLookup lookup, SubagentRunningCheck is_runn
                     {{"type", "string"},
                         {"description", "The request/prompt to send to the subagent"}}}}},
         {"required", {"name", "request"}}};
-    t.execute = [lookup = std::move(lookup), is_running = std::move(is_running),
-                    clear_ui = std::move(clear_ui),
-                    push_entry = std::move(push_entry)](
-                    const json& args) -> Result<std::string> {
+    t.execute = [&primary](const json& args) -> Result<std::string> {
         auto name = args.value("name", std::string());
         auto request = args.value("request", std::string());
 
@@ -54,31 +51,30 @@ Tool make_call_subagent_tool(SubagentLookup lookup, SubagentRunningCheck is_runn
             return std::unexpected("subagent request must not be empty");
         }
 
+        auto lookup = primary.subagent_by_name(name);
+        if (!lookup) {
+            return std::unexpected("subagent name unknown: " + name);
+        }
+
+        SubAgent& subagent = **lookup;
+
         // Check if subagent is already running
-        if (is_running(name)) {
+        if (subagent.chat_state->running) {
             return std::unexpected("subagent \"" + name +
                                    "\" is already running — wait for it to finish");
         }
 
-        // Look up the subagent session
-        auto* session = lookup(name);
-        if (!session) {
-            return std::unexpected("subagent \"" + name + "\" not found");
-        }
-
         // Reset subagent state: clear conversation and UI entries
-        session->conversation().clear();
-        if (clear_ui) {
-            clear_ui(name);
-        }
+        subagent.session->conversation().clear();
+        subagent.ui_state.entries.clear();
+        subagent.ui_state.next_seq = 1;
 
         // Push the primary agent's request as a UserText entry in the subagent chat
-        if (push_entry) {
-            push_entry(name, request);
-        }
+        subagent.ui_state.entries.push_back(
+            {EntryType::UserText, request, false, subagent.ui_state.next_seq++});
 
         // Run the request
-        auto result = session->run_once(request);
+        auto result = subagent.session->run_once(request);
         if (!result) {
             return std::unexpected("subagent error: " + result.error());
         }

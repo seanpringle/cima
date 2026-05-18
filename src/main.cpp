@@ -9,17 +9,16 @@
 #include <string>
 
 static void print_usage() {
-    std::cout
-        << "Usage: cima [<session>]\n\n"
-        << "Arguments:\n"
-        << "  <session>           Session name (default: \"default\")\n"
-        << "                      Stored in ~/.local/state/cima/<session>/\n\n"
-        << "Options:\n"
-        << "  -h, --help          Print this help\n\n"
-        << "Configuration file: ~/.config/cima/cima.json\n"
-        << "  Created automatically on first run with default values.\n"
-        << "  Edit it to persist settings across sessions.\n"
-        << std::flush;
+    std::cout << "Usage: cima [<session>]\n\n"
+              << "Arguments:\n"
+              << "  <session>           Session name (default: \"default\")\n"
+              << "                      Stored in ~/.local/state/cima/<session>/\n\n"
+              << "Options:\n"
+              << "  -h, --help          Print this help\n\n"
+              << "Configuration file: ~/.config/cima/cima.json\n"
+              << "  Created automatically on first run with default values.\n"
+              << "  Edit it to persist settings across sessions.\n"
+              << std::flush;
 }
 
 int main(int argc, char* argv[]) {

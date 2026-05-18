@@ -31,7 +31,8 @@ json PlanBoard::to_json() const {
 }
 
 void PlanBoard::from_json(const json& j) {
-    if (!j.is_object()) return;
+    if (!j.is_object())
+        return;
     plan_.clear();
 
     auto p = j.find("plan");

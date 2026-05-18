@@ -59,12 +59,12 @@ struct ToolCall {
 // ---------------------------------------------------------------------------
 
 struct Message {
-    std::string role;                   // system, user, assistant, tool
-    std::optional<std::string> content; // null for tool_call messages
-    std::string reasoning_content;      // model-specific, may be empty
-    std::vector<ToolCall> tool_calls;   // for assistant tool_call msgs
-    std::string tool_call_id;           // for tool result messages
-    std::string suggested_retention = "preserve";  // "preserve" or "droppable"
+    std::string role;                             // system, user, assistant, tool
+    std::optional<std::string> content;           // null for tool_call messages
+    std::string reasoning_content;                // model-specific, may be empty
+    std::vector<ToolCall> tool_calls;             // for assistant tool_call msgs
+    std::string tool_call_id;                     // for tool result messages
+    std::string suggested_retention = "preserve"; // "preserve" or "droppable"
 };
 
 // ---------------------------------------------------------------------------

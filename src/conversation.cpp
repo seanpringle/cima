@@ -28,8 +28,8 @@ int64_t Conversation::add_notice(const std::string& content) {
     return id;
 }
 
-int64_t Conversation::add_system(const std::string& content,
-    const std::string& suggested_retention) {
+int64_t Conversation::add_system(
+    const std::string& content, const std::string& suggested_retention) {
     Message msg;
     msg.role = "system";
     msg.content = content;
@@ -59,13 +59,13 @@ int64_t Conversation::add_assistant(const std::string& content,
     return id;
 }
 
-void Conversation::add_tool(int64_t message_id,
-    const std::string& tool_call_id,
-    const std::string& content) {
+void Conversation::add_tool(
+    int64_t message_id, const std::string& tool_call_id, const std::string& content) {
     // Find the message by id (we use vector index + 1 as id)
     // message_id is 1-based, vector is 0-based
     size_t idx = static_cast<size_t>(message_id - 1);
-    if (idx >= messages_.size()) return;
+    if (idx >= messages_.size())
+        return;
 
     auto& msg = messages_[idx];
     for (auto& tc : msg.tool_calls) {
@@ -100,10 +100,7 @@ json Conversation::build_openai_payload(const std::string& system_prompt) const 
                 json tc_json;
                 tc_json["id"] = tc.id;
                 tc_json["type"] = "function";
-                tc_json["function"] = {
-                    {"name", tc.name},
-                    {"arguments", tc.arguments}
-                };
+                tc_json["function"] = {{"name", tc.name}, {"arguments", tc.arguments}};
                 tc_arr.push_back(std::move(tc_json));
             }
             j["tool_calls"] = std::move(tc_arr);
@@ -244,7 +241,8 @@ void Conversation::from_json(const json& j) {
     messages_.clear();
     next_id_ = 1;
 
-    if (!j.is_array()) return;
+    if (!j.is_array())
+        return;
 
     for (const auto& item : j) {
         Message msg;

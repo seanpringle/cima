@@ -18,8 +18,8 @@ class Conversation {
     int64_t add_user(const std::string& content);
 
     /// Add a system message. Returns the new message id.
-    int64_t add_system(const std::string& content,
-        const std::string& suggested_retention = "droppable");
+    int64_t add_system(
+        const std::string& content, const std::string& suggested_retention = "droppable");
 
     /// Add an assistant message. If tool_calls is non-empty, the message
     /// content is set to nullopt and the calls are stored on the message.
@@ -32,9 +32,7 @@ class Conversation {
     int64_t add_notice(const std::string& content);
 
     /// Set the result of a tool call on the given assistant message.
-    void add_tool(int64_t message_id,
-        const std::string& tool_call_id,
-        const std::string& content);
+    void add_tool(int64_t message_id, const std::string& tool_call_id, const std::string& content);
 
     /// Build the OpenAI-compatible messages array.
     json build_openai_payload(const std::string& system_prompt) const;

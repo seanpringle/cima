@@ -1,13 +1,17 @@
 
 #include "agent.h"
 #include "session_data.h"
+#include <expected>
 
 void Agent::cancel_and_wait() {
     if (chat_state->running) {
         *chat_state->cancelled = true;
         if (chat_state->future.valid()) {
             chat_state->future.wait();
-            try { chat_state->future.get(); } catch (...) {}
+            try {
+                chat_state->future.get();
+            } catch (...) {
+            }
         }
         chat_state->running = false;
     }
@@ -35,7 +39,8 @@ PrimaryAgent::PrimaryAgent(SessionData& data) : session_data{data} {
 }
 
 PrimaryAgent::~PrimaryAgent() {
-    for (auto& t : subagents) t.cancel_and_wait();
+    for (auto& t : subagents)
+        t.cancel_and_wait();
     cancel_and_wait();
 
     session_data.provider_name = provider_name;
@@ -48,13 +53,22 @@ PrimaryAgent::~PrimaryAgent() {
         json entry;
         entry["seq"] = e.seq;
         switch (e.type) {
-            case EntryType::UserText:  entry["type"] = "UserText"; break;
-            case EntryType::Reasoning: entry["type"] = "Reasoning"; break;
-            case EntryType::Content:   entry["type"] = "Content"; break;
-            case EntryType::ToolCall:  entry["type"] = "ToolCall"; break;
+        case EntryType::UserText:
+            entry["type"] = "UserText";
+            break;
+        case EntryType::Reasoning:
+            entry["type"] = "Reasoning";
+            break;
+        case EntryType::Content:
+            entry["type"] = "Content";
+            break;
+        case EntryType::ToolCall:
+            entry["type"] = "ToolCall";
+            break;
         }
         entry["text"] = e.text;
-        if (e.is_streaming) entry["streaming"] = true;
+        if (e.is_streaming)
+            entry["streaming"] = true;
         log_arr.push_back(std::move(entry));
     }
     session_data.chat_log = std::move(log_arr);
@@ -64,7 +78,8 @@ PrimaryAgent::~PrimaryAgent() {
 
     std::error_code ec;
     auto cwd = std::filesystem::current_path(ec);
-    if (!ec) session_data.last_cwd = cwd.string();
+    if (!ec)
+        session_data.last_cwd = cwd.string();
 }
 
 void PrimaryAgent::init_defaults() {
@@ -88,11 +103,10 @@ void PrimaryAgent::create_chat_session() {
     chat_state = std::make_unique<AsyncChatState>();
     session = std::make_unique<ChatSession>(cfg, provider, chat_state->cancelled);
     session->set_agent_name("Assistant");
-    session->set_output_callback(
-        [cs = chat_state.get()](const std::string& text, OutputType type) {
-            std::lock_guard<std::mutex> lock(cs->mutex);
-            cs->pending.emplace_back(text, type);
-        });
+    session->set_output_callback([cs = chat_state.get()](const std::string& text, OutputType type) {
+        std::lock_guard<std::mutex> lock(cs->mutex);
+        cs->pending.emplace_back(text, type);
+    });
 }
 
 void PrimaryAgent::restore_session_data() {
@@ -125,15 +139,21 @@ void PrimaryAgent::restore_session_data() {
             DisplayEntry e;
             e.seq = entry.value("seq", 0);
             std::string t = entry.value("type", "Content");
-            if (t == "UserText")      e.type = EntryType::UserText;
-            else if (t == "Reasoning") e.type = EntryType::Reasoning;
-            else if (t == "Content")   e.type = EntryType::Content;
-            else if (t == "ToolCall")  e.type = EntryType::ToolCall;
-            else continue;
+            if (t == "UserText")
+                e.type = EntryType::UserText;
+            else if (t == "Reasoning")
+                e.type = EntryType::Reasoning;
+            else if (t == "Content")
+                e.type = EntryType::Content;
+            else if (t == "ToolCall")
+                e.type = EntryType::ToolCall;
+            else
+                continue;
             e.text = entry.value("text", "");
             e.is_streaming = entry.value("streaming", false);
             ui_state.entries.push_back(std::move(e));
-            if (e.seq > max_seq) max_seq = e.seq;
+            if (e.seq > max_seq)
+                max_seq = e.seq;
         }
     }
     ui_state.next_seq = max_seq + 1;
@@ -176,38 +196,13 @@ void PrimaryAgent::create_subagents() {
     }
 }
 
+Result<SubAgent*> PrimaryAgent::subagent_by_name(const std::string& name) {
+    for (auto& t : subagents)
+        if (t.subagent_name == name)
+            return &t;
+    return std::unexpected("no such subagent: " + name);
+}
+
 void PrimaryAgent::register_subagent_tools() {
-    session->register_call_subagent_tool(
-        /*lookup=*/[primary=this](const std::string& name) -> ChatSession* {
-            for (auto& t : primary->subagents) {
-                if (t.subagent_name == name) return t.session.get();
-            }
-            return nullptr;
-        },
-        /*is_running=*/[primary=this](const std::string& name) -> bool {
-            for (auto& t : primary->subagents) {
-                if (t.subagent_name == name) return t.chat_state->running;
-            }
-            return false;
-        },
-        /*clear_ui=*/[primary=this](const std::string& name) -> void {
-            for (auto& t : primary->subagents) {
-                if (t.subagent_name == name) {
-                    t.ui_state.entries.clear();
-                    t.ui_state.next_seq = 1;
-                    break;
-                }
-            }
-        },
-        /*push_entry=*/[primary=this](const std::string& name,
-                                       const std::string& text) -> void {
-            for (auto& t : primary->subagents) {
-                if (t.subagent_name == name) {
-                    t.ui_state.entries.push_back(
-                        {EntryType::UserText, text, false, t.ui_state.next_seq++});
-                    break;
-                }
-            }
-        },
-        cfg.subagents);
+    session->register_call_subagent_tool(*this, cfg.subagents);
 }

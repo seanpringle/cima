@@ -25,8 +25,8 @@ using OutputCallback = std::function<void(const std::string& text, OutputType ty
 
 class ChatSession {
   public:
-    explicit ChatSession(const Config& config, const Provider& provider,
-        CancellationToken cancelled = nullptr);
+    explicit ChatSession(
+        const Config& config, const Provider& provider, CancellationToken cancelled = nullptr);
 
     ChatSession(const ChatSession&) = delete;
     ChatSession& operator=(const ChatSession&) = delete;
@@ -37,8 +37,9 @@ class ChatSession {
     /// If read_only is true, write tools (file, git) are excluded.
     /// If primary_plan is non-null, the subagent's read_plan tool reads from
     /// that PlanBoard (typically the primary agent's plan) instead of its own.
-    static std::unique_ptr<ChatSession> create_subagent(
-        const Config& config, const Provider& provider, bool read_only,
+    static std::unique_ptr<ChatSession> create_subagent(const Config& config,
+        const Provider& provider,
+        bool read_only,
         CancellationToken cancelled);
 
     Result<ChatResult> run_once(const std::string& user_input);
@@ -84,8 +85,6 @@ class ChatSession {
     void set_agent_name(const std::string& name) { agent_name_ = name; }
     const std::string& agent_name() const { return agent_name_; }
 
-
-
     /// True when a CMakeLists.txt exists in the workspace directory.
     bool has_cmake_project() const;
 
@@ -119,11 +118,9 @@ class ChatSession {
     /// clear_ui resets the subagent's UI state; push_entry pushes a UserText entry
     /// (the primary agent's request).  subagent_configs are used to build the
     /// tool description with available names.
-    void register_call_subagent_tool(SubagentLookup lookup, SubagentRunningCheck is_running,
-        SubagentClearUI clear_ui, SubagentPushEntry push_entry,
-        const std::vector<SubagentConfig>& subagent_configs = {}) {
-        tools_.add(make_call_subagent_tool(std::move(lookup), std::move(is_running),
-            std::move(clear_ui), std::move(push_entry), subagent_configs));
+    void register_call_subagent_tool(
+        PrimaryAgent& primary, const std::vector<SubagentConfig>& subagent_configs = {}) {
+        tools_.add(make_call_subagent_tool(primary, subagent_configs));
     }
 
     /// Access the tool registry (for testing and GUI).
@@ -159,8 +156,8 @@ class ChatSession {
     /// parallel for read-only, single for one call.
     /// Results are added to the conversation via add_tool().
     /// Returns an error only if the user cancels (caller should rollback).
-    Result<void> execute_tool_calls(int64_t msg_id, const std::vector<ToolCall>& calls,
-        int remaining_iters);
+    Result<void> execute_tool_calls(
+        int64_t msg_id, const std::vector<ToolCall>& calls, int remaining_iters);
     std::string model_;
     std::string reasoning_effort_;
     std::string agent_name_;
@@ -177,7 +174,7 @@ class ChatSession {
     ToolRegistry tools_;
     OutputCallback output_cb_;
     Usage last_usage_;
-    int context_limit_ = 300000;           // discovered from API, falls back to Config
+    int context_limit_ = 300000; // discovered from API, falls back to Config
     bool context_limit_discovered_ = false;
     bool bash_enabled_ = false;
     McpRegistry mcp_registry_;

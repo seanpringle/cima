@@ -32,7 +32,8 @@ json SessionData::to_json() const {
 }
 
 void SessionData::from_json(const json& j) {
-    if (!j.is_object()) return;
+    if (!j.is_object())
+        return;
 
     version = j.value("version", 2);
     last_cwd = j.value("last_cwd", std::string());

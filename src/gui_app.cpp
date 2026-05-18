@@ -21,7 +21,8 @@ using namespace ImGui;
 
 static std::string find_system_font(const std::string& pattern_str) {
     FcPattern* pattern = FcNameParse(reinterpret_cast<const FcChar8*>(pattern_str.c_str()));
-    if (!pattern) return {};
+    if (!pattern)
+        return {};
 
     FcConfigSubstitute(nullptr, pattern, FcMatchPattern);
     FcDefaultSubstitute(pattern);
@@ -49,26 +50,33 @@ static std::string find_system_font(const std::string& pattern_str) {
 static bool find_font_pair(std::string& out_sans, std::string& out_mono) {
     FcInit();
 
-    if (!cfg.font_sans.empty()) out_sans = cfg.font_sans;
-    if (!cfg.font_mono.empty()) out_mono = cfg.font_mono;
+    if (!cfg.font_sans.empty())
+        out_sans = cfg.font_sans;
+    if (!cfg.font_mono.empty())
+        out_mono = cfg.font_mono;
 
     auto try_family = [&](const std::string& sans_name, const std::string& mono_name) -> bool {
         if (out_sans.empty()) {
             std::string p = find_system_font(sans_name);
-            if (p.empty()) return false;
+            if (p.empty())
+                return false;
             out_sans = std::move(p);
         }
         if (out_mono.empty()) {
             std::string p = find_system_font(mono_name);
-            if (p.empty()) return false;
+            if (p.empty())
+                return false;
             out_mono = std::move(p);
         }
         return true;
     };
 
-    if (try_family("DejaVu Sans", "DejaVu Sans Mono")) return true;
-    if (try_family("Liberation Sans", "Liberation Mono")) return true;
-    if (try_family("sans-serif", "monospace")) return true;
+    if (try_family("DejaVu Sans", "DejaVu Sans Mono"))
+        return true;
+    if (try_family("Liberation Sans", "Liberation Mono"))
+        return true;
+    if (try_family("sans-serif", "monospace"))
+        return true;
 
     return false;
 }
@@ -81,7 +89,8 @@ ImFont* mono_font = nullptr;
 
 void load_fonts(SDL_Window* window) {
     float display_scale = SDL_GetWindowDisplayScale(window);
-    if (display_scale <= 0.0f) display_scale = 1.0f;
+    if (display_scale <= 0.0f)
+        display_scale = 1.0f;
     float scale = display_scale;
     ImGui::GetStyle().ScaleAllSizes(scale);
 
@@ -93,8 +102,7 @@ void load_fonts(SDL_Window* window) {
     if (find_font_pair(sans_path, mono_path)) {
         ImGui::GetIO().Fonts->Clear();
         ImGui::GetIO().Fonts->AddFontFromFileTTF(sans_path.c_str(), fs, &font_cfg);
-        mono_font = ImGui::GetIO().Fonts->AddFontFromFileTTF(
-            mono_path.c_str(), fs, &font_cfg);
+        mono_font = ImGui::GetIO().Fonts->AddFontFromFileTTF(mono_path.c_str(), fs, &font_cfg);
     }
 
     if (!mono_font) {
@@ -117,8 +125,7 @@ struct GuiBootstrap {
         }
 
         std::string window_title = "cima :: " + session_name;
-        window = SDL_CreateWindow(window_title.c_str(), 1280, 720,
-            SDL_WINDOW_RESIZABLE);
+        window = SDL_CreateWindow(window_title.c_str(), 1280, 720, SDL_WINDOW_RESIZABLE);
         if (!window) {
             SDL_Log("SDL_CreateWindow error: %s", SDL_GetError());
             result_code = 1;
@@ -152,8 +159,10 @@ struct GuiBootstrap {
         ImGui_ImplSDL3_Shutdown();
         ImGui::DestroyContext();
 
-        if (renderer) SDL_DestroyRenderer(renderer);
-        if (window) SDL_DestroyWindow(window);
+        if (renderer)
+            SDL_DestroyRenderer(renderer);
+        if (window)
+            SDL_DestroyWindow(window);
         SDL_Quit();
     }
 
@@ -170,8 +179,10 @@ static bool handle_sdl_events() {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         ImGui_ImplSDL3_ProcessEvent(&event);
-        if (event.type == SDL_EVENT_QUIT) return true;
-        if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) return true;
+        if (event.type == SDL_EVENT_QUIT)
+            return true;
+        if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
+            return true;
     }
     return false;
 }
@@ -183,11 +194,11 @@ static bool handle_sdl_events() {
 static void render_frame(PrimaryAgent& primary, bool& done) {
     SetNextWindowPos(ImVec2(0, 0));
     SetNextWindowSize(GetIO().DisplaySize);
-    Begin("cima", nullptr,
-        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
-            ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus |
-            ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoScrollbar |
-            ImGuiWindowFlags_NoScrollWithMouse);
+    Begin("cima",
+        nullptr,
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+            ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoDecoration |
+            ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
     // 40% session tabs (left) + 60% Chat (right)
     {
@@ -205,8 +216,7 @@ static void render_frame(PrimaryAgent& primary, bool& done) {
 
         // Left panel: session tabs
         SetCursorPos(planPos);
-        BeginChild("##left-session-tabs", planSize,
-            ImGuiChildFlags_None, ImGuiWindowFlags_None);
+        BeginChild("##left-session-tabs", planSize, ImGuiChildFlags_None, ImGuiWindowFlags_None);
 
         if (BeginTabBar("##session-tabs")) {
             if (BeginTabItem("   Plan   ")) {
@@ -226,8 +236,8 @@ static void render_frame(PrimaryAgent& primary, bool& done) {
 
             for (auto& sa_tab : primary.subagents) {
                 PushID(sa_tab.id);
-                if (BeginTabItem(("   " + sa_tab.title + "   ##sa-" +
-                                  std::to_string(sa_tab.id)).c_str())) {
+                if (BeginTabItem(
+                        ("   " + sa_tab.title + "   ##sa-" + std::to_string(sa_tab.id)).c_str())) {
                     render_subagent_tab(sa_tab, cfg, mono_font);
                     render_subagent_chat(sa_tab, mono_font);
                     EndTabItem();
@@ -239,14 +249,13 @@ static void render_frame(PrimaryAgent& primary, bool& done) {
         }
         EndChild();
 
-        GetWindowDrawList()->AddLine(sepPosA, sepPosB,
-            GetColorU32(ImGuiCol_Separator), GetStyle().ChildBorderSize);
+        GetWindowDrawList()->AddLine(
+            sepPosA, sepPosB, GetColorU32(ImGuiCol_Separator), GetStyle().ChildBorderSize);
 
         // Right panel: Chat UI
         PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         SetCursorPos(chatPos);
-        BeginChild("##tab_chat", chatSize,
-            ImGuiChildFlags_None, ImGuiWindowFlags_None);
+        BeginChild("##tab_chat", chatSize, ImGuiChildFlags_None, ImGuiWindowFlags_None);
         PopStyleVar();
         render_chat_ui(primary, done);
         EndChild();
@@ -261,7 +270,8 @@ static void render_frame(PrimaryAgent& primary, bool& done) {
 
 int gui_main(const std::string& session_name) {
     GuiBootstrap gfx(session_name);
-    if (gfx.result_code) return gfx.result_code;
+    if (gfx.result_code)
+        return gfx.result_code;
 
     Session session(session_name);
     session.print_welcome();

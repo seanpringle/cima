@@ -434,7 +434,8 @@ Result<void> ChatClient::stream_chat(const json& payload, SSEParser::Callbacks c
         } else {
             // Log just the response body for other errors
             if (!raw_response_.empty()) {
-                std::cerr << "HTTP " << http_code << " response body:\n" << raw_response_ << std::endl;
+                std::cerr << "HTTP " << http_code << " response body:\n"
+                          << raw_response_ << std::endl;
             }
         }
         auto msg = "HTTP " + std::to_string(http_code);

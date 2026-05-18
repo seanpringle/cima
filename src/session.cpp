@@ -48,7 +48,7 @@ Session::Session(const std::string& name) : session_name_{name} {
     std::filesystem::create_directories(sessions_base_dir(), ec);
     if (ec) {
         throw std::runtime_error("Failed to create sessions directory " +
-                                 sessions_base_dir().string() + ": " + ec.message());
+            sessions_base_dir().string() + ": " + ec.message());
     }
 
     // Check if the session file already exists
@@ -67,9 +67,7 @@ Session::Session(const std::string& name) : session_name_{name} {
     }
 }
 
-Session::~Session() {
-    save_session();
-}
+Session::~Session() { save_session(); }
 
 // -----------------------------------------------------------------------
 // Path accessors
@@ -93,8 +91,8 @@ Result<void> Session::save_session() {
         {
             std::ofstream file(tmp_path);
             if (!file.is_open()) {
-                return std::unexpected("Failed to open temporary file for writing: " +
-                                       tmp_path.string());
+                return std::unexpected(
+                    "Failed to open temporary file for writing: " + tmp_path.string());
             }
             file << session_data_.to_json().dump(2) << std::endl;
         }

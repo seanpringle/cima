@@ -25,30 +25,24 @@ template <typename T> using Result = std::expected<T, std::string>;
 
 /// A single MCP endpoint definition from cima.json.
 struct McpEndpoint {
-    std::string name;                           // unique id, e.g. "my-filesystem-server"
-    std::string transport = "stdio";            // "stdio" or "streamable-http"
+    std::string name;                // unique id, e.g. "my-filesystem-server"
+    std::string transport = "stdio"; // "stdio" or "streamable-http"
     // For stdio:
-    std::string command;                        // e.g. "npx", "uvx", "/path/to/server"
-    std::vector<std::string> args;              // e.g. ["-y", "@modelcontextprotocol/server-filesystem"]
-    std::string cwd;                            // working directory (empty = inherit)
+    std::string command;           // e.g. "npx", "uvx", "/path/to/server"
+    std::vector<std::string> args; // e.g. ["-y", "@modelcontextprotocol/server-filesystem"]
+    std::string cwd;               // working directory (empty = inherit)
     // For HTTP:
-    std::string url;                            // e.g. "http://localhost:3100/mcp"
-    std::string api_key;                        // Bearer token for Authorization header
+    std::string url;     // e.g. "http://localhost:3100/mcp"
+    std::string api_key; // Bearer token for Authorization header
     // Common:
-    std::map<std::string, std::string> env;     // extra env vars for stdio
+    std::map<std::string, std::string> env; // extra env vars for stdio
     int timeout_sec = 60;
 };
 
 inline bool operator==(const McpEndpoint& a, const McpEndpoint& b) {
-    return a.name == b.name
-        && a.transport == b.transport
-        && a.command == b.command
-        && a.args == b.args
-        && a.cwd == b.cwd
-        && a.url == b.url
-        && a.api_key == b.api_key
-        && a.env == b.env
-        && a.timeout_sec == b.timeout_sec;
+    return a.name == b.name && a.transport == b.transport && a.command == b.command &&
+        a.args == b.args && a.cwd == b.cwd && a.url == b.url && a.api_key == b.api_key &&
+        a.env == b.env && a.timeout_sec == b.timeout_sec;
 }
 
 /// A single provider definition from cima.json.
@@ -60,21 +54,21 @@ struct SubagentConfig {
 };
 
 struct Provider {
-    std::string name;               // unique identifier, e.g. "opencode.go"
-    std::string api_base;           // e.g. "https://api.opencode.go/v1"
+    std::string name;     // unique identifier, e.g. "opencode.go"
+    std::string api_base; // e.g. "https://api.opencode.go/v1"
     std::string api_key;
-    std::string model;              // default model for this provider
-    std::string reasoning_effort;   // reasoning effort (empty = not set / omit from API)
+    std::string model;            // default model for this provider
+    std::string reasoning_effort; // reasoning effort (empty = not set / omit from API)
     std::vector<std::string> reasoning_efforts; // allowed values for the dropdown
-    int context_limit = 300000;     // model context window (tokens)
+    int context_limit = 300000;                 // model context window (tokens)
 };
 
 struct Config {
     std::vector<Provider> providers;
-    std::vector<McpEndpoint> mcp_servers;   // MCP endpoint definitions
+    std::vector<McpEndpoint> mcp_servers; // MCP endpoint definitions
     std::vector<std::string> read_only_paths;
     int max_tool_iterations = 100;
-    int context_limit = 300000; // model context window (tokens)
+    int context_limit = 300000;                  // model context window (tokens)
     std::map<std::string, std::string> snippets; // from cima.json
     std::vector<SubagentConfig> subagents;       // from cima.json
 
@@ -91,14 +85,14 @@ struct Config {
     int web_fetch_timeout = 15;
 
     // ── CMake tool timeouts ──
-    int cmake_configure_timeout = 120;  // cmake configure can be slow
-    int cmake_build_timeout = 300;      // builds can take minutes
-    int cmake_ctest_timeout = 300;      // test suites can be long
+    int cmake_configure_timeout = 120; // cmake configure can be slow
+    int cmake_build_timeout = 300;     // builds can take minutes
+    int cmake_ctest_timeout = 300;     // test suites can be long
 
     // Font settings (empty paths = auto-detect via fontconfig)
-    std::string font_sans;                   // path to sans-serif font file
-    std::string font_mono;                   // path to monospace font file
-    int font_size = 18;                      // base font size in points (before display scaling)
+    std::string font_sans; // path to sans-serif font file
+    std::string font_mono; // path to monospace font file
+    int font_size = 18;    // base font size in points (before display scaling)
 
     static std::string SYSTEM_PROMPT;
     static std::string SUBAGENT_SYSTEM_PROMPT;

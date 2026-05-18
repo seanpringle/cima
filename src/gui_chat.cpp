@@ -151,7 +151,8 @@ static int enter_block_cb(MD_BLOCKTYPE type, void* detail, void* userdata) {
         auto* dl = GetWindowDrawList();
         ctx.code_splitter.Split(dl, 2);
         ctx.code_splitter.SetCurrentChannel(dl, 1);
-        if (ctx.mono_font) PushFont(ctx.mono_font);
+        if (ctx.mono_font)
+            PushFont(ctx.mono_font);
         ctx.indent(GetStyle().IndentSpacing);
         ctx.newline(type);
         break;
@@ -260,7 +261,8 @@ static int leave_block_cb(MD_BLOCKTYPE type, void* detail, void* userdata) {
                     ImVec2(ctx.code_start.x + GetStyle().IndentSpacing, GetCursorScreenPos().y));
             }
         }
-        if (ctx.mono_font) PopFont();
+        if (ctx.mono_font)
+            PopFont();
         ctx.newline(type);
         ImVec2 br(GetCursorScreenPos().x + GetContentRegionAvail().x, GetCursorScreenPos().y);
         auto* dl = GetWindowDrawList();
@@ -328,7 +330,8 @@ static int enter_span_cb(MD_SPANTYPE type, void* detail, void* userdata) {
         break;
     case MD_SPAN_CODE:
         PushStyleColor(ImGuiCol_Text, IM_COL32(200, 200, 255, 255));
-        if (ctx.mono_font) PushFont(ctx.mono_font);
+        if (ctx.mono_font)
+            PushFont(ctx.mono_font);
         ctx.style_depth++;
         break;
     case MD_SPAN_A:
@@ -357,7 +360,8 @@ static int leave_span_cb(MD_SPANTYPE type, void* detail, void* userdata) {
     auto& ctx = *static_cast<RenderCtx*>(userdata);
     switch (type) {
     case MD_SPAN_CODE:
-        if (ctx.mono_font) PopFont();
+        if (ctx.mono_font)
+            PopFont();
         PopStyleColor();
         ctx.style_depth--;
         break;
@@ -514,10 +518,12 @@ void render_config_tab(PrimaryAgent& tab, const Config& cfg, ImFont* mono_font) 
         std::weak_ptr<bool> weak_tab = ui.tab_alive;
         std::packaged_task<void()> task([&ui, weak_tab, api_base, api_key]() {
             // Check if tab is still alive before accessing ui
-            if (weak_tab.expired()) return;
+            if (weak_tab.expired())
+                return;
             ChatClient client(api_base, api_key);
             auto result = client.fetch_models();
-            if (!weak_tab.lock()) return; // tab was destroyed mid-fetch
+            if (!weak_tab.lock())
+                return; // tab was destroyed mid-fetch
             if (result) {
                 ui.available_models = std::move(*result);
             } else {
@@ -551,7 +557,8 @@ void render_config_tab(PrimaryAgent& tab, const Config& cfg, ImFont* mono_font) 
                         trigger_model_fetch();
                     }
                 }
-                if (is_selected) SetItemDefaultFocus();
+                if (is_selected)
+                    SetItemDefaultFocus();
             }
             EndCombo();
         }
@@ -598,7 +605,8 @@ void render_config_tab(PrimaryAgent& tab, const Config& cfg, ImFont* mono_font) 
                     session.set_model(m);
                     tab.model_name = m;
                 }
-                if (is_selected) SetItemDefaultFocus();
+                if (is_selected)
+                    SetItemDefaultFocus();
             }
             EndCombo();
         }
@@ -610,7 +618,8 @@ void render_config_tab(PrimaryAgent& tab, const Config& cfg, ImFont* mono_font) 
         !ui.available_models.empty()) {
         ui.models_validated = true;
         const auto& current = session.model();
-        bool found = std::any_of(ui.available_models.begin(), ui.available_models.end(),
+        bool found = std::any_of(ui.available_models.begin(),
+            ui.available_models.end(),
             [&current](const std::string& m) { return m == current; });
         if (!found) {
             session.set_model(ui.available_models.front());
@@ -623,7 +632,8 @@ void render_config_tab(PrimaryAgent& tab, const Config& cfg, ImFont* mono_font) 
     // ── Reasoning effort combo ──
     PushFont(mono_font);
     {
-        std::string re = tab.reasoning_effort.empty() ? session.reasoning_effort() : tab.reasoning_effort;
+        std::string re =
+            tab.reasoning_effort.empty() ? session.reasoning_effort() : tab.reasoning_effort;
 
         // Find which provider this tab uses so we can get its reasoning_efforts list
         std::vector<std::string> efforts;
@@ -645,7 +655,8 @@ void render_config_tab(PrimaryAgent& tab, const Config& cfg, ImFont* mono_font) 
                     tab.reasoning_effort = e;
                     session.set_reasoning_effort(e);
                 }
-                if (is_selected) SetItemDefaultFocus();
+                if (is_selected)
+                    SetItemDefaultFocus();
             }
             EndCombo();
         }
@@ -700,10 +711,10 @@ void render_config_tab(PrimaryAgent& tab, const Config& cfg, ImFont* mono_font) 
             // Status / error
             if (session.mcp_registry().is_running(mcp.name)) {
                 SameLine();
-                TextColored(ImVec4(0,1,0,1), "(*) running");
+                TextColored(ImVec4(0, 1, 0, 1), "(*) running");
             } else if (tab.mcp_error.count(mcp.name)) {
                 SameLine();
-                TextColored(ImVec4(1,0,0,1), "(!) %s", tab.mcp_error[mcp.name].c_str());
+                TextColored(ImVec4(1, 0, 0, 1), "(!) %s", tab.mcp_error[mcp.name].c_str());
             }
 
             // Tooltip with server details
@@ -713,12 +724,14 @@ void render_config_tab(PrimaryAgent& tab, const Config& cfg, ImFont* mono_font) 
                 if (!mcp.args.empty()) {
                     std::string args_str;
                     for (const auto& a : mcp.args) {
-                        if (!args_str.empty()) args_str += " ";
+                        if (!args_str.empty())
+                            args_str += " ";
                         args_str += a;
                     }
                     Text("args: %s", args_str.c_str());
                 }
-                if (!mcp.url.empty()) Text("url: %s", mcp.url.c_str());
+                if (!mcp.url.empty())
+                    Text("url: %s", mcp.url.c_str());
                 EndTooltip();
             }
         }
@@ -835,10 +848,12 @@ void render_subagent_tab(SubAgent& tab, const Config& cfg, ImFont* mono_font) {
         std::weak_ptr<bool> weak_tab = ui.tab_alive;
         std::packaged_task<void()> task([&ui, weak_tab, api_base, api_key]() {
             // Check if tab is still alive before accessing ui
-            if (weak_tab.expired()) return;
+            if (weak_tab.expired())
+                return;
             ChatClient client(api_base, api_key);
             auto result = client.fetch_models();
-            if (!weak_tab.lock()) return; // tab was destroyed mid-fetch
+            if (!weak_tab.lock())
+                return; // tab was destroyed mid-fetch
             if (result) {
                 ui.available_models = std::move(*result);
             } else {
@@ -871,7 +886,8 @@ void render_subagent_tab(SubAgent& tab, const Config& cfg, ImFont* mono_font) {
                         trigger_model_fetch();
                     }
                 }
-                if (is_selected) SetItemDefaultFocus();
+                if (is_selected)
+                    SetItemDefaultFocus();
             }
             EndCombo();
         }
@@ -915,7 +931,8 @@ void render_subagent_tab(SubAgent& tab, const Config& cfg, ImFont* mono_font) {
                     session.set_model(m);
                     tab.model_name = m;
                 }
-                if (is_selected) SetItemDefaultFocus();
+                if (is_selected)
+                    SetItemDefaultFocus();
             }
             EndCombo();
         }
@@ -927,7 +944,8 @@ void render_subagent_tab(SubAgent& tab, const Config& cfg, ImFont* mono_font) {
         !ui.available_models.empty()) {
         ui.models_validated = true;
         const auto& current = session.model();
-        bool found = std::any_of(ui.available_models.begin(), ui.available_models.end(),
+        bool found = std::any_of(ui.available_models.begin(),
+            ui.available_models.end(),
             [&current](const std::string& m) { return m == current; });
         if (!found) {
             session.set_model(ui.available_models.front());
@@ -940,9 +958,8 @@ void render_subagent_tab(SubAgent& tab, const Config& cfg, ImFont* mono_font) {
     // ── Reasoning effort combo ──
     PushFont(mono_font);
     {
-        std::string re = tab.reasoning_effort.empty()
-                             ? session.reasoning_effort()
-                             : tab.reasoning_effort;
+        std::string re =
+            tab.reasoning_effort.empty() ? session.reasoning_effort() : tab.reasoning_effort;
 
         std::vector<std::string> efforts;
         for (const auto& p : cfg.providers) {
@@ -963,13 +980,13 @@ void render_subagent_tab(SubAgent& tab, const Config& cfg, ImFont* mono_font) {
                     tab.reasoning_effort = e;
                     session.set_reasoning_effort(e);
                 }
-                if (is_selected) SetItemDefaultFocus();
+                if (is_selected)
+                    SetItemDefaultFocus();
             }
             EndCombo();
         }
     }
     PopFont();
-
 }
 
 void render_subagent_chat(SubAgent& tab, ImFont* mono_font) {
@@ -1075,8 +1092,8 @@ void render_chat_ui(Agent& tab, bool& done) {
     if (ui.compact_requested && !ui.compacting) {
         ui.compacting = true;
         ui.compact_requested = false;
-        ui.compact_future = std::async(std::launch::async,
-            [&session]() { return session.compact(); });
+        ui.compact_future =
+            std::async(std::launch::async, [&session]() { return session.compact(); });
     }
     if (ui.compacting && ui.compact_future.valid() &&
         ui.compact_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
@@ -1087,7 +1104,8 @@ void render_chat_ui(Agent& tab, bool& done) {
         if (compact_result) {
             push_entry(ui, EntryType::Content, "Conversation compacted.", false);
         } else {
-            push_entry(ui, EntryType::Content, "Compaction failed: " + compact_result.error(), false);
+            push_entry(
+                ui, EntryType::Content, "Compaction failed: " + compact_result.error(), false);
         }
     }
 
@@ -1095,8 +1113,10 @@ void render_chat_ui(Agent& tab, bool& done) {
     if (ui.clear_requested && !ui.clearing) {
         ui.clearing = true;
         ui.clear_requested = false;
-        ui.clear_future = std::async(std::launch::async,
-            [&session]() -> Result<void> { session.clear(); return {}; });
+        ui.clear_future = std::async(std::launch::async, [&session]() -> Result<void> {
+            session.clear();
+            return {};
+        });
     }
     if (ui.clearing && ui.clear_future.valid() &&
         ui.clear_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
@@ -1138,40 +1158,40 @@ void render_chat_ui(Agent& tab, bool& done) {
 
         stringstream ss;
         switch (entry.type) {
-            case EntryType::UserText:
-                PushStyleColor(ImGuiCol_Text, IM_COL32(100, 180, 255, 255));
-                PushTextWrapPos(0);
-                ss << "You: " << entry.text;
-                TextUnformatted(ss.str().c_str());
-                NewLine();
-                PopTextWrapPos();
-                PopStyleColor();
-                break;
-            case EntryType::Reasoning:
-                PushStyleColor(ImGuiCol_Text, IM_COL32(160, 160, 160, 255));
-                render_content("Thinking: " + entry.text);
-                PopStyleColor();
-                break;
-            case EntryType::Content:
-                PushStyleColor(ImGuiCol_Text, GetColorU32(ImGuiCol_Text));
-                render_content(entry.text);
-                PopStyleColor();
-                break;
-            case EntryType::ToolCall:
-                PushStyleColor(ImGuiCol_Text, IM_COL32(255, 165, 0, 255));
-                PushTextWrapPos(0);
-                PushFont(mono_font);
-                text_unformatted_ellipsis(entry.text);
-                for (; i + 1 < ui.entries.size() && ui.entries[i + 1].type == EntryType::ToolCall;
-                    i++) {
-                    text_unformatted_ellipsis(ui.entries[i + 1].text);
-                }
-                PopFont();
-                NewLine();
-                PopTextWrapPos();
-                PopStyleColor();
-                break;
+        case EntryType::UserText:
+            PushStyleColor(ImGuiCol_Text, IM_COL32(100, 180, 255, 255));
+            PushTextWrapPos(0);
+            ss << "You: " << entry.text;
+            TextUnformatted(ss.str().c_str());
+            NewLine();
+            PopTextWrapPos();
+            PopStyleColor();
+            break;
+        case EntryType::Reasoning:
+            PushStyleColor(ImGuiCol_Text, IM_COL32(160, 160, 160, 255));
+            render_content("Thinking: " + entry.text);
+            PopStyleColor();
+            break;
+        case EntryType::Content:
+            PushStyleColor(ImGuiCol_Text, GetColorU32(ImGuiCol_Text));
+            render_content(entry.text);
+            PopStyleColor();
+            break;
+        case EntryType::ToolCall:
+            PushStyleColor(ImGuiCol_Text, IM_COL32(255, 165, 0, 255));
+            PushTextWrapPos(0);
+            PushFont(mono_font);
+            text_unformatted_ellipsis(entry.text);
+            for (; i + 1 < ui.entries.size() && ui.entries[i + 1].type == EntryType::ToolCall;
+                i++) {
+                text_unformatted_ellipsis(ui.entries[i + 1].text);
             }
+            PopFont();
+            NewLine();
+            PopTextWrapPos();
+            PopStyleColor();
+            break;
+        }
 
         PopID();
     }
@@ -1198,10 +1218,9 @@ void render_chat_ui(Agent& tab, bool& done) {
         // Make room and insert into buffer
         size_t room = buf.size() - strlen(buf.data()) - 1;
         size_t insert_len = text.size();
-        if (insert_len > room) insert_len = room;
-        memmove(buf.data() + pos + insert_len,
-                buf.data() + pos,
-                strlen(buf.data()) - pos + 1);
+        if (insert_len > room)
+            insert_len = room;
+        memmove(buf.data() + pos + insert_len, buf.data() + pos, strlen(buf.data()) - pos + 1);
         memcpy(buf.data() + pos, text.data(), insert_len);
         ui.cursor_pos = pos + (int)insert_len;
     };
@@ -1226,7 +1245,7 @@ void render_chat_ui(Agent& tab, bool& done) {
     // ── Snippet reference combo (inserts !snippetname tag at cursor) ──
     {
         if (!cfg.snippets.empty()) {
-            SameLine(0,GetStyle().ItemSpacing.y);
+            SameLine(0, GetStyle().ItemSpacing.y);
             SetNextItemWidth(GetContentRegionAvail().x); // ~combo_width
             if (BeginCombo("##snippet-ref", "snippets")) {
                 for (const auto& [name, content] : cfg.snippets) {
@@ -1245,8 +1264,10 @@ void render_chat_ui(Agent& tab, bool& done) {
     PushFont(mono_font);
 
     auto trimWhite = [](string_view cur) -> string_view {
-        while (cur.size() && isspace(cur.front())) cur.remove_prefix(1);
-        while (cur.size() && isspace(cur.back())) cur.remove_suffix(1);
+        while (cur.size() && isspace(cur.front()))
+            cur.remove_prefix(1);
+        while (cur.size() && isspace(cur.back()))
+            cur.remove_suffix(1);
         return cur;
     };
 
@@ -1269,7 +1290,14 @@ void render_chat_ui(Agent& tab, bool& done) {
 
     ImVec2 inputSize(0, std::max(GetFrameHeightWithSpacing() * 3, GetContentRegionAvail().y - 4));
 
-    if (InputTextMultiline("##input", buffer.data(), buffer.size(), inputSize, inputFlags, InputTextCallback, &ui.cursor_pos) && !chat.running) {
+    if (InputTextMultiline("##input",
+            buffer.data(),
+            buffer.size(),
+            inputSize,
+            inputFlags,
+            InputTextCallback,
+            &ui.cursor_pos) &&
+        !chat.running) {
         string input(trimWhite(buffer.data()));
         if (input.size()) {
             // Push to UI with tags visible (user sees @Page / !Snippet)
@@ -1278,7 +1306,8 @@ void render_chat_ui(Agent& tab, bool& done) {
             string expanded = expand_tags(input);
             start_chat(chat, session, expanded);
             for (auto it = history.begin(); it != history.end();
-                it = *it == input ? history.erase(it): ++it);
+                it = *it == input ? history.erase(it) : ++it)
+                ;
             history.push_back(input);
             buffer.front() = 0;
         }
@@ -1343,22 +1372,23 @@ void render_chat_ui(Agent& tab, bool& done) {
         auto sepSize = CalcTextSize(sep.c_str());
 
         // Lay out right-aligned: [branch] :: [tokens] :: [state]
-        ImVec2 pos = GetCursorScreenPos() - ImVec2(0, GetFrameHeight())
-            + ImVec2(GetContentRegionAvail().x - GetStyle().FramePadding.x,0);
+        ImVec2 pos = GetCursorScreenPos() - ImVec2(0, GetFrameHeight()) +
+            ImVec2(GetContentRegionAvail().x - GetStyle().FramePadding.x, 0);
 
-        pos = pos - ImVec2(branchSize.x,0);
-        GetForegroundDrawList()->AddText(pos, ImColor(IM_COL32(255, 180, 50, 255)), branchInfo.c_str());
+        pos = pos - ImVec2(branchSize.x, 0);
+        GetForegroundDrawList()->AddText(
+            pos, ImColor(IM_COL32(255, 180, 50, 255)), branchInfo.c_str());
 
-        pos = pos - ImVec2(sepSize.x,0);
+        pos = pos - ImVec2(sepSize.x, 0);
         GetForegroundDrawList()->AddText(pos, GetColorU32(ImGuiCol_TextDisabled), sep.c_str());
 
-        pos = pos - ImVec2(tokenSize.x,0);
+        pos = pos - ImVec2(tokenSize.x, 0);
         GetForegroundDrawList()->AddText(pos, tokenColor, tokenInfo.c_str());
 
-        pos = pos - ImVec2(sepSize.x,0);
+        pos = pos - ImVec2(sepSize.x, 0);
         GetForegroundDrawList()->AddText(pos, GetColorU32(ImGuiCol_TextDisabled), sep.c_str());
 
-        pos = pos - ImVec2(stateSize.x,0);
+        pos = pos - ImVec2(stateSize.x, 0);
         GetForegroundDrawList()->AddText(pos, stateColor, stateInfo.c_str());
     }
 }

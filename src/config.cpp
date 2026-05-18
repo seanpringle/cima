@@ -12,6 +12,10 @@ std::string Config::SYSTEM_PROMPT =
     "Use markdown with a neat, clear and concise layout for all output.\n"
     "All of commonmark and github tables supported, but generally prefer lists over tables.\n"
     "\n"
+    "## Sub Agents\n"
+    "\n"
+    "Call subagents with `call_subagent()`. See tool description for available subagents.\n"
+    "\n"
     "## Plan tools\n"
     "\n"
     "You have a **Plan document** shared with the user. When given a task, research"
@@ -25,7 +29,8 @@ std::string Config::SUBAGENT_SYSTEM_PROMPT =
     "Use markdown with a neat, clear and concise layout for all output.\n"
     "All of commonmark and github tables supported, but generally prefer lists over tables.\n";
 
-std::string Config::CMAKE_PROMPT_SNIPPET = "## CMake tools\n"
+std::string Config::CMAKE_PROMPT_SNIPPET =
+    "## CMake tools\n"
     "`cmake_configure(head=H, tail=T)` configures the project (generates compile_commands.json).\n"
     "`cmake_build(head=H, tail=T)` builds the project.\n"
     "`cmake_ctest(head=H, tail=T)` runs the test suite.\n"
@@ -125,20 +130,23 @@ static void load_snippet_files(std::map<std::string, std::string>& snippets) {
     }
 
     for (const auto& entry : std::filesystem::directory_iterator(dir, ec)) {
-        if (!entry.is_regular_file()) continue;
+        if (!entry.is_regular_file())
+            continue;
         auto path = entry.path();
-        if (path.extension() != ".md") continue;
+        if (path.extension() != ".md")
+            continue;
 
         std::string name = path.stem().string();
-        if (name.empty()) continue;
+        if (name.empty())
+            continue;
 
         std::ifstream file(path);
         if (!file.is_open()) {
             std::cerr << "Warning: cannot read snippet file: " << path.string() << std::endl;
             continue;
         }
-        std::string content((std::istreambuf_iterator<char>(file)),
-                             std::istreambuf_iterator<char>());
+        std::string content(
+            (std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
         snippets[name] = std::move(content);
     }
 }
@@ -187,13 +195,15 @@ Config Config::load() {
         if (!duplicates.empty()) {
             std::string msg = "Duplicate provider name(s) in cima.json: ";
             for (size_t i = 0; i < duplicates.size(); i++) {
-                if (i > 0) msg += ", ";
+                if (i > 0)
+                    msg += ", ";
                 msg += "\"" + duplicates[i] + "\"";
             }
             throw std::runtime_error(msg);
         }
         if (cfg.providers.empty()) {
-            throw std::runtime_error("cima.json must contain at least one provider in the \"providers\" array");
+            throw std::runtime_error(
+                "cima.json must contain at least one provider in the \"providers\" array");
         }
 
         // ── Parse MCP servers array ──
@@ -246,14 +256,16 @@ Config Config::load() {
         // ── Other top-level fields ──
         if (j.contains("max_tool_iterations") && j["max_tool_iterations"].is_number_integer()) {
             int n = j["max_tool_iterations"].get<int>();
-            if (n > 0) cfg.max_tool_iterations = n;
+            if (n > 0)
+                cfg.max_tool_iterations = n;
         }
 
         // Tool timeouts (int, >= 0)
         auto load_timeout = [&](const std::string& key, int& field) {
             if (j.contains(key) && j[key].is_number_integer()) {
                 int n = j[key].get<int>();
-                if (n >= 0) field = n;
+                if (n >= 0)
+                    field = n;
             }
         };
         load_timeout("bash_timeout", cfg.bash_timeout);
@@ -279,7 +291,8 @@ Config Config::load() {
         }
         if (j.contains("font_size") && j["font_size"].is_number_integer()) {
             int n = j["font_size"].get<int>();
-            if (n > 0) cfg.font_size = n;
+            if (n > 0)
+                cfg.font_size = n;
         }
 
         if (j.contains("read_only_paths") && j["read_only_paths"].is_array()) {
@@ -322,11 +335,15 @@ Config Config::load() {
     // Default read-only paths — ensure they're present even if JSON omitted them
     bool has_usr_include = false, has_usr_doc = false;
     for (const auto& p : cfg.read_only_paths) {
-        if (p == "/usr/include")   has_usr_include = true;
-        if (p == "/usr/share/doc") has_usr_doc = true;
+        if (p == "/usr/include")
+            has_usr_include = true;
+        if (p == "/usr/share/doc")
+            has_usr_doc = true;
     }
-    if (!has_usr_include) cfg.read_only_paths.insert(cfg.read_only_paths.begin(), "/usr/include");
-    if (!has_usr_doc)     cfg.read_only_paths.insert(cfg.read_only_paths.begin(), "/usr/share/doc");
+    if (!has_usr_include)
+        cfg.read_only_paths.insert(cfg.read_only_paths.begin(), "/usr/include");
+    if (!has_usr_doc)
+        cfg.read_only_paths.insert(cfg.read_only_paths.begin(), "/usr/share/doc");
 
     // Load file-based snippets from ~/.config/cima/snippets/*.md
     // These override any snippets from cima.json on name collision.
