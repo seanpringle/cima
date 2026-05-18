@@ -6,7 +6,7 @@
 // ===================================================================
 
 Tool make_call_subagent_tool(SubagentLookup lookup, SubagentRunningCheck is_running,
-    SubagentClearUI clear_ui,
+    SubagentClearUI clear_ui, SubagentPushEntry push_entry,
     const std::vector<SubagentConfig>& subagent_configs) {
     Tool t;
     t.name = "call_subagent";
@@ -41,7 +41,8 @@ Tool make_call_subagent_tool(SubagentLookup lookup, SubagentRunningCheck is_runn
                         {"description", "The request/prompt to send to the subagent"}}}}},
         {"required", {"name", "request"}}};
     t.execute = [lookup = std::move(lookup), is_running = std::move(is_running),
-                    clear_ui = std::move(clear_ui)](
+                    clear_ui = std::move(clear_ui),
+                    push_entry = std::move(push_entry)](
                     const json& args) -> Result<std::string> {
         auto name = args.value("name", std::string());
         auto request = args.value("request", std::string());
@@ -69,6 +70,11 @@ Tool make_call_subagent_tool(SubagentLookup lookup, SubagentRunningCheck is_runn
         session->conversation().clear();
         if (clear_ui) {
             clear_ui(name);
+        }
+
+        // Push the primary agent's request as a UserText entry in the subagent chat
+        if (push_entry) {
+            push_entry(name, request);
         }
 
         // Run the request

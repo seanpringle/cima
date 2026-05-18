@@ -451,6 +451,17 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                             }
                         }
                     },
+                    /*push_entry=*/[&tabs](const std::string& name,
+                                           const std::string& text) -> void {
+                        for (auto& t2 : tabs) {
+                            if (t2.is_subagent && t2.subagent_name == name) {
+                                t2.ui_state.entries.push_back(
+                                    {EntryType::UserText, text, false,
+                                     t2.ui_state.next_seq++});
+                                break;
+                            }
+                        }
+                    },
                     cfg.subagents);
                 break;
             }
