@@ -30,22 +30,8 @@ class PlanBoard {
     json to_json() const;
     void from_json(const json& j);
 
-    // ── File persistence (legacy, may be removed) ──
-
-    /// Set the file path for auto-save.  Load is separate (see load_from_file).
-    void set_plan_file_path(const std::string& path) { plan_file_path_ = path; }
-
-    /// Load plan from a JSON file.  If the file does not exist
-    /// or is corrupt, the plan is left empty (no error — first-run behaviour).
-    Result<void> load_from_file(const std::string& path);
-
-    /// Explicitly persist to the configured path (no-op if path is empty).
-    /// Called automatically on every mutation.
-    Result<void> save();
-
   private:
     std::string plan_;
-    std::string plan_file_path_;
 };
 
 // Tool factory declarations — each takes a PlanBoard reference to operate on.

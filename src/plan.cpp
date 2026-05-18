@@ -1,7 +1,5 @@
 #include "plan.h"
 
-#include <fstream>
-
 // ===================================================================
 // PlanBoard operations
 // ===================================================================
@@ -38,48 +36,6 @@ void PlanBoard::from_json(const json& j) {
     if (p != j.end() && p->is_string()) {
         plan_ = p->get<std::string>();
     }
-}
-
-// ===================================================================
-// File persistence (legacy)
-// ===================================================================
-
-Result<void> PlanBoard::save() {
-    if (plan_file_path_.empty()) {
-        return {};
-    }
-    auto j = to_json();
-    std::ofstream file(plan_file_path_);
-    if (!file.is_open()) {
-        return std::unexpected("Cannot write plan file: " + plan_file_path_);
-    }
-    file << j.dump(2) << std::endl;
-    return {};
-}
-
-Result<void> PlanBoard::load_from_file(const std::string& path) {
-    plan_file_path_ = path;
-    plan_.clear();
-
-    std::ifstream file(path);
-    if (!file.is_open()) {
-        // First run — no file yet, that's OK
-        return {};
-    }
-    json j;
-    try {
-        file >> j;
-    } catch (...) {
-        // Corrupt file — start fresh
-        return {};
-    }
-    if (j.is_object()) {
-        auto p = j.find("plan");
-        if (p != j.end() && p->is_string()) {
-            plan_ = p->get<std::string>();
-        }
-    }
-    return {};
 }
 
 // ===================================================================
