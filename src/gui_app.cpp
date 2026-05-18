@@ -423,10 +423,9 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
         }
     }
 
-    // Register call_subagent tool in the first (main) session
-    // so the primary agent can invoke subagents.
+    // Register call_subagent tool in every regular (non-subagent) session
+    // so each primary agent tab can invoke subagents.
     if (!tabs.empty()) {
-        // Find the first non-subagent tab (primary agent)
         for (auto& t : tabs) {
             if (!t.is_subagent) {
                 t.session->register_call_subagent_tool(
@@ -467,7 +466,6 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                         }
                     },
                     cfg.subagents);
-                break;
             }
         }
     }
