@@ -75,7 +75,6 @@ static TestConfig make_test_config(const std::string& base_url,
     tc.provider.model = model;
     tc.provider.reasoning_effort = reasoning_effort;
     tc.provider.context_limit = context_limit;
-    tc.cfg.system_prompt = "You are helpful.";
     tc.cfg.max_tool_iterations = 100;
     return tc;
 }
@@ -493,7 +492,7 @@ TEST_CASE("ChatSession MCP system prompt included when servers running", "[chat]
     // Run once without MCP to capture the request.
     // But we need the MCP server started first. Let's check the prompt
     // by making a request after starting.
-    
+
     McpEndpoint ep = make_http_endpoint("prompt-test", mcp.base_url);
     auto result = session.start_mcp_server(ep);
     REQUIRE(result.has_value());
@@ -510,7 +509,7 @@ TEST_CASE("ChatSession MCP system prompt included when servers running", "[chat]
     auto msgs = body["messages"];
     REQUIRE(msgs.is_array());
     REQUIRE(msgs.size() >= 1);
-    
+
     // The system message should contain the MCP tools text.
     bool found_mcp_snippet = false;
     for (const auto& msg : msgs) {

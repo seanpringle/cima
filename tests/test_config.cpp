@@ -15,7 +15,7 @@ TEST_CASE("Config defaults", "[config]") {
     Config cfg;
     // providers is empty by default (load() populates it)
     REQUIRE(cfg.providers.empty());
-    REQUIRE(cfg.system_prompt.find("AI coding assistant") != std::string::npos);
+    REQUIRE(cfg.SYSTEM_PROMPT.find("AI coding assistant") != std::string::npos);
     REQUIRE(cfg.max_tool_iterations == 100);
     // read_only_paths is empty until load() adds defaults
     REQUIRE(cfg.read_only_paths.empty());
@@ -39,8 +39,8 @@ TEST_CASE("Config to_json / round-trip", "[config]") {
     cfg.max_tool_iterations = 50;
 
     auto j = cfg.to_json();
-    // system_prompt must NOT be in JSON
-    REQUIRE_FALSE(j.contains("system_prompt"));
+    // SYSTEM_PROMPT must NOT be in JSON
+    REQUIRE_FALSE(j.contains("SYSTEM_PROMPT"));
 
     // Now simulate what load() does: parse JSON and overlay on a fresh Config
     Config loaded;

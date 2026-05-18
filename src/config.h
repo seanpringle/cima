@@ -100,32 +100,9 @@ struct Config {
     std::string font_mono;                   // path to monospace font file
     int font_size = 18;                      // base font size in points (before display scaling)
 
-    /// CMake prompt snippet — appended to the system prompt only when
-    /// CMakeLists.txt exists in the workspace.
-    /// Subagent system prompt — simpler, no plan tools.
-    static constexpr const char* SUBAGENT_SYSTEM_PROMPT =
-        "You are an AI coding assistant working as a subagent.\n";
-
-    static constexpr const char* CMAKE_PROMPT_SNIPPET = R"(
-## CMake tools
-
-`cmake_configure(head=H, tail=T)` configures the project (generates compile_commands.json).
-`cmake_build(head=H, tail=T)` builds the project.
-`cmake_ctest(head=H, tail=T)` runs the test suite.
-All return raw output with optional head/tail trimming.
-)";
-    std::string system_prompt =
-        "You are an AI coding assistant.\n"
-        "Use markdown with a neat, clear and concise layout for all output.\n"
-        "All of commonmark and github tables supported, but generally prefer lists over tables.\n"
-        "\n"
-        "## Plan tools\n"
-        "\n"
-        "You have a **Plan document** shared with the user. When given a task, research"
-        " it thoroughly and write your Plan with `write_plan()`."
-        " Ask the user to review and approve your Plan before implementation.\n"
-        "Go back and check your Plan at any time with `read_plan()`.\n"
-        "\n";
+    static std::string SYSTEM_PROMPT;
+    static std::string SUBAGENT_SYSTEM_PROMPT;
+    static std::string CMAKE_PROMPT_SNIPPET;
 
     /// Load config from ~/.config/cima/cima.json, applying defaults for
     /// any missing fields.  Creates the file with defaults if it doesn't exist.
