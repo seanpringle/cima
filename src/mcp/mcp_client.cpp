@@ -431,7 +431,11 @@ void McpClient::reader_thread_main() {
                 std::lock_guard<std::mutex> lock(pending_mutex_);
                 auto it = pending_.find(id);
                 if (it != pending_.end()) {
-                    it->second.set_value(msg);
+                    try {
+                        it->second.set_value(msg);
+                    } catch (...) {
+                        // promise already satisfied — ignore
+                    }
                     pending_.erase(it);
                 }
             } else if (msg.contains("method") && !msg.contains("id")) {
@@ -629,12 +633,12 @@ Result<json> McpClient::send_request(const std::string& method, json params,
     request["params"] = std::move(params);
 
     // Create a promise/future pair for this request.
-    auto promise = std::make_shared<std::promise<json>>();
-    auto future = promise->get_future();
+    std::promise<json> promise;
+    auto future = promise.get_future();
 
     {
         std::lock_guard<std::mutex> lock(pending_mutex_);
-        pending_[id] = std::move(*promise);
+        pending_[id] = std::move(promise);
     }
 
     // Write the request as a newline-delimited JSON line.

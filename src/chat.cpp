@@ -467,6 +467,9 @@ Result<void> ChatSession::compact() {
     }
 
     // Send to LLM via client_
+    // Build the full tool list so the model sees a consistent prompt.
+    // The model won't actually use tools in a summarization request,
+    // but some models may behave oddly when tools are suddenly absent.
     json payload = {
         {"model", model_},
         {"messages", json::array({
@@ -474,6 +477,7 @@ Result<void> ChatSession::compact() {
                 + (has_cmake_project() ? std::string(Config::CMAKE_PROMPT_SNIPPET) : ""))}},
             {{"role", "user"}, {"content", sanitize_utf8(summary_prompt)}}
         })},
+        {"tools", tools_.to_openai_tools()},
         {"stream", true}
     };
     if (!reasoning_effort_.empty())

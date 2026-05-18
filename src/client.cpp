@@ -298,7 +298,11 @@ Result<json> ChatClient::chat(const json& payload) {
     raw_response_ = body;
 
     if (res != CURLE_OK) {
-        return std::unexpected(std::string("curl error: ") + curl_easy_strerror(res));
+        auto msg = std::string("curl error: ") + curl_easy_strerror(res);
+        if (http_code != 0) {
+            msg += " (HTTP " + std::to_string(http_code) + ")";
+        }
+        return std::unexpected(std::move(msg));
     }
 
     if (http_code != 200) {

@@ -195,21 +195,37 @@ void SSEParser::process_line(std::string line) {
             } catch (...) {
                 // swallow all exceptions — must not throw through C frames (libcurl)
             }
+            // Auto-reset internal buffers so the parser is ready for reuse
+            // without requiring an explicit reset() call from the caller.
+            buf_.clear();
+            raw_.clear();
             return;
         }
 
         try {
             json j = json::parse(payload);
-            if (cb_.on_data) {
-                cb_.on_data(j);
+            try {
+                if (cb_.on_data) {
+                    cb_.on_data(j);
+                }
+            } catch (...) {
+                // swallow — must not throw through C frames (libcurl)
             }
         } catch (const std::exception& e) {
-            if (cb_.on_error) {
-                cb_.on_error(std::string("SSE error: ") + e.what() + " | payload: " + payload);
+            try {
+                if (cb_.on_error) {
+                    cb_.on_error(std::string("SSE error: ") + e.what() + " | payload: " + payload);
+                }
+            } catch (...) {
+                // swallow — must not throw through C frames (libcurl)
             }
         } catch (...) {
-            if (cb_.on_error) {
-                cb_.on_error("SSE error: unknown exception | payload: " + payload);
+            try {
+                if (cb_.on_error) {
+                    cb_.on_error("SSE error: unknown exception | payload: " + payload);
+                }
+            } catch (...) {
+                // swallow — must not throw through C frames (libcurl)
             }
         }
         return;

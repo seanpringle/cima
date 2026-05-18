@@ -512,9 +512,13 @@ void render_config_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
             api_key = cfg.providers[0].api_key;
         }
 
-        std::packaged_task<void()> task([&ui, api_base, api_key]() {
+        std::weak_ptr<bool> weak_tab = ui.tab_alive;
+        std::packaged_task<void()> task([&ui, weak_tab, api_base, api_key]() {
+            // Check if tab is still alive before accessing ui
+            if (weak_tab.expired()) return;
             ChatClient client(api_base, api_key);
             auto result = client.fetch_models();
+            if (!weak_tab.lock()) return; // tab was destroyed mid-fetch
             if (result) {
                 ui.available_models = std::move(*result);
             } else {
@@ -908,9 +912,13 @@ void render_subagent_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
             api_key = cfg.providers[0].api_key;
         }
 
-        std::packaged_task<void()> task([&ui, api_base, api_key]() {
+        std::weak_ptr<bool> weak_tab = ui.tab_alive;
+        std::packaged_task<void()> task([&ui, weak_tab, api_base, api_key]() {
+            // Check if tab is still alive before accessing ui
+            if (weak_tab.expired()) return;
             ChatClient client(api_base, api_key);
             auto result = client.fetch_models();
+            if (!weak_tab.lock()) return; // tab was destroyed mid-fetch
             if (result) {
                 ui.available_models = std::move(*result);
             } else {

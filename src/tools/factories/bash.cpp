@@ -7,6 +7,7 @@
 #include <fcntl.h>
 #include <poll.h>
 #include <string>
+#include <sys/prctl.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -47,6 +48,11 @@ Tool make_run_bash_tool(std::shared_ptr<std::string> safe_dir_ptr,
             dup2(pipefd[1], STDERR_FILENO);
             if (pipefd[1] > STDERR_FILENO)
                 close(pipefd[1]);
+
+            // Ensure grandchildren are killed when this child dies
+            // (covers the edge case where setpgid fails and killpg falls
+            // back to kill() which only targets the direct child).
+            prctl(PR_SET_PDEATHSIG, SIGKILL);
 
             // Create new process group so we can kill the whole process tree.
             // Both parent and child call setpgid to avoid a race (whichever

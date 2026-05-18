@@ -156,7 +156,8 @@ Config Config::load() {
         try {
             file >> j;
         } catch (...) {
-            // Corrupt file — proceed with defaults
+            std::cerr << "Warning: " << path.string()
+                      << " is corrupt or unreadable — proceeding with defaults\n";
         }
 
         // ── Parse providers array ──

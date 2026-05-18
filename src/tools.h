@@ -83,6 +83,7 @@ class ToolRegistry {
   private:
     Tool* find(const std::string& name);
     CancellationToken cancelled_;
+    mutable std::mutex mutex_;
     std::vector<Tool> tools_;
 };
 

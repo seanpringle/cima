@@ -8,7 +8,10 @@
 // ToolRegistry
 // ===================================================================
 
-void ToolRegistry::add(Tool tool) { tools_.push_back(std::move(tool)); }
+void ToolRegistry::add(Tool tool) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    tools_.push_back(std::move(tool));
+}
 
 void ToolRegistry::add_defaults(const std::string& safe_dir,
     const Config& config,
@@ -136,6 +139,7 @@ json ToolRegistry::to_openai_tools() const {
 }
 
 json ToolRegistry::to_openai_tools(const std::set<std::string>* only_these) const {
+    std::lock_guard<std::mutex> lock(mutex_);
     json arr = json::array();
     for (const auto& t : tools_) {
         if (only_these && !only_these->count(t.name))
@@ -148,6 +152,7 @@ json ToolRegistry::to_openai_tools(const std::set<std::string>* only_these) cons
 }
 
 std::set<std::string> ToolRegistry::tool_names_by_permission(ToolPermission perm) const {
+    std::lock_guard<std::mutex> lock(mutex_);
     std::set<std::string> names;
     for (const auto& t : tools_) {
         if (t.permission == perm)
@@ -157,11 +162,6 @@ std::set<std::string> ToolRegistry::tool_names_by_permission(ToolPermission perm
 }
 
 Result<std::string> ToolRegistry::execute(const std::string& name, const std::string& args_json) {
-    Tool* tool = find(name);
-    if (!tool) {
-        return std::unexpected("unknown tool: " + name);
-    }
-
     json args;
     try {
         args = json::parse(args_json);
@@ -169,38 +169,59 @@ Result<std::string> ToolRegistry::execute(const std::string& name, const std::st
         return std::unexpected("invalid JSON arguments: " + std::string(e.what()));
     }
 
-    if (tool->timeout_sec > 0) {
+    // Find tool and copy the execute function under the lock so that
+    // concurrent add()/remove() cannot invalidate the pointer.
+    std::string tool_name;
+    int timeout_sec = 0;
+    std::function<Result<std::string>(const json&)> exec_fn;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        Tool* tool = find(name);
+        if (!tool) {
+            return std::unexpected("unknown tool: " + name);
+        }
+        tool_name = tool->name;
+        timeout_sec = tool->timeout_sec;
+        exec_fn = tool->execute;  // copy — keeps callable alive after lock release
+    }
+
+    if (timeout_sec > 0) {
         // Use packaged_task + detached thread so we can return on timeout
         // without blocking in the future destructor (std::async's future
         // destructor blocks until the task finishes, defeating the timeout).
+        //
+        // exec_fn was already copied under the lock above, so the callable
+        // outlives the Tool even if the registry is destroyed while the
+        // detached thread is running (use-after-free guard).
         auto task = std::make_shared<std::packaged_task<Result<std::string>()>>(
-            [tool, args = std::move(args)]() { return tool->execute(args); });
+            [exec_fn = std::move(exec_fn), args = std::move(args)]() { return exec_fn(args); });
         auto future = task->get_future();
         std::thread t([task]() { (*task)(); });
         t.detach();
 
-        auto status = future.wait_for(std::chrono::seconds(tool->timeout_sec));
+        auto status = future.wait_for(std::chrono::seconds(timeout_sec));
         if (status == std::future_status::timeout) {
-            return std::unexpected("tool '" + tool->name + "' timed out after " +
-                std::to_string(tool->timeout_sec) + "s");
+            return std::unexpected("tool '" + tool_name + "' timed out after " +
+                std::to_string(timeout_sec) + "s");
         }
         try {
             return future.get();
         } catch (const std::exception& e) {
             return std::unexpected(
-                std::string("tool '") + tool->name + "' threw: " + e.what());
+                std::string("tool '") + tool_name + "' threw: " + e.what());
         }
     }
 
     try {
-        return tool->execute(args);
+        return exec_fn(args);
     } catch (const std::exception& e) {
         return std::unexpected(
-            std::string("tool '") + tool->name + "' threw: " + e.what());
+            std::string("tool '") + tool_name + "' threw: " + e.what());
     }
 }
 
 Tool* ToolRegistry::find(const std::string& name) {
+    // NOTE: caller must hold mutex_ — this is a private helper
     for (auto& t : tools_) {
         if (t.name == name)
             return &t;
@@ -209,6 +230,7 @@ Tool* ToolRegistry::find(const std::string& name) {
 }
 
 bool ToolRegistry::remove(const std::string& name) {
+    std::lock_guard<std::mutex> lock(mutex_);
     for (auto it = tools_.begin(); it != tools_.end(); ++it) {
         if (it->name == name) {
             tools_.erase(it);

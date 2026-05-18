@@ -39,6 +39,11 @@ struct ChatUIState {
     /// Append a single entry to the JSON Lines log file.
     void append_chat_log_entry(const DisplayEntry& entry);
 
+    // Lifeguard shared_ptr + weak_ptr pair for async model-fetch threads.
+    // The background thread captures a weak_ptr; if the tab is destroyed
+    // the shared_ptr is reset and the weak_ptr expires, preventing UAF.
+    std::shared_ptr<bool> tab_alive{std::make_shared<bool>(true)};
+
     // Available models from the endpoint (populated by fetch_models)
     std::vector<std::string> available_models;
     bool models_loaded = false; // true once the initial fetch has been attempted
