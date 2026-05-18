@@ -78,10 +78,9 @@ std::unique_ptr<ChatSession> ChatSession::create_subagent(
         config, provider, std::move(cancelled));
     session->system_prompt_ = std::move(sp);
 
-    // Remove bash and plan tools
+    // Remove bash and write_plan tools (read_plan is kept for subagents)
     session->tools_.remove("run_bash");
     session->tools_.remove("write_plan");
-    session->tools_.remove("read_plan");
 
     // Conditionally remove write tools
     if (read_only) {
