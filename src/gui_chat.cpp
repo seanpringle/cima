@@ -46,14 +46,6 @@ static int InputTextCallback(ImGuiInputTextCallbackData* data) {
     return 0;
 }
 
-// ── Helper: finalise a streaming entry and log it ────────────────────────
-static void finalize_streaming_entry(ChatUIState& ui) {
-    if (!ui.entries.empty() && ui.entries.back().is_streaming) {
-        ui.entries.back().is_streaming = false;
-        ui.append_chat_log_entry(ui.entries.back());
-    }
-}
-
 namespace {
 
 void text_unformatted_ellipsis(const string& text) {
@@ -448,96 +440,15 @@ void render_content(const string& text, ImFont* mono_font) {
     }
 }
 
-static void start_chat(AsyncChatState& chat, ChatSession& session, string input) {
-    chat.running = true;
-    *chat.cancelled = false;
-    chat.future = std::async(std::launch::async,
-        [&session, input = std::move(input)]() { return session.run_once(input); });
-}
 
-static void push_entry(ChatUIState& ui, EntryType type, const string& text, bool streaming) {
-    DisplayEntry entry{type, text, streaming, ui.next_seq++};
-    ui.entries.push_back(entry);
-    // Log non-streaming entries immediately; streaming entries are logged
-    // when finalised (see finalize_streaming_entry).
-    if (!streaming) {
-        ui.append_chat_log_entry(entry);
-    }
-}
-
-void drain_pending(ChatUIState& ui, AsyncChatState& chat) {
-    std::lock_guard<std::mutex> lock(chat.mutex);
-    for (auto& [pending_text, type] : chat.pending) {
-        if (type == OutputType::ToolInvocation) {
-            finalize_streaming_entry(ui);
-            push_entry(ui, EntryType::ToolCall, pending_text, false);
-        } else {
-            auto entry_type =
-                (type == OutputType::Reasoning) ? EntryType::Reasoning : EntryType::Content;
-            if (!ui.entries.empty() && ui.entries.back().is_streaming &&
-                ui.entries.back().type == entry_type) {
-                ui.entries.back().text += pending_text;
-            } else {
-                finalize_streaming_entry(ui);
-                push_entry(ui, entry_type, pending_text, true);
-            }
-        }
-    }
-    chat.pending.clear();
-}
 
 void render_config_tab(PrimaryAgent& tab, const Config& cfg, ImFont* mono_font) {
     auto& ui = tab.ui_state;
     auto& session = *tab.session;
 
-    // ── Helper: start fetching models for the current provider ──
-    auto trigger_model_fetch = [&]() {
-        ui.models_loaded = true;
-        ui.models_validated = false;
-        ui.models_fetched->store(false, std::memory_order_release);
-        ui.available_models.clear();
-        ui.models_error.clear();
-
-        // Build a ChatClient for the provider this tab is using
-        // (we need to find the provider in cfg.providers by name)
-        std::string api_base;
-        std::string api_key;
-        for (const auto& p : cfg.providers) {
-            if (p.name == tab.provider_name) {
-                api_base = p.api_base;
-                api_key = p.api_key;
-                break;
-            }
-        }
-        if (api_base.empty()) {
-            // Fallback to first provider
-            api_base = cfg.providers[0].api_base;
-            api_key = cfg.providers[0].api_key;
-        }
-
-        std::weak_ptr<bool> weak_tab = ui.tab_alive;
-        std::packaged_task<void()> task([&ui, weak_tab, api_base, api_key]() {
-            // Check if tab is still alive before accessing ui
-            if (weak_tab.expired())
-                return;
-            ChatClient client(api_base, api_key);
-            auto result = client.fetch_models();
-            if (!weak_tab.lock())
-                return; // tab was destroyed mid-fetch
-            if (result) {
-                ui.available_models = std::move(*result);
-            } else {
-                ui.models_error = std::move(result.error());
-            }
-            ui.models_fetched->store(true, std::memory_order_release);
-        });
-        ui.models_future = task.get_future();
-        std::thread(std::move(task)).detach();
-    };
-
     // ── Fetch models on first render ──
     if (!ui.models_loaded) {
-        trigger_model_fetch();
+        tab.trigger_model_fetch();
     }
 
     // ── Provider combo ──
@@ -554,7 +465,7 @@ void render_config_tab(PrimaryAgent& tab, const Config& cfg, ImFont* mono_font) 
                         tab.provider_name = p.name;
                         tab.model_name = p.model;
                         tab.reasoning_effort = p.reasoning_effort;
-                        trigger_model_fetch();
+                        tab.trigger_model_fetch();
                     }
                 }
                 if (is_selected)
@@ -613,19 +524,7 @@ void render_config_tab(PrimaryAgent& tab, const Config& cfg, ImFont* mono_font) 
     }
     PopFont();
 
-    // Validate current model selection (auto-select first if current not found)
-    if (ui.models_fetched->load(std::memory_order_acquire) && !ui.models_validated &&
-        !ui.available_models.empty()) {
-        ui.models_validated = true;
-        const auto& current = session.model();
-        bool found = std::any_of(ui.available_models.begin(),
-            ui.available_models.end(),
-            [&current](const std::string& m) { return m == current; });
-        if (!found) {
-            session.set_model(ui.available_models.front());
-            tab.model_name = ui.available_models.front();
-        }
-    }
+    tab.validate_current_model();
 
     Separator();
 
@@ -823,51 +722,9 @@ void render_subagent_tab(SubAgent& tab, const Config& cfg, ImFont* mono_font) {
     auto& ui = tab.ui_state;
     auto& session = *tab.session;
 
-    // ── Helper: start fetching models for the current provider ──
-    auto trigger_model_fetch = [&]() {
-        ui.models_loaded = true;
-        ui.models_validated = false;
-        ui.models_fetched->store(false, std::memory_order_release);
-        ui.available_models.clear();
-        ui.models_error.clear();
-
-        std::string api_base;
-        std::string api_key;
-        for (const auto& p : cfg.providers) {
-            if (p.name == tab.provider_name) {
-                api_base = p.api_base;
-                api_key = p.api_key;
-                break;
-            }
-        }
-        if (api_base.empty()) {
-            api_base = cfg.providers[0].api_base;
-            api_key = cfg.providers[0].api_key;
-        }
-
-        std::weak_ptr<bool> weak_tab = ui.tab_alive;
-        std::packaged_task<void()> task([&ui, weak_tab, api_base, api_key]() {
-            // Check if tab is still alive before accessing ui
-            if (weak_tab.expired())
-                return;
-            ChatClient client(api_base, api_key);
-            auto result = client.fetch_models();
-            if (!weak_tab.lock())
-                return; // tab was destroyed mid-fetch
-            if (result) {
-                ui.available_models = std::move(*result);
-            } else {
-                ui.models_error = std::move(result.error());
-            }
-            ui.models_fetched->store(true, std::memory_order_release);
-        });
-        ui.models_future = task.get_future();
-        std::thread(std::move(task)).detach();
-    };
-
     // ── Fetch models on first render ──
     if (!ui.models_loaded) {
-        trigger_model_fetch();
+        tab.trigger_model_fetch();
     }
 
     // ── Provider combo ──
@@ -883,7 +740,7 @@ void render_subagent_tab(SubAgent& tab, const Config& cfg, ImFont* mono_font) {
                         tab.provider_name = p.name;
                         tab.model_name = p.model;
                         tab.reasoning_effort = p.reasoning_effort;
-                        trigger_model_fetch();
+                        tab.trigger_model_fetch();
                     }
                 }
                 if (is_selected)
@@ -939,19 +796,7 @@ void render_subagent_tab(SubAgent& tab, const Config& cfg, ImFont* mono_font) {
     }
     PopFont();
 
-    // Validate current model selection (auto-select first if current not found)
-    if (ui.models_fetched->load(std::memory_order_acquire) && !ui.models_validated &&
-        !ui.available_models.empty()) {
-        ui.models_validated = true;
-        const auto& current = session.model();
-        bool found = std::any_of(ui.available_models.begin(),
-            ui.available_models.end(),
-            [&current](const std::string& m) { return m == current; });
-        if (!found) {
-            session.set_model(ui.available_models.front());
-            tab.model_name = ui.available_models.front();
-        }
-    }
+    tab.validate_current_model();
 
     Separator();
 
@@ -994,13 +839,13 @@ void render_subagent_chat(SubAgent& tab, ImFont* mono_font) {
     auto& chat = *tab.chat_state;
 
     // Drain any pending streaming output first
-    drain_pending(ui, chat);
+    tab.drain_pending();
 
     // Check if subagent chat finished
     {
         auto finished = tab.check_finished();
         if (finished && !*finished) {
-            push_entry(ui, EntryType::Content, "Error: " + finished->error(), false);
+            ui.push_entry(EntryType::Content, "Error: " + finished->error(), false);
         }
     }
 
@@ -1079,52 +924,19 @@ void render_chat_ui(Agent& tab, bool& done) {
     }
 
     // ── drain pending output (includes any items that arrived after last frame's drain) ──
-    drain_pending(ui, chat);
+    tab.drain_pending();
 
     // ── Handle compact request ──
-    if (ui.compact_requested && !ui.compacting) {
-        ui.compacting = true;
-        ui.compact_requested = false;
-        ui.compact_future =
-            std::async(std::launch::async, [&session]() { return session.compact(); });
-    }
-    if (ui.compacting && ui.compact_future.valid() &&
-        ui.compact_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        ui.compacting = false;
-        auto compact_result = ui.compact_future.get();
-        // Clear UI entries and show result
-        ui.entries.clear();
-        if (compact_result) {
-            push_entry(ui, EntryType::Content, "Conversation compacted.", false);
-        } else {
-            push_entry(
-                ui, EntryType::Content, "Compaction failed: " + compact_result.error(), false);
-        }
-    }
+    tab.poll_compact();
 
     // ── Handle clear request ──
-    if (ui.clear_requested && !ui.clearing) {
-        ui.clearing = true;
-        ui.clear_requested = false;
-        ui.clear_future = std::async(std::launch::async, [&session]() -> Result<void> {
-            session.clear();
-            return {};
-        });
-    }
-    if (ui.clearing && ui.clear_future.valid() &&
-        ui.clear_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        ui.clearing = false;
-        ui.clear_future.get();
-        // Clear UI entries and show confirmation
-        ui.entries.clear();
-        push_entry(ui, EntryType::Content, "Conversation cleared.", false);
-    }
+    tab.poll_clear();
 
     // ── finalize streaming entry now that all pending data is incorporated ──
     if (stream_ended) {
-        finalize_streaming_entry(ui);
+        ui.finalize_streaming_entry();
         if (!result) {
-            push_entry(ui, EntryType::Content, "Error: " + result.error(), false);
+            ui.push_entry(EntryType::Content, "Error: " + result.error(), false);
         }
     }
 
@@ -1294,10 +1106,10 @@ void render_chat_ui(Agent& tab, bool& done) {
         string input(trimWhite(buffer.data()));
         if (input.size()) {
             // Push to UI with tags visible (user sees @Page / !Snippet)
-            push_entry(ui, EntryType::UserText, input, false);
+            ui.push_entry(EntryType::UserText, input, false);
             // Expand !snippet-name tags before sending to the agent
             string expanded = expand_tags(input);
-            start_chat(chat, session, expanded);
+            tab.start_chat(expanded);
             for (auto it = history.begin(); it != history.end();
                 it = *it == input ? history.erase(it) : ++it)
                 ;

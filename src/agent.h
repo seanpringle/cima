@@ -21,6 +21,25 @@ struct Agent {
     /// set chat_state->running = false, and return the result.
     /// Returns std::nullopt if the future is not yet ready.
     std::optional<Result<ChatResult>> check_finished();
+
+    /// Launch an async run_once(input) in a background thread.
+    void start_chat(std::string input);
+
+    /// Drain pending streaming output from the async thread into ui_state.
+    void drain_pending();
+
+    /// Trigger an async model-list fetch for the current provider.
+    void trigger_model_fetch();
+
+    /// If models have been fetched and not yet validated, auto-select the
+    /// first available model if the current model is not in the list.
+    void validate_current_model();
+
+    /// Poll for completion of an in-flight compact operation.
+    void poll_compact();
+
+    /// Poll for completion of an in-flight clear operation.
+    void poll_clear();
 };
 
 struct SubAgent : Agent {

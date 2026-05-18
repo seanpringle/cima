@@ -38,6 +38,13 @@ struct ChatUIState {
     /// Append a single entry to the JSON Lines log file.
     void append_chat_log_entry(const DisplayEntry& entry);
 
+    /// Create a DisplayEntry with the given type/text/streaming flag, assign
+    /// next_seq, push to entries, and log non-streaming entries immediately.
+    void push_entry(EntryType type, const std::string& text, bool streaming);
+
+    /// Finalise the last streaming entry (mark non-streaming, log it).
+    void finalize_streaming_entry();
+
     // Lifeguard shared_ptr + weak_ptr pair for async model-fetch threads.
     // The background thread captures a weak_ptr; if the tab is destroyed
     // the shared_ptr is reset and the weak_ptr expires, preventing UAF.
