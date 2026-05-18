@@ -1058,22 +1058,25 @@ void render_subagent_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
     }
     PopFont();
 
-    Separator();
+}
 
-    // ── Read-only chat history ──
+void render_subagent_chat(TabInfo& tab, ImFont* mono_font) {
+    auto& ui = tab.ui_state;
+    auto& chat = *tab.chat_state;
+
     // Drain any pending streaming output first
-    drain_pending(ui, *tab.chat_state);
+    drain_pending(ui, chat);
 
     // Check if subagent chat finished
-    if (tab.chat_state->running && tab.chat_state->future.valid() &&
-        tab.chat_state->future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+    if (chat.running && chat.future.valid() &&
+        chat.future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         try {
-            auto result = tab.chat_state->future.get();
+            auto result = chat.future.get();
             (void)result; // result already streamed via callbacks
         } catch (const std::exception& e) {
             push_entry(ui, EntryType::Content, "Error: " + std::string(e.what()), false);
         }
-        tab.chat_state->running = false;
+        chat.running = false;
     }
 
     // Render entries
@@ -1107,7 +1110,7 @@ void render_subagent_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
         }
     }
 
-    if (tab.chat_state->running) {
+    if (chat.running) {
         SameLine();
         TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Subagent is thinking...");
     }
