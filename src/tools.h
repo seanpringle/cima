@@ -194,15 +194,6 @@ Tool make_delete_file_tool(std::shared_ptr<std::string> safe_dir_ptr);
 Tool make_move_file_tool(std::shared_ptr<std::string> safe_dir_ptr);
 Tool make_rename_file_tool(std::shared_ptr<std::string> safe_dir_ptr);
 
-class Wiki;
-
-// ── Wiki tools ──
-Tool make_list_wiki_pages_tool(Wiki& wiki);
-Tool make_read_wiki_page_tool(Wiki& wiki);
-Tool make_write_wiki_page_tool(Wiki& wiki);
-Tool make_edit_wiki_page_tool(Wiki& wiki);
-Tool make_delete_wiki_page_tool(Wiki& wiki);
-
 class ChatSession; // forward decl for SubagentLookup
 
 // ── CMake tools ──

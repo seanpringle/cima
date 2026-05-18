@@ -204,10 +204,6 @@ void AppSession::set_assistant_files(const std::vector<std::string>& files) {
 // Path accessors
 // -----------------------------------------------------------------------
 
-std::string AppSession::wiki_dir_path() const {
-    return (session_dir_ / "wiki").string();
-}
-
 std::string AppSession::session_file_path(const std::string& filename) const {
     return (session_dir_ / filename).string();
 }

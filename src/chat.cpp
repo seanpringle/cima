@@ -57,12 +57,12 @@ ChatSession::ChatSession(const Config& config, const Provider& provider,
 
 std::unique_ptr<ChatSession> ChatSession::create_subagent(
     const Config& config, const Provider& provider, bool read_only,
-    CancellationToken cancelled, Wiki* wiki) {
+    CancellationToken cancelled) {
     // Build a simpler system prompt for subagents
     std::string sp = Config::SUBAGENT_SYSTEM_PROMPT;
 
     if (!read_only) {
-        sp += "You have access to read and write file tools, wiki tools, and git tools.\n";
+        sp += "You have access to read and write file tools, and git tools.\n";
     }
 
     // Check for CMake project and append CMake snippet if present
@@ -96,17 +96,6 @@ std::unique_ptr<ChatSession> ChatSession::create_subagent(
         session->tools_.remove("git_commit");
         session->tools_.remove("git_restore");
         session->tools_.remove("git_show");
-        // Wiki write tools — removed after set_wiki below if wiki is set
-    }
-
-    // Set up wiki (with restricted write tools if read_only)
-    if (wiki) {
-        session->set_wiki(wiki);
-        if (read_only) {
-            session->tools_.remove("write_wiki_page");
-            session->tools_.remove("edit_wiki_page");
-            session->tools_.remove("delete_wiki_page");
-        }
     }
 
     return session;
@@ -128,17 +117,6 @@ bool ChatSession::has_cmake_project() const {
     std::error_code ec;
     return std::filesystem::exists(
         std::filesystem::path(*safe_dir_) / "CMakeLists.txt", ec);
-}
-
-void ChatSession::set_wiki(Wiki* wiki) {
-    wiki_ = wiki;
-    if (wiki_) {
-        tools_.add(make_list_wiki_pages_tool(*wiki_));
-        tools_.add(make_read_wiki_page_tool(*wiki_));
-        tools_.add(make_write_wiki_page_tool(*wiki_));
-        tools_.add(make_edit_wiki_page_tool(*wiki_));
-        tools_.add(make_delete_wiki_page_tool(*wiki_));
-    }
 }
 
 int ChatSession::context_usage_percent() const {

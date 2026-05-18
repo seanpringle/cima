@@ -7,7 +7,6 @@
 #include "plan.h"
 #include "tools.h"
 #include "types.h"
-#include "wiki.h"
 
 #include <nlohmann/json.hpp>
 
@@ -35,10 +34,10 @@ class ChatSession {
     ChatSession& operator=(ChatSession&&) = delete;
 
     /// Create a subagent session with restricted tools and a simpler system prompt.
-    /// If read_only is true, write tools (file, git, wiki) are excluded.
+    /// If read_only is true, write tools (file, git) are excluded.
     static std::unique_ptr<ChatSession> create_subagent(
         const Config& config, const Provider& provider, bool read_only,
-        CancellationToken cancelled, Wiki* wiki);
+        CancellationToken cancelled);
 
     Result<ChatResult> run_once(const std::string& user_input);
     void set_model(const std::string& m) { model_ = m; }
@@ -85,9 +84,7 @@ class ChatSession {
     void set_agent_name(const std::string& name) { agent_name_ = name; }
     const std::string& agent_name() const { return agent_name_; }
 
-    /// Set the shared wiki and register wiki tools (may be null to disable).
-    void set_wiki(Wiki* wiki);
-    Wiki* wiki() const { return wiki_; }
+
 
     /// True when a CMakeLists.txt exists in the workspace directory.
     bool has_cmake_project() const;
@@ -137,7 +134,6 @@ class ChatSession {
     std::string reasoning_effort_;
     std::string agent_name_;
     std::string provider_name_;
-    Wiki* wiki_ = nullptr;
     std::shared_ptr<std::string> safe_dir_;
     std::string api_base_;     // API base URL (for creating temp clients)
     std::string api_key_;      // API key for authentication

@@ -2,10 +2,8 @@
 #include "app_session.h"
 #include "assistant_data.h"
 #include "gui_chat.h"
-#include "gui_wiki.h"
 #include "plan.h"
 #include "ship_name.h"
-#include "wiki.h"
 
 #include "imgui.h"
 #include "backends/imgui_impl_sdl3.h"
@@ -323,9 +321,6 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
     int active_tab = 0;
     int focus_tab_id = -1;
 
-    // Shared wiki across all sessions — file-backed via AppSession
-    Wiki wiki(app_session->wiki_dir_path());
-
     // Save a reference to cfg.providers for lambda capture (lifetime: gui_main)
     const auto& providers = cfg.providers;
 
@@ -354,8 +349,6 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                 std::lock_guard<std::mutex> lock(cs->mutex);
                 cs->pending.emplace_back(text, type);
             });
-
-        tab.session->set_wiki(&wiki);
 
         // Point to shared config snippets (cima.json)
         tab.snippets = &cfg.snippets;
@@ -402,7 +395,7 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
 
         tab.chat_state = std::make_unique<AsyncChatState>();
         tab.session = ChatSession::create_subagent(
-            cfg, provider, sa.read_only, tab.chat_state->cancelled, &wiki);
+            cfg, provider, sa.read_only, tab.chat_state->cancelled);
         tab.ui_state.mono_font = mono_font;
         tab.session->set_agent_name(sa.name);
         tab.session->set_output_callback(
@@ -563,12 +556,6 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
         {
             // ── Tab bar ──
             if (BeginTabBar("##chat_tabs", ImGuiTabBarFlags_NoTooltip)) {
-                // ── Wiki tab (read-only, first in the tab bar) ──
-                if (BeginTabItem("   Wiki   ")) {
-                    render_wiki_tab(wiki, mono_font);
-                    EndTabItem();
-                }
-
                 for (int ti = 0; ti < (int)tabs.size();) {
                     TabInfo& tab = tabs[ti];
 

@@ -118,8 +118,6 @@ add_library(cima_core
     src/plan.cpp
     src/app_session.cpp
     src/assistant_data.cpp
-    src/wiki.cpp
-    src/tools/factories/wiki.cpp
     src/tools/factories/subagent.cpp
     src/mcp/mcp_client.cpp
     src/mcp/mcp_registry.cpp
@@ -136,7 +134,6 @@ add_executable(cima
     src/main.cpp
     src/gui_app.cpp
     src/gui_chat.cpp
-    src/gui_wiki.cpp
     ${imgui_SOURCE_DIR}/imgui.cpp
     ${imgui_SOURCE_DIR}/imgui_draw.cpp
     ${imgui_SOURCE_DIR}/imgui_tables.cpp
@@ -170,9 +167,6 @@ target_link_libraries(test_client PRIVATE cima_core Catch2::Catch2WithMain)
 add_executable(test_chat tests/test_chat.cpp)
 target_link_libraries(test_chat PRIVATE cima_core Catch2::Catch2WithMain)
 
-add_executable(test_wiki tests/test_wiki.cpp)
-target_link_libraries(test_wiki PRIVATE cima_core Catch2::Catch2WithMain)
-
 add_executable(test_conversation tests/test_conversation.cpp)
 target_link_libraries(test_conversation PRIVATE cima_core Catch2::Catch2WithMain)
 
@@ -191,7 +185,6 @@ catch_discover_tests(test_types)
 catch_discover_tests(test_tools)
 catch_discover_tests(test_client)
 catch_discover_tests(test_chat)
-catch_discover_tests(test_wiki)
 catch_discover_tests(test_conversation)
 catch_discover_tests(test_mcp_client)
 catch_discover_tests(test_mcp_registry)

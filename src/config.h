@@ -56,7 +56,7 @@ inline bool operator==(const McpEndpoint& a, const McpEndpoint& b) {
 struct SubagentConfig {
     std::string name;        // unique identifier, used as tab title
     std::string description; // shown in tool description
-    bool read_only = false;  // if true, no write tools (file, git, wiki)
+    bool read_only = false;  // if true, no write tools (file, git)
 };
 
 struct Provider {
@@ -102,7 +102,7 @@ struct Config {
 
     /// CMake prompt snippet — appended to the system prompt only when
     /// CMakeLists.txt exists in the workspace.
-    /// Subagent system prompt — simpler, no plan tools or wiki descriptions.
+    /// Subagent system prompt — simpler, no plan tools.
     static constexpr const char* SUBAGENT_SYSTEM_PROMPT =
         "You are an AI coding assistant working as a subagent.\n";
 
@@ -125,13 +125,6 @@ All return raw output with optional head/tail trimming.
         " it thoroughly and write your Plan with `write_plan()`."
         " Ask the user to review and approve your Plan before implementation.\n"
         "Go back and check your Plan at any time with `read_plan()`.\n"
-        "\n"
-        "## Wiki tools\n"
-        "\n"
-        "The wiki is a list of markdown documents shared with other coding asistants and the"
-        " user. Access with `list_wiki_pages()`, `read_wiki_page()`, `write_wiki_page()`, and"
-        " `edit_wiki_page()` tools. Note: the wiki is not file-based; only these tools can"
-        " access it.\n"
         "\n";
 
     /// Load config from ~/.config/cima/cima.json, applying defaults for
