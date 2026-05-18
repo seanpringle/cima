@@ -38,7 +38,7 @@ int main(int argc, char* argv[]) {
     bool force = false;
 
     // Load config from file first
-    auto cfg = Config::load();
+    cfg = Config::load();
 
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
@@ -68,7 +68,7 @@ int main(int argc, char* argv[]) {
 
     int exit_code = 0;
     try {
-        exit_code = gui_main(std::move(cfg), session_name, force);
+        exit_code = gui_main(session_name, force);
     } catch (const std::exception& e) {
         std::cerr << "fatal: " << e.what() << std::endl;
         exit_code = 1;

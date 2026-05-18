@@ -1,10 +1,11 @@
 #include "config.h"
 
-#include <algorithm>
 #include <fstream>
 #include <iostream>
 #include <set>
 #include <string>
+
+Config cfg;
 
 std::string Config::SYSTEM_PROMPT =
     "You are an AI coding assistant.\n"

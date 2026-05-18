@@ -12,8 +12,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
-#include <filesystem>
-// #include <fstream>  // no longer needed — persistence via AssistantData
 #include <future>
 #include <map>
 #include <md4c.h>
@@ -769,23 +767,19 @@ void render_config_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
 
 // ── Tag expansion for !snippet-name references ──
 // Expands !snippetname to the full snippet content.  Non-matching tags are left as-is.
-static std::string expand_tags(std::string input,
-    const std::map<std::string, std::string>* snippets) {
-    if (!snippets || input.find('!') == std::string::npos)
-        return input;
-
+static std::string expand_tags(std::string input) {
     std::string result;
     size_t i = 0;
     while (i < input.size()) {
-        if (snippets && input[i] == '!') {
+        if (input[i] == '!') {
             size_t start = i + 1;
             size_t end = start;
             while (end < input.size() && !std::isspace(static_cast<unsigned char>(input[end])))
                 end++;
             std::string name = input.substr(start, end - start);
             if (!name.empty()) {
-                auto it = snippets->find(name);
-                if (it != snippets->end()) {
+                auto it = cfg.snippets.find(name);
+                if (it != cfg.snippets.end()) {
                     result += it->second;
                     i = end;
                     continue;
@@ -1217,12 +1211,11 @@ void render_chat_ui(TabInfo& tab, bool& done) {
 
     // ── Snippet reference combo (inserts !snippetname tag at cursor) ──
     {
-        const auto* snippets = tab.snippets;
-        if (snippets && !snippets->empty()) {
+        if (!cfg.snippets.empty()) {
             SameLine(0,GetStyle().ItemSpacing.y);
             SetNextItemWidth(GetContentRegionAvail().x); // ~combo_width
             if (BeginCombo("##snippet-ref", "snippets")) {
-                for (const auto& [name, content] : *snippets) {
+                for (const auto& [name, content] : cfg.snippets) {
                     if (Selectable(name.c_str())) {
                         std::string tag = "!" + name;
                         insert_text_at_cursor(tag);
@@ -1268,7 +1261,7 @@ void render_chat_ui(TabInfo& tab, bool& done) {
             // Push to UI with tags visible (user sees @Page / !Snippet)
             push_entry(ui, EntryType::UserText, input, false);
             // Expand !snippet-name tags before sending to the agent
-            string expanded = expand_tags(input, tab.snippets);
+            string expanded = expand_tags(input);
             start_chat(chat, session, expanded);
             for (auto it = history.begin(); it != history.end();
                 it = *it == input ? history.erase(it): ++it);

@@ -192,7 +192,7 @@ static int find_provider_index(const std::vector<Provider>& providers,
     return 0;
 }
 
-int gui_main(Config cfg, const std::string& session_name, bool force) {
+int gui_main(const std::string& session_name, bool force) {
     // ── App session ──
     auto app_session = std::make_unique<AppSession>(session_name, force);
     app_session->print_welcome();
@@ -281,7 +281,6 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                 std::lock_guard<std::mutex> lock(cs->mutex);
                 cs->pending.emplace_back(text, type);
             });
-        primary_tab.snippets = &cfg.snippets;
 
         // Restore saved session data (if any)
         auto session_result = app_session->load_session();

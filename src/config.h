@@ -114,3 +114,5 @@ struct Config {
     /// Serialise the JSON-persisted fields (excludes system_prompt etc.).
     json to_json() const;
 };
+
+extern Config cfg;
