@@ -596,11 +596,6 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                                 ImGuiChildFlags_None,
                                 ImGuiWindowFlags_None);
 
-                            // Track which subagent tab is selected in the session-tabs
-                            // -1 = Config/Plan selected (show regular chat), otherwise the
-                            // TabInfo::id of the selected subagent tab
-                            int selected_subagent_id = -1;
-
                             if (BeginTabBar("##session-tabs")) {
                                 // Config first so it's the default focus — model list loads
                                 // as soon as the assistant tab is created.
@@ -616,9 +611,10 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                                     if (BeginTabItem(("   " + sa_tab.title + "   ##sa-" +
                                                           std::to_string(sa_tab.id))
                                                          .c_str())) {
-                                        selected_subagent_id = sa_tab.id;
-                                        // Render the subagent's config form in the left panel
+                                        // Render the subagent's config form
                                         render_subagent_tab(sa_tab, cfg, mono_font);
+                                        // Then the subagent's chat history underneath
+                                        render_subagent_chat(sa_tab, mono_font);
                                         EndTabItem();
                                     }
                                     PopID();
@@ -643,7 +639,7 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                                 GetColorU32(ImGuiCol_Separator),
                                 GetStyle().ChildBorderSize);
 
-                            // Right panel: Chat UI or subagent chat history
+                            // Right panel: Chat UI (always the primary agent's conversation)
                             PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
                             SetCursorPos(chatPos);
                             BeginChild("##tab_chat",
@@ -651,20 +647,7 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                                 ImGuiChildFlags_None,
                                 ImGuiWindowFlags_None);
                             PopStyleVar();
-
-                            // If a subagent tab is selected in session-tabs, show its
-                            // read-only chat history in the right panel instead of the
-                            // current agent's chat UI.
-                            if (selected_subagent_id >= 0) {
-                                for (auto& sa_tab : tabs) {
-                                    if (sa_tab.is_subagent && sa_tab.id == selected_subagent_id) {
-                                        render_subagent_chat(sa_tab, mono_font);
-                                        break;
-                                    }
-                                }
-                            } else {
-                                render_chat_ui(tab, done);
-                            }
+                            render_chat_ui(tab, done);
                             EndChild();
                         }
 
