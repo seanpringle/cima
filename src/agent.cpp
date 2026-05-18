@@ -27,6 +27,47 @@ void PrimaryAgent::cancel_running_chats() {
 }
 
 PrimaryAgent::PrimaryAgent(SessionData& data) : session_data{data} {
+    init_defaults();
+    create_chat_session();
+    restore_session_data();
+    create_subagents();
+    register_subagent_tools();
+}
+
+PrimaryAgent::~PrimaryAgent() {
+    for (auto& t : subagents) t.cancel_and_wait();
+    cancel_and_wait();
+
+    session_data.provider_name = provider_name;
+    session_data.model = model_name;
+    session_data.reasoning_effort = reasoning_effort;
+    session_data.conversation = session->conversation().to_json();
+
+    json log_arr = json::array();
+    for (const auto& e : ui_state.entries) {
+        json entry;
+        entry["seq"] = e.seq;
+        switch (e.type) {
+            case EntryType::UserText:  entry["type"] = "UserText"; break;
+            case EntryType::Reasoning: entry["type"] = "Reasoning"; break;
+            case EntryType::Content:   entry["type"] = "Content"; break;
+            case EntryType::ToolCall:  entry["type"] = "ToolCall"; break;
+        }
+        entry["text"] = e.text;
+        if (e.is_streaming) entry["streaming"] = true;
+        log_arr.push_back(std::move(entry));
+    }
+    session_data.chat_log = std::move(log_arr);
+    session_data.plan = session->plan().to_json();
+    session_data.bash_enabled = bash_enabled;
+    session_data.mcp_enabled = mcp_enabled;
+
+    std::error_code ec;
+    auto cwd = std::filesystem::current_path(ec);
+    if (!ec) session_data.last_cwd = cwd.string();
+}
+
+void PrimaryAgent::init_defaults() {
     id = 1;
     title = "Assistant";
 
@@ -37,6 +78,12 @@ PrimaryAgent::PrimaryAgent(SessionData& data) : session_data{data} {
     provider_name = provider.name;
     model_name = provider.model;
     reasoning_effort = provider.reasoning_effort;
+}
+
+void PrimaryAgent::create_chat_session() {
+    if (cfg.providers.empty())
+        throw std::runtime_error("No providers configured");
+    const auto& provider = cfg.providers[0];
 
     chat_state = std::make_unique<AsyncChatState>();
     session = std::make_unique<ChatSession>(cfg, provider, chat_state->cancelled);
@@ -46,7 +93,9 @@ PrimaryAgent::PrimaryAgent(SessionData& data) : session_data{data} {
             std::lock_guard<std::mutex> lock(cs->mutex);
             cs->pending.emplace_back(text, type);
         });
+}
 
+void PrimaryAgent::restore_session_data() {
     if (!session_data.provider_name.empty()) {
         provider_name = session_data.provider_name;
         for (const auto& p : cfg.providers) {
@@ -96,7 +145,9 @@ PrimaryAgent::PrimaryAgent(SessionData& data) : session_data{data} {
     bash_enabled = session_data.bash_enabled;
     session->set_bash_enabled(session_data.bash_enabled);
     mcp_enabled = session_data.mcp_enabled;
+}
 
+void PrimaryAgent::create_subagents() {
     int next_id = 2;
 
     for (const auto& sa : cfg.subagents) {
@@ -123,7 +174,9 @@ PrimaryAgent::PrimaryAgent(SessionData& data) : session_data{data} {
                 cs->pending.emplace_back(text, type);
             });
     }
+}
 
+void PrimaryAgent::register_subagent_tools() {
     session->register_call_subagent_tool(
         /*lookup=*/[primary=this](const std::string& name) -> ChatSession* {
             for (auto& t : primary->subagents) {
@@ -157,37 +210,4 @@ PrimaryAgent::PrimaryAgent(SessionData& data) : session_data{data} {
             }
         },
         cfg.subagents);
-}
-
-PrimaryAgent::~PrimaryAgent() {
-    for (auto& t : subagents) t.cancel_and_wait();
-    cancel_and_wait();
-
-    session_data.provider_name = provider_name;
-    session_data.model = model_name;
-    session_data.reasoning_effort = reasoning_effort;
-    session_data.conversation = session->conversation().to_json();
-
-    json log_arr = json::array();
-    for (const auto& e : ui_state.entries) {
-        json entry;
-        entry["seq"] = e.seq;
-        switch (e.type) {
-            case EntryType::UserText:  entry["type"] = "UserText"; break;
-            case EntryType::Reasoning: entry["type"] = "Reasoning"; break;
-            case EntryType::Content:   entry["type"] = "Content"; break;
-            case EntryType::ToolCall:  entry["type"] = "ToolCall"; break;
-        }
-        entry["text"] = e.text;
-        if (e.is_streaming) entry["streaming"] = true;
-        log_arr.push_back(std::move(entry));
-    }
-    session_data.chat_log = std::move(log_arr);
-    session_data.plan = session->plan().to_json();
-    session_data.bash_enabled = bash_enabled;
-    session_data.mcp_enabled = mcp_enabled;
-
-    std::error_code ec;
-    auto cwd = std::filesystem::current_path(ec);
-    if (!ec) session_data.last_cwd = cwd.string();
 }

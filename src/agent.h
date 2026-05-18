@@ -40,4 +40,11 @@ struct PrimaryAgent : Agent {
     ~PrimaryAgent();
 
     void cancel_running_chats();
+
+private:
+    void init_defaults();
+    void create_chat_session();
+    void restore_session_data();
+    void create_subagents();
+    void register_subagent_tools();
 };
