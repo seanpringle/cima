@@ -604,14 +604,24 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                                 ImGuiWindowFlags_None);
 
                             if (BeginTabBar("##session-tabs")) {
-                                // Config first so it's the default focus — model list loads
-                                // as soon as the assistant tab is created.
+                                // Plan first so it's the default focus
+                                if (BeginTabItem("   Plan   ")) {
+                                    auto plan_result = tab.session->plan().read_plan();
+                                    if (plan_result) {
+                                        render_content(*plan_result, mono_font);
+                                    } else {
+                                        TextDisabled("(empty plan)");
+                                    }
+                                    EndTabItem();
+                                }
+
+                                // Config second — model list loads as soon as the tab is created
                                 if (BeginTabItem("   Config   ")) {
                                     render_config_tab(tab, cfg, mono_font);
                                     EndTabItem();
                                 }
 
-                                // Subagent tabs between Config and Plan
+                                // Subagent tabs after Config
                                 for (auto& sa_tab : tabs) {
                                     if (!sa_tab.is_subagent) continue;
                                     PushID(sa_tab.id);
@@ -627,15 +637,6 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                                     PopID();
                                 }
 
-                                if (BeginTabItem("   Plan   ")) {
-                                    auto plan_result = tab.session->plan().read_plan();
-                                    if (plan_result) {
-                                        render_content(*plan_result, mono_font);
-                                    } else {
-                                        TextDisabled("(empty plan)");
-                                    }
-                                    EndTabItem();
-                                }
                                 EndTabBar();
                             }
 
