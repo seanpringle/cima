@@ -727,9 +727,6 @@ void render_config_tab(TabInfo& tab, const Config& cfg, ImFont* mono_font) {
 
     Separator();
 
-    // ── Raw checkbox ──
-    Checkbox("Raw", &ui.show_raw);
-
     Separator();
 
     // ── Compact button ──
@@ -1132,31 +1129,7 @@ void render_chat_ui(TabInfo& tab, bool& done) {
         PushID(string("entry-" + std::to_string(i)).c_str());
 
         stringstream ss;
-
-        if (ui.show_raw) {
-            // ── Raw text mode ──
-            const char* prefix = "";
-            switch (entry.type) {
-            case EntryType::UserText:
-                prefix = "[You] ";
-                break;
-            case EntryType::Reasoning:
-                prefix = "[Reasoning] ";
-                break;
-            case EntryType::Content:
-                prefix = "[Assistant] ";
-                break;
-            case EntryType::ToolCall:
-                prefix = "[Tool] ";
-                break;
-            }
-            PushTextWrapPos(0);
-            ss << prefix << entry.text;
-            TextUnformatted(ss.str().c_str());
-            PopTextWrapPos();
-        } else {
-            // ── Pretty markdown mode ──
-            switch (entry.type) {
+        switch (entry.type) {
             case EntryType::UserText:
                 PushStyleColor(ImGuiCol_Text, IM_COL32(100, 180, 255, 255));
                 PushTextWrapPos(0);
@@ -1191,7 +1164,6 @@ void render_chat_ui(TabInfo& tab, bool& done) {
                 PopStyleColor();
                 break;
             }
-        }
 
         PopID();
     }

@@ -31,7 +31,7 @@ struct ChatUIState {
     bool request_cancel = false;
     ImFont* mono_font = nullptr;
     int next_seq = 1;
-    bool show_raw = false;
+    // show_raw removed
     /// Load entries from the JSON Lines log file into `entries`.
     /// Sets `next_seq` to max seq + 1.  Silently ignores corrupt lines.
     void load_chat_log(const std::string& path);
