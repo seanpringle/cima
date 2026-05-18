@@ -15,7 +15,7 @@ using json = nlohmann::json;
 #include <vector>
 
 // -----------------------------------------------------------------------
-// Base directory helpers
+// Home directory helper
 // -----------------------------------------------------------------------
 
 static std::filesystem::path get_home_dir() {
@@ -38,6 +38,8 @@ std::filesystem::path AppSession::sessions_base_dir() {
 // -----------------------------------------------------------------------
 
 AppSession::AppSession(const std::string& name, bool force) : session_name_(name) {
+    (void)force;
+
     if (name.empty()) {
         throw std::invalid_argument("session name must not be empty");
     }
@@ -46,216 +48,240 @@ AppSession::AppSession(const std::string& name, bool force) : session_name_(name
         throw std::invalid_argument("session name must not contain path separators");
     }
 
-    session_dir_ = sessions_base_dir() / name;
-
-    if (std::filesystem::exists(session_dir_)) {
-        load_existing(force);
-    } else {
-        create_new();
-    }
-}
-
-// -----------------------------------------------------------------------
-// Load existing session
-// -----------------------------------------------------------------------
-
-void AppSession::load_existing(bool force) {
-    (void)force; // kept for API compatibility
-
-    if (!std::filesystem::is_directory(session_dir_)) {
-        throw std::runtime_error("Session path exists but is not a directory: " +
-                                 session_dir_.string());
-    }
-
-    auto manifest_path = session_dir_ / "state.json";
-    if (!std::filesystem::exists(manifest_path)) {
-        throw std::runtime_error("Session folder exists but is missing state.json: " +
-                                 session_dir_.string());
-    }
-
-    // Read and parse state.json
-    std::ifstream file(manifest_path);
-    if (!file.is_open()) {
-        throw std::runtime_error("Cannot open state.json: " + manifest_path.string());
-    }
-    json manifest;
-    try {
-        file >> manifest;
-    } catch (const std::exception& e) {
-        throw std::runtime_error("Failed to parse state.json: " + std::string(e.what()));
-    }
-
-    // New format: state.json is a JSON array of assistant filenames,
-    // optionally with a top-level "last_cwd" string.
-    if (manifest.is_array()) {
-        assistant_files_.clear();
-        for (const auto& item : manifest) {
-            if (item.is_string()) {
-                assistant_files_.push_back(item.get<std::string>());
-            }
-        }
-        last_cwd_.clear();
-    } else if (manifest.is_object()) {
-        // Can be either:
-        //   1. New format with "files" array + "last_cwd" (transitional)
-        //   2. Old format with version/last_cwd/files
-        // We support both by checking for "files" array and "last_cwd".
-        last_cwd_ = manifest.value("last_cwd", std::string());
-
-        if (manifest.contains("files") && manifest["files"].is_array()) {
-            // New object format or old format — extract filenames
-            assistant_files_.clear();
-            for (const auto& item : manifest["files"]) {
-                if (item.is_string()) {
-                    assistant_files_.push_back(item.get<std::string>());
-                }
-            }
-        } else {
-            // No files array — start with empty list (don't scan directory,
-            // which could resurrect orphan files as ghost tabs).
-        }
-    } else {
-        throw std::runtime_error("Unexpected state.json format: expected array or object");
-    }
-
-    // ── Remove orphan .json files not listed in the manifest ──
-    {
-        std::error_code ec;
-        std::filesystem::directory_iterator dir(session_dir_, ec);
-        if (!ec) {
-            for (const auto& entry : dir) {
-                if (!entry.is_regular_file()) continue;
-                auto fname = entry.path().filename().string();
-                if (fname == "state.json") continue;
-                if (fname.size() <= 5 ||
-                    fname.substr(fname.size() - 5) != ".json")
-                    continue;
-
-                // If this file isn't in our assistant list, delete it
-                if (std::find(assistant_files_.begin(), assistant_files_.end(),
-                        fname) == assistant_files_.end()) {
-                    std::filesystem::remove(entry.path(), ec); // ignore errors
-                }
-            }
-        }
-    }
-
-    // Warn if last_cwd differs from current working directory
-    if (!last_cwd_.empty()) {
-        std::error_code ec;
-        auto cwd = std::filesystem::current_path(ec);
-        if (!ec && cwd.string() != last_cwd_) {
-            std::cerr << "Warning: session " << session_name_
-                      << " was last used in: " << last_cwd_ << "\n"
-                      << "  Current directory: " << cwd.string() << "\n"
-                      << "  (this is allowed — you can still proceed)" << std::endl;
-        }
-    }
-}
-
-// -----------------------------------------------------------------------
-// Create new session
-// -----------------------------------------------------------------------
-
-void AppSession::create_new() {
-    // Create the session directory
+    // Ensure the base directory exists
     std::error_code ec;
-    if (!std::filesystem::create_directories(session_dir_, ec) && ec) {
-        throw std::runtime_error("Failed to create session directory " +
-                                 session_dir_.string() + ": " + ec.message());
+    std::filesystem::create_directories(sessions_base_dir(), ec);
+    if (ec) {
+        throw std::runtime_error("Failed to create sessions directory " +
+                                 sessions_base_dir().string() + ": " + ec.message());
     }
 
-    // Get current working directory
-    auto cwd = std::filesystem::current_path(ec);
-    last_cwd_ = ec ? std::string() : cwd.string();
+    // Check if the session file already exists
+    auto session_path = std::filesystem::path(session_file_path());
+    if (std::filesystem::exists(session_path)) {
+        // Existing session — load last_cwd from it
+        auto result = load_session();
+        if (result) {
+            last_cwd_ = result->last_cwd;
+        }
+        // If load fails, we still proceed (last_cwd will be empty)
+    } else {
+        // Check for old directory-format session to migrate
+        auto old_dir = sessions_base_dir() / name;
+        if (std::filesystem::is_directory(old_dir) &&
+            std::filesystem::exists(old_dir / "state.json")) {
+            if (!try_migrate_old_format()) {
+                // Migration failed — will start fresh
+                std::cerr << "Warning: failed to migrate old-format session '"
+                          << name << "'; starting new session." << std::endl;
+            }
+        }
 
-    // Write state.json
-    save_manifest();
-
-    is_new_ = true;
-}
-
-// -----------------------------------------------------------------------
-// Manifest helpers
-// -----------------------------------------------------------------------
-
-void AppSession::add_assistant_file(const std::string& filename) {
-    if (std::find(assistant_files_.begin(), assistant_files_.end(), filename) ==
-        assistant_files_.end()) {
-        assistant_files_.push_back(filename);
-        save_manifest();
+        // If the file still doesn't exist (fresh session or failed migration),
+        // record last_cwd for the welcome message
+        if (!std::filesystem::exists(session_path)) {
+            auto cwd = std::filesystem::current_path(ec);
+            last_cwd_ = ec ? std::string() : cwd.string();
+            is_new_ = true;
+        } else {
+            // Migration succeeded and created the file — load last_cwd
+            auto result = load_session();
+            if (result) {
+                last_cwd_ = result->last_cwd;
+            }
+        }
     }
-}
-
-void AppSession::remove_assistant_file(const std::string& filename) {
-    auto it = std::remove(assistant_files_.begin(), assistant_files_.end(), filename);
-    if (it != assistant_files_.end()) {
-        assistant_files_.erase(it, assistant_files_.end());
-        save_manifest();
-    }
-}
-
-void AppSession::set_assistant_files(const std::vector<std::string>& files) {
-    assistant_files_ = files;
-    save_manifest();
 }
 
 // -----------------------------------------------------------------------
 // Path accessors
 // -----------------------------------------------------------------------
 
-std::string AppSession::session_file_path(const std::string& filename) const {
-    return (session_dir_ / filename).string();
+std::string AppSession::session_file_path() const {
+    return (sessions_base_dir() / (session_name_ + ".json")).string();
+}
+
+std::string AppSession::backup_dir_path() const {
+    return (sessions_base_dir() / (session_name_ + ".bak")).string();
 }
 
 // -----------------------------------------------------------------------
-// Manifest data
+// Session data persistence
 // -----------------------------------------------------------------------
 
-void AppSession::set_last_cwd(const std::string& cwd) {
-    last_cwd_ = cwd;
+Result<void> AppSession::save_session(const SessionData& data) {
+    try {
+        auto path = std::filesystem::path(session_file_path());
+        auto tmp_path = path;
+        tmp_path += ".tmp";
+
+        // Write to temporary file
+        {
+            std::ofstream file(tmp_path);
+            if (!file.is_open()) {
+                return std::unexpected("Failed to open temporary file for writing: " +
+                                       tmp_path.string());
+            }
+            file << data.to_json().dump(2) << std::endl;
+        }
+
+        // Atomic rename (POSIX)
+        std::error_code ec;
+        std::filesystem::rename(tmp_path, path, ec);
+        if (ec) {
+            // Clean up temp file on failure
+            std::filesystem::remove(tmp_path, ec);
+            return std::unexpected("Failed to rename session file: " + ec.message());
+        }
+
+        last_cwd_ = data.last_cwd;
+        return {};
+    } catch (const std::exception& e) {
+        return std::unexpected(std::string("Failed to save session: ") + e.what());
+    }
+}
+
+Result<SessionData> AppSession::load_session() {
+    auto path = session_file_path();
+    SessionData data;
+    auto result = data.load_from_file(path);
+    if (!result) {
+        return std::unexpected(result.error());
+    }
+    return data;
 }
 
 // -----------------------------------------------------------------------
-// Save manifest
+// Migration from old directory format
 // -----------------------------------------------------------------------
 
-void AppSession::save_manifest() {
-    json manifest = json::array();
-    for (const auto& fname : assistant_files_) {
-        manifest.push_back(fname);
+bool AppSession::try_migrate_old_format() {
+    std::error_code ec;
+    auto old_dir = sessions_base_dir() / session_name_;
+
+    if (!std::filesystem::is_directory(old_dir, ec) || ec) {
+        return false;
     }
 
-    // Only add last_cwd if non-empty
-    if (!last_cwd_.empty()) {
-        // Use an object wrapper to include last_cwd alongside the list.
-        // We store the assistant list under a "files" key.
-        json obj;
-        obj["files"] = std::move(manifest);
-        obj["last_cwd"] = last_cwd_;
-        manifest = std::move(obj);
+    auto manifest_path = old_dir / "state.json";
+    if (!std::filesystem::exists(manifest_path, ec)) {
+        return false;
     }
 
-    auto manifest_path = session_dir_ / "state.json";
-    std::ofstream file(manifest_path);
-    if (!file.is_open()) {
-        std::cerr << "Error: cannot write state.json: " << manifest_path.string() << std::endl;
-        return;
+    // Read old state.json to get last_cwd and assistant file list
+    std::ifstream manifest_file(manifest_path);
+    if (!manifest_file.is_open()) {
+        return false;
     }
-    file << manifest.dump(2) << std::endl;
+
+    json manifest;
+    try {
+        manifest_file >> manifest;
+    } catch (...) {
+        return false;
+    }
+
+    std::vector<std::string> assistant_filenames;
+    std::string old_last_cwd;
+
+    if (manifest.is_array()) {
+        for (const auto& item : manifest) {
+            if (item.is_string()) {
+                assistant_filenames.push_back(item.get<std::string>());
+            }
+        }
+    } else if (manifest.is_object()) {
+        old_last_cwd = manifest.value("last_cwd", std::string());
+        if (manifest.contains("files") && manifest["files"].is_array()) {
+            for (const auto& item : manifest["files"]) {
+                if (item.is_string()) {
+                    assistant_filenames.push_back(item.get<std::string>());
+                }
+            }
+        }
+    } else {
+        return false;
+    }
+
+    // Find the most recently modified assistant .json file
+    std::string newest_file;
+    std::filesystem::file_time_type newest_time;
+
+    for (const auto& fname : assistant_filenames) {
+        auto fpath = old_dir / fname;
+        if (!std::filesystem::exists(fpath, ec)) continue;
+        auto ftime = std::filesystem::last_write_time(fpath, ec);
+        if (ec) continue;
+        if (newest_file.empty() || ftime > newest_time) {
+            newest_file = fname;
+            newest_time = ftime;
+        }
+    }
+
+    // Build new SessionData from the newest assistant file
+    SessionData data;
+    data.last_cwd = old_last_cwd;
+
+    if (!newest_file.empty()) {
+        auto fpath = old_dir / newest_file;
+        std::ifstream afile(fpath);
+        if (afile.is_open()) {
+            try {
+                json aj;
+                afile >> aj;
+                // The old AssistantData format had these fields at top level
+                data.provider_name = aj.value("provider_name", std::string());
+                data.model = aj.value("model", std::string());
+                data.reasoning_effort = aj.value("reasoning_effort", std::string());
+                data.workspace_path = aj.value("workspace_path", std::string());
+                data.bash_enabled = aj.value("bash_enabled", false);
+
+                // Conversation, chat_log, plan are already json fields
+                if (aj.contains("conversation")) data.conversation = aj["conversation"];
+                if (aj.contains("chat_log")) data.chat_log = aj["chat_log"];
+                if (aj.contains("plan")) data.plan = aj["plan"];
+
+                // MCP enabled state was never persisted in old format — start empty
+            } catch (...) {
+                // Corrupt assistant file — proceed with defaults
+            }
+        }
+    }
+
+    // Write the new format file
+    auto new_path = std::filesystem::path(session_file_path());
+    {
+        std::ofstream file(new_path);
+        if (!file.is_open()) {
+            return false;
+        }
+        file << data.to_json().dump(2) << std::endl;
+    }
+
+    // Rename old directory to .bak/ suffix
+    auto backup_path = sessions_base_dir() / (session_name_ + ".bak");
+    std::filesystem::rename(old_dir, backup_path, ec);
+    if (ec) {
+        // Migration partial — warn but consider it done (new file exists)
+        std::cerr << "Warning: migrated session data but could not rename old directory: "
+                  << ec.message() << std::endl;
+    }
+
+    return true;
 }
 
 // -----------------------------------------------------------------------
-// Welcome message
+// Metadata
 // -----------------------------------------------------------------------
 
 void AppSession::print_welcome() const {
+    auto session_path = session_file_path();
     if (is_new_) {
         std::cout << "Starting new session '" << session_name_ << "'\n"
-                  << "  Session directory: " << session_dir_.string() << "\n";
+                  << "  Session file: " << session_path << "\n";
     } else {
         std::cout << "Resuming session '" << session_name_ << "'\n"
-                  << "  Session directory: " << session_dir_.string() << "\n";
+                  << "  Session file: " << session_path << "\n";
     }
     std::cout << std::flush;
 }

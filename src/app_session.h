@@ -1,20 +1,24 @@
 #pragma once
 
+#include "session_data.h"
+
 #include <filesystem>
 #include <string>
-#include <vector>
 
-/// Manages a single app session persisted to ~/.local/state/cima/<name>/.
+/// Manages a single app session persisted to ~/.local/state/cima/<session>.json.
 ///
-/// Each session folder contains:
-///   state.json   — JSON array of assistant filenames (e.g. ["Fingolfin.json"])
-///                   Optionally also contains top-level "last_cwd" string.
-///   <name>.json  — One JSON file per assistant tab (consolidated data)
+/// The session is a single JSON file containing the entire state:
+/// conversation, chat log, plan, provider, model, workspace, etc.
+/// (version 2 format).
+///
+/// If an old directory-based session exists at ~/.local/state/cima/<session>/
+/// (version 1 format), it is automatically migrated to the new single-file
+/// format on construction, and the old directory is renamed to a .bak/ suffix.
 ///
 class AppSession {
   public:
     /// Construct/resume or create a new session.
-    /// @param name   User-chosen session name (directory name under ~/.local/state/cima/)
+    /// @param name   User-chosen session name (used as <session>.json filename)
     /// @param force  If true, integrity check failures produce warnings instead of errors
     AppSession(const std::string& name, bool force = false);
 
@@ -24,49 +28,50 @@ class AppSession {
     AppSession& operator=(AppSession&&) = delete;
 
     // ── Path accessors ──
-    const std::filesystem::path& session_dir() const { return session_dir_; }
 
-    /// Return the full path for a filename within this session directory.
-    std::string session_file_path(const std::string& filename) const;
+    /// Base directory for all sessions (~/.local/state/cima).
+    static std::filesystem::path sessions_base_dir();
 
-    // ── Manifest data ──
+    /// Return the base directory (~/.local/state/cima).
+    std::filesystem::path base_dir() const { return sessions_base_dir(); }
+
+    /// Return the full path to the single session JSON file.
+    std::string session_file_path() const;
+
+    /// Return the full path to a backup directory (old format moved aside).
+    std::string backup_dir_path() const;
+
+    // ── Session data persistence ──
+
+    /// Save session data atomically to the session file.
+    /// Writes to a .tmp file, then renames atomically on POSIX.
+    Result<void> save_session(const SessionData& data);
+
+    /// Load session data from the session file.
+    /// Returns a default-constructed SessionData if the file doesn't exist
+    /// (first-run behaviour).  On parse error returns an error result.
+    Result<SessionData> load_session();
+
+    // ── Metadata ──
+
+    /// The last working directory (loaded from session data).
     const std::string& last_cwd() const { return last_cwd_; }
-    void set_last_cwd(const std::string& cwd);
-
-    /// Return the list of assistant filenames from state.json.
-    const std::vector<std::string>& assistant_files() const { return assistant_files_; }
-
-    /// Add an assistant filename to the manifest and persist.
-    void add_assistant_file(const std::string& filename);
-
-    /// Remove an assistant filename from the manifest and persist.
-    void remove_assistant_file(const std::string& filename);
-
-    /// Replace the entire assistant file list and persist.
-    void set_assistant_files(const std::vector<std::string>& files);
-
-    /// Persist state.json to disk.
-    void save_manifest();
 
     /// True if this session was freshly created (did not exist before).
     bool is_new_session() const { return is_new_; }
 
+    /// The session name.
+    const std::string& session_name() const { return session_name_; }
+
     /// Print a human-friendly "resuming session" or "starting new session" message.
     void print_welcome() const;
 
-    /// Return the base directory for all sessions (~/.local/state/cima).
-    static std::filesystem::path sessions_base_dir();
-
   private:
-    /// Load an existing session from disk.
-    void load_existing(bool force);
-
-    /// Create a brand new session directory and manifest.
-    void create_new();
+    /// Attempt to migrate an old directory-format session to the new single-file format.
+    /// Returns true if migration was performed, false if no migration was needed.
+    bool try_migrate_old_format();
 
     std::string session_name_;
-    std::filesystem::path session_dir_;
     std::string last_cwd_;
-    std::vector<std::string> assistant_files_;
     bool is_new_ = false;
 };
