@@ -426,7 +426,7 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
         for (auto& t : tabs) {
             if (!t.is_subagent) {
                 t.session->register_call_subagent_tool(
-                    [&tabs](const std::string& name) -> ChatSession* {
+                    /*lookup=*/[&tabs](const std::string& name) -> ChatSession* {
                         for (auto& t2 : tabs) {
                             if (t2.is_subagent && t2.subagent_name == name) {
                                 return t2.session.get();
@@ -434,13 +434,22 @@ int gui_main(Config cfg, const std::string& session_name, bool force) {
                         }
                         return nullptr;
                     },
-                    [&tabs](const std::string& name) -> bool {
+                    /*is_running=*/[&tabs](const std::string& name) -> bool {
                         for (auto& t2 : tabs) {
                             if (t2.is_subagent && t2.subagent_name == name) {
                                 return t2.chat_state->running;
                             }
                         }
                         return false;
+                    },
+                    /*clear_ui=*/[&tabs](const std::string& name) -> void {
+                        for (auto& t2 : tabs) {
+                            if (t2.is_subagent && t2.subagent_name == name) {
+                                t2.ui_state.entries.clear();
+                                t2.ui_state.next_seq = 1;
+                                break;
+                            }
+                        }
                     },
                     cfg.subagents);
                 break;

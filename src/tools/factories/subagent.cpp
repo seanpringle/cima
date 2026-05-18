@@ -6,6 +6,7 @@
 // ===================================================================
 
 Tool make_call_subagent_tool(SubagentLookup lookup, SubagentRunningCheck is_running,
+    SubagentClearUI clear_ui,
     const std::vector<SubagentConfig>& subagent_configs) {
     Tool t;
     t.name = "call_subagent";
@@ -39,7 +40,8 @@ Tool make_call_subagent_tool(SubagentLookup lookup, SubagentRunningCheck is_runn
                     {{"type", "string"},
                         {"description", "The request/prompt to send to the subagent"}}}}},
         {"required", {"name", "request"}}};
-    t.execute = [lookup = std::move(lookup), is_running = std::move(is_running)](
+    t.execute = [lookup = std::move(lookup), is_running = std::move(is_running),
+                    clear_ui = std::move(clear_ui)](
                     const json& args) -> Result<std::string> {
         auto name = args.value("name", std::string());
         auto request = args.value("request", std::string());
@@ -61,6 +63,12 @@ Tool make_call_subagent_tool(SubagentLookup lookup, SubagentRunningCheck is_runn
         auto* session = lookup(name);
         if (!session) {
             return std::unexpected("subagent \"" + name + "\" not found");
+        }
+
+        // Reset subagent state: clear conversation and UI entries
+        session->conversation().clear();
+        if (clear_ui) {
+            clear_ui(name);
         }
 
         // Run the request
