@@ -16,6 +16,11 @@ struct Agent {
     std::string git_branch;
 
     void cancel_and_wait();
+
+    /// Poll the async chat future; if ready, get the result (or error),
+    /// set chat_state->running = false, and return the result.
+    /// Returns std::nullopt if the future is not yet ready.
+    std::optional<Result<ChatResult>> check_finished();
 };
 
 struct SubAgent : Agent {

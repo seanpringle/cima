@@ -20,6 +20,19 @@ void Agent::cancel_and_wait() {
     }
 }
 
+std::optional<Result<ChatResult>> Agent::check_finished() {
+    if (chat_state->running && chat_state->future.valid() &&
+        chat_state->future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        chat_state->running = false;
+        try {
+            return chat_state->future.get();
+        } catch (const std::exception& e) {
+            return std::unexpected(std::string(e.what()));
+        }
+    }
+    return std::nullopt;
+}
+
 /// Signal cancellation on all running chats (called on quit).
 void PrimaryAgent::cancel_running_chats() {
     if (chat_state->running)

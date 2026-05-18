@@ -997,15 +997,11 @@ void render_subagent_chat(SubAgent& tab, ImFont* mono_font) {
     drain_pending(ui, chat);
 
     // Check if subagent chat finished
-    if (chat.running && chat.future.valid() &&
-        chat.future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        try {
-            auto result = chat.future.get();
-            (void)result; // result already streamed via callbacks
-        } catch (const std::exception& e) {
-            push_entry(ui, EntryType::Content, "Error: " + std::string(e.what()), false);
+    {
+        auto finished = tab.check_finished();
+        if (finished && !*finished) {
+            push_entry(ui, EntryType::Content, "Error: " + finished->error(), false);
         }
-        chat.running = false;
     }
 
     // Render entries (same style as main chat in render_chat_ui)
@@ -1074,15 +1070,12 @@ void render_chat_ui(Agent& tab, bool& done) {
     // ── check if chat finished (before drain, so the drain catches any last items) ──
     bool stream_ended = false;
     Result<ChatResult> result = std::unexpected(string("unknown error"));
-    if (chat.running && chat.future.valid() &&
-        chat.future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        try {
-            result = chat.future.get();
-        } catch (const std::exception& e) {
-            result = std::unexpected(string(e.what()));
+    {
+        auto finished = tab.check_finished();
+        if (finished) {
+            result = std::move(*finished);
+            stream_ended = true;
         }
-        chat.running = false;
-        stream_ended = true;
     }
 
     // ── drain pending output (includes any items that arrived after last frame's drain) ──
