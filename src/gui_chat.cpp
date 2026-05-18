@@ -1079,36 +1079,55 @@ void render_subagent_chat(TabInfo& tab, ImFont* mono_font) {
         chat.running = false;
     }
 
-    // Render entries
+    // Render entries (same style as main chat in render_chat_ui)
     BeginChild("##subagent-chat", ImVec2(0, 0), ImGuiChildFlags_None, ImGuiWindowFlags_None);
-    for (const auto& entry : ui.entries) {
+    for (size_t i = 0; i < ui.entries.size(); i++) {
+        auto& entry = ui.entries[i];
+
+        if (entry.type == EntryType::Content && !entry.text.size())
+            continue;
+
+        PushID(("sa-entry-" + std::to_string(i)).c_str());
+
         switch (entry.type) {
         case EntryType::UserText:
-            PushStyleColor(ImGuiCol_Text, IM_COL32(150, 200, 255, 255));
-            TextUnformatted(("User: " + entry.text).c_str());
+            PushStyleColor(ImGuiCol_Text, IM_COL32(100, 180, 255, 255));
+            PushTextWrapPos(0);
+            TextUnformatted(("You: " + entry.text).c_str());
+            NewLine();
+            PopTextWrapPos();
             PopStyleColor();
             break;
         case EntryType::Reasoning:
-            PushStyleColor(ImGuiCol_Text, IM_COL32(180, 180, 140, 255));
-            if (entry.is_streaming) {
-                TextUnformatted(("Reasoning: " + entry.text).c_str());
-            } else {
-                render_content(entry.text, mono_font);
-            }
+            PushStyleColor(ImGuiCol_Text, IM_COL32(160, 160, 160, 255));
+            render_content("Thinking: " + entry.text, mono_font);
             PopStyleColor();
             break;
         case EntryType::Content:
-            if (entry.is_streaming) {
-                TextUnformatted(("Response: " + entry.text).c_str());
-            } else {
-                render_content(entry.text, mono_font);
-            }
+            PushStyleColor(ImGuiCol_Text, GetColorU32(ImGuiCol_Text));
+            render_content(entry.text, mono_font);
+            PopStyleColor();
             break;
         case EntryType::ToolCall:
-            TextDisabled("[%s]", entry.text.c_str());
+            PushStyleColor(ImGuiCol_Text, IM_COL32(255, 165, 0, 255));
+            PushTextWrapPos(0);
+            if (mono_font) PushFont(mono_font);
+            text_unformatted_ellipsis(entry.text);
+            for (; i + 1 < ui.entries.size() && ui.entries[i + 1].type == EntryType::ToolCall;
+                i++) {
+                text_unformatted_ellipsis(ui.entries[i + 1].text);
+            }
+            if (mono_font) PopFont();
+            NewLine();
+            PopTextWrapPos();
+            PopStyleColor();
             break;
         }
+
+        PopID();
     }
+
+    NewLine();
 
     if (chat.running) {
         SameLine();
