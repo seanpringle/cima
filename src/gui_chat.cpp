@@ -1198,7 +1198,7 @@ void render_chat_ui(TabInfo& tab, bool& done) {
         ui.cursor_pos = pos + (int)insert_len;
     };
 
-    float combo_width = (GetContentRegionAvail().x - GetStyle().ItemSpacing.x) / 3;
+    float combo_width = (GetContentRegionAvail().x - GetStyle().ItemSpacing.x) / 2;
 
     // ── History combo (replaces input buf with history item) ──
     {

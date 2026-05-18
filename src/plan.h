@@ -2,7 +2,6 @@
 
 #include "tools.h"
 #include <string>
-#include <vector>
 
 // PlanBoard — per-session plan document storage.
 // Holds a single plan markdown body.

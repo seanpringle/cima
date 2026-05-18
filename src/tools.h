@@ -3,7 +3,6 @@
 #include "config.h"
 
 #include <cstdlib>
-#include <chrono>
 #include <curl/curl.h>
 #include <filesystem>
 #include <functional>

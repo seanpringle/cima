@@ -5,7 +5,6 @@
 
 #include <map>
 #include <string>
-#include <vector>
 
 /// Consolidated session data — the entire on-disk state for one cima session.
 ///
