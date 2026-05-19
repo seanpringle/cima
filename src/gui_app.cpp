@@ -1,15 +1,22 @@
 #include "gui_app.h"
+#include "client.h"
 #include "session.h"
 #include "session_data.h"
 #include "gui_chat.h"
 #include "agent.h"
 #include "plan.h"
 
+#include <thread>
+#include <future>
+
 #include "imgui.h"
 #include "backends/imgui_impl_sdl3.h"
 #include "backends/imgui_impl_sdlrenderer3.h"
 
 using namespace ImGui;
+
+// ── Global provider model cache ────────────────────────────────────────
+ProviderModelCache g_provider_models;
 
 #include <fontconfig/fontconfig.h>
 
@@ -277,6 +284,24 @@ int gui_main(const std::string& session_name) {
     session.print_welcome();
 
     PrimaryAgent primary(session.session_data());
+
+    // ── Kick off async model fetch for every provider ──
+    for (const auto& provider : cfg.providers) {
+        auto& entry = g_provider_models[provider.name];
+        std::string api_base = provider.api_base;
+        std::string api_key = provider.api_key;
+        std::packaged_task<void()> task([&entry, api_base, api_key]() {
+            ChatClient client(api_base, api_key);
+            auto result = client.fetch_models();
+            if (result) {
+                entry.models = std::move(*result);
+            } else {
+                entry.error = std::move(result.error());
+            }
+            entry.fetched = true;
+        });
+        std::thread(std::move(task)).detach();
+    }
 
     // Main loop
     bool done = false;

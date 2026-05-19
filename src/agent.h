@@ -28,9 +28,6 @@ struct Agent {
     /// Drain pending streaming output from the async thread into ui_state.
     void drain_pending();
 
-    /// Trigger an async model-list fetch for the current provider.
-    void trigger_model_fetch();
-
     /// If models have been fetched and not yet validated, auto-select the
     /// first available model if the current model is not in the list.
     void validate_current_model();

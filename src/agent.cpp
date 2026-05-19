@@ -19,9 +19,6 @@ void Agent::cancel_and_wait() {
         }
         chat_state->running = false;
     }
-    if (ui_state.models_future.valid()) {
-        ui_state.models_future.wait();
-    }
 }
 
 std::optional<Result<ChatResult>> Agent::check_finished() {
@@ -268,59 +265,18 @@ void Agent::drain_pending() {
     chat_state->pending.clear();
 }
 
-void Agent::trigger_model_fetch() {
-    auto& ui = ui_state;
-    ui.models_loaded = true;
-    ui.models_validated = false;
-    ui.models_fetched->store(false, std::memory_order_release);
-    ui.available_models.clear();
-    ui.models_error.clear();
-
-    std::string api_base;
-    std::string api_key;
-    for (const auto& p : cfg.providers) {
-        if (p.name == provider_name) {
-            api_base = p.api_base;
-            api_key = p.api_key;
-            break;
-        }
-    }
-    if (api_base.empty()) {
-        api_base = cfg.providers[0].api_base;
-        api_key = cfg.providers[0].api_key;
-    }
-
-    std::weak_ptr<bool> weak_tab = ui.tab_alive;
-    std::packaged_task<void()> task([&ui, weak_tab, api_base, api_key]() {
-        if (weak_tab.expired())
-            return;
-        ChatClient client(api_base, api_key);
-        auto result = client.fetch_models();
-        if (!weak_tab.lock())
-            return;
-        if (result) {
-            ui.available_models = std::move(*result);
-        } else {
-            ui.models_error = std::move(result.error());
-        }
-        ui.models_fetched->store(true, std::memory_order_release);
-    });
-    ui.models_future = task.get_future();
-    std::thread(std::move(task)).detach();
-}
-
 void Agent::validate_current_model() {
     auto& ui = ui_state;
-    if (ui.models_fetched->load(std::memory_order_acquire) && !ui.models_validated &&
-        !ui.available_models.empty()) {
+    auto& entry = g_provider_models[provider_name];
+    if (entry.fetched && !ui.models_validated && !entry.models.empty()) {
         ui.models_validated = true;
         const auto& current = session->model();
-        bool found = std::any_of(ui.available_models.begin(),
-            ui.available_models.end(),
+        bool found = std::any_of(entry.models.begin(),
+            entry.models.end(),
             [&current](const std::string& m) { return m == current; });
         if (!found) {
-            session->set_model(ui.available_models.front());
-            model_name = ui.available_models.front();
+            session->set_model(entry.models.front());
+            model_name = entry.models.front();
         }
     }
 }

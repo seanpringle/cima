@@ -428,11 +428,6 @@ void render_config_tab(PrimaryAgent& tab) {
     auto& ui = tab.ui_state;
     auto& session = *tab.session;
 
-    // ── Fetch models on first render ──
-    if (!ui.models_loaded) {
-        tab.trigger_model_fetch();
-    }
-
     // ── Provider combo ──
     PushFont(mono_font);
     {
@@ -442,12 +437,12 @@ void render_config_tab(PrimaryAgent& tab) {
                 bool is_selected = (p.name == tab.provider_name);
                 if (Selectable(p.name.c_str(), is_selected)) {
                     if (p.name != tab.provider_name) {
-                        // Provider changed — update session client and re-fetch models
+                        // Provider changed — update session client
                         session.set_provider(p);
                         tab.provider_name = p.name;
                         tab.model_name = p.model;
                         tab.reasoning_effort = p.reasoning_effort;
-                        tab.trigger_model_fetch();
+                        tab.ui_state.models_validated = false;
                     }
                 }
                 if (is_selected)
@@ -461,20 +456,22 @@ void render_config_tab(PrimaryAgent& tab) {
     // ── Model combo (or manual text input if fetch failed) ──
     PushFont(mono_font);
 
-    if (!ui.models_fetched->load(std::memory_order_acquire)) {
+    auto& cache_entry = g_provider_models[tab.provider_name];
+
+    if (!cache_entry.fetched) {
         // Still loading
         PushStyleColor(ImGuiCol_Text, IM_COL32(128, 128, 128, 255));
         Text("Model:");
         SameLine();
         TextUnformatted("Loading models...");
         PopStyleColor();
-    } else if (!ui.models_error.empty() || ui.available_models.empty()) {
+    } else if (!cache_entry.error.empty() || cache_entry.models.empty()) {
         // Fetch failed or returned empty — show manual text input
         PushStyleColor(ImGuiCol_Text, IM_COL32(255, 100, 100, 255));
         Text("Model:");
         SameLine();
-        if (!ui.models_error.empty()) {
-            TextUnformatted(ui.models_error.c_str());
+        if (!cache_entry.error.empty()) {
+            TextUnformatted(cache_entry.error.c_str());
         } else {
             TextDisabled("(no models returned)");
         }
@@ -492,7 +489,7 @@ void render_config_tab(PrimaryAgent& tab) {
     } else {
         // Show dropdown
         if (BeginCombo("Model", session.model().c_str())) {
-            for (const auto& m : ui.available_models) {
+            for (const auto& m : cache_entry.models) {
                 bool is_selected = (m == session.model());
                 if (Selectable(m.c_str(), is_selected)) {
                     session.set_model(m);
@@ -704,11 +701,6 @@ void render_subagent_tab(SubAgent& tab) {
     auto& ui = tab.ui_state;
     auto& session = *tab.session;
 
-    // ── Fetch models on first render ──
-    if (!ui.models_loaded) {
-        tab.trigger_model_fetch();
-    }
-
     // ── Provider combo ──
     PushFont(mono_font);
     {
@@ -722,7 +714,7 @@ void render_subagent_tab(SubAgent& tab) {
                         tab.provider_name = p.name;
                         tab.model_name = p.model;
                         tab.reasoning_effort = p.reasoning_effort;
-                        tab.trigger_model_fetch();
+                        tab.ui_state.models_validated = false;
                     }
                 }
                 if (is_selected)
@@ -736,18 +728,20 @@ void render_subagent_tab(SubAgent& tab) {
     // ── Model combo (or manual text input if fetch failed) ──
     PushFont(mono_font);
 
-    if (!ui.models_fetched->load(std::memory_order_acquire)) {
+    auto& cache_entry = g_provider_models[tab.provider_name];
+
+    if (!cache_entry.fetched) {
         PushStyleColor(ImGuiCol_Text, IM_COL32(128, 128, 128, 255));
         Text("Model:");
         SameLine();
         TextUnformatted("Loading models...");
         PopStyleColor();
-    } else if (!ui.models_error.empty() || ui.available_models.empty()) {
+    } else if (!cache_entry.error.empty() || cache_entry.models.empty()) {
         PushStyleColor(ImGuiCol_Text, IM_COL32(255, 100, 100, 255));
         Text("Model:");
         SameLine();
-        if (!ui.models_error.empty()) {
-            TextUnformatted(ui.models_error.c_str());
+        if (!cache_entry.error.empty()) {
+            TextUnformatted(cache_entry.error.c_str());
         } else {
             TextDisabled("(no models returned)");
         }
@@ -764,7 +758,7 @@ void render_subagent_tab(SubAgent& tab) {
         }
     } else {
         if (BeginCombo("Model", session.model().c_str())) {
-            for (const auto& m : ui.available_models) {
+            for (const auto& m : cache_entry.models) {
                 bool is_selected = (m == session.model());
                 if (Selectable(m.c_str(), is_selected)) {
                     session.set_model(m);
