@@ -545,6 +545,55 @@ void render_config_tab(PrimaryAgent& tab) {
 
     // Workspace path editing removed — safe_dir locked to cwd at startup
 
+    // ── Compact / Clear / Stop buttons ──
+    {
+        Separator();
+
+        // ── Compact button ──
+        {
+            int ctx_pct = session.context_usage_percent();
+            string btn_label = "Compact (" + std::to_string(ctx_pct) + "% context used)";
+            if (Button(btn_label.c_str())) {
+                ui.compact_requested = true;
+            }
+        }
+
+        // ── Clear Messages button ──
+        {
+            if (session.conversation().message_count() > 0) {
+                int msg_count = static_cast<int>(session.conversation().message_count());
+                string btn_label = "Clear Messages (" + std::to_string(msg_count) + ")";
+                if (Button(btn_label.c_str())) {
+                    ui.clear_requested = true;
+                }
+            } else {
+                TextDisabled("No messages to clear");
+            }
+        }
+
+        // ── Clear Plan button ──
+        {
+            auto plan_content = ::plan.read_plan();
+            bool has_plan = plan_content && *plan_content != "(empty plan)";
+            if (has_plan) {
+                if (Button("Clear Plan")) {
+                    ::plan.write_plan("");
+                }
+            } else {
+                TextDisabled("No plan to clear");
+            }
+        }
+
+        // ── Stop button ──
+        {
+            BeginDisabled(!tab.chat_state->running);
+            if (Button("Stop")) {
+                *tab.chat_state->cancelled = true;
+            }
+            EndDisabled();
+        }
+    }
+
     // ── Tool Gates section ──
     {
         Separator();
@@ -919,49 +968,6 @@ void render_config_tab(PrimaryAgent& tab) {
 
     Separator();
 
-    // ── Compact button ──
-    {
-        int ctx_pct = session.context_usage_percent();
-        string btn_label = "Compact (" + std::to_string(ctx_pct) + "% context used)";
-        if (Button(btn_label.c_str())) {
-            ui.compact_requested = true;
-        }
-    }
-
-    // ── Clear Messages button ──
-    {
-        if (session.conversation().message_count() > 0) {
-            int msg_count = static_cast<int>(session.conversation().message_count());
-            string btn_label = "Clear Messages (" + std::to_string(msg_count) + ")";
-            if (Button(btn_label.c_str())) {
-                ui.clear_requested = true;
-            }
-        } else {
-            TextDisabled("No messages to clear");
-        }
-    }
-
-    // ── Clear Plan button ──
-    {
-        auto plan_content = ::plan.read_plan();
-        bool has_plan = plan_content && *plan_content != "(empty plan)";
-        if (has_plan) {
-            if (Button("Clear Plan")) {
-                ::plan.write_plan("");
-            }
-        } else {
-            TextDisabled("No plan to clear");
-        }
-    }
-
-    // ── Stop button ──
-    {
-        BeginDisabled(!tab.chat_state->running);
-        if (Button("Stop")) {
-            *tab.chat_state->cancelled = true;
-        }
-        EndDisabled();
-    }
 }
 
 // ── Tag expansion for !snippet-name references ──
