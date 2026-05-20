@@ -178,6 +178,6 @@ class ChatSession {
     int context_limit_ = 300000; // discovered from API, falls back to Config
     bool context_limit_discovered_ = false;
     bool bash_enabled_ = false;
-    bool cmake_enabled_ = true;          // cmake tools gating (like bash_enabled_)
+    bool cmake_enabled_ = false;         // cmake tools gating (like bash_enabled_)
     McpRegistry mcp_registry_;
 };

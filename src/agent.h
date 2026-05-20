@@ -46,7 +46,7 @@ struct SubAgent : Agent {
 
 struct PrimaryAgent : Agent {
     bool bash_enabled = false; // run_bash tool enabled for this tab
-    bool cmake_enabled = true; // cmake tools enabled for this tab
+    bool cmake_enabled = false; // cmake tools enabled for this tab
 
     // MCP: per-server enabled state (persisted in assistant_data.json)
     std::map<std::string, bool> mcp_enabled;
