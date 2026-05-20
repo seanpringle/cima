@@ -15,7 +15,8 @@ static Result<std::string> run_cmake_command(
     const std::string& command,
     std::shared_ptr<std::string> safe_dir_ptr,
     int timeout_sec,
-    CancellationToken cancelled) {
+    CancellationToken cancelled,
+    std::shared_ptr<std::vector<std::string>> tool_logs = nullptr) {
 
     int pipefd[2];
     if (pipe(pipefd) != 0) {
@@ -110,6 +111,21 @@ static Result<std::string> run_cmake_command(
     int status;
     waitpid(pid, &status, 0);
 
+    // Soft limit: if output exceeds ~100 lines or 4K chars, spill to tool_logs
+    if (tool_logs) {
+        int nl = 0;
+        for (char c : output)
+            if (c == '\n') nl++;
+        if (nl > 100 || output.size() > 4096) {
+            // 1-based ID so 0 doesn't look like a default / !truthy value
+            size_t id = tool_logs->size() + 1;
+            tool_logs->push_back(std::move(output));
+            return "(long tool output: " + std::to_string(nl) + " lines, " +
+                   std::to_string(tool_logs->back().size()) + " chars. "
+                   "Use view_tool_output(id=" + std::to_string(id) + ") to read it)";
+        }
+    }
+
     return output;
 }
 
@@ -130,7 +146,8 @@ static std::string build_cmd(const std::string& base_cmd, int head, int tail) {
 // ===================================================================
 
 Tool make_cmake_configure_tool(std::shared_ptr<std::string> safe_dir_ptr,
-    int timeout, CancellationToken cancelled) {
+    int timeout, CancellationToken cancelled,
+    std::shared_ptr<std::vector<std::string>> tool_logs) {
     Tool t;
     t.name = "cmake_configure";
     t.description =
@@ -157,7 +174,7 @@ Tool make_cmake_configure_tool(std::shared_ptr<std::string> safe_dir_ptr,
                         "Optional array of additional flags, e.g. "
                         "[\"-DCMAKE_BUILD_TYPE=Debug\"]"}}}}},
         {"required", json::array()}};
-    t.execute = [safe_dir_ptr, timeout, cancelled](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr, timeout, cancelled, tool_logs](const json& args) -> Result<std::string> {
         int head = args.value("head", 0);
         int tail = args.value("tail", 0);
         std::string base = "cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON";
@@ -184,7 +201,7 @@ Tool make_cmake_configure_tool(std::shared_ptr<std::string> safe_dir_ptr,
         }
 
         std::string cmd = build_cmd(base, head, tail);
-        return run_cmake_command(cmd, safe_dir_ptr, timeout, cancelled);
+        return run_cmake_command(cmd, safe_dir_ptr, timeout, cancelled, tool_logs);
     };
     return t;
 }
@@ -194,7 +211,8 @@ Tool make_cmake_configure_tool(std::shared_ptr<std::string> safe_dir_ptr,
 // ===================================================================
 
 Tool make_cmake_build_tool(std::shared_ptr<std::string> safe_dir_ptr,
-    int timeout, CancellationToken cancelled) {
+    int timeout, CancellationToken cancelled,
+    std::shared_ptr<std::vector<std::string>> tool_logs) {
     Tool t;
     t.name = "cmake_build";
     t.description =
@@ -226,7 +244,7 @@ Tool make_cmake_build_tool(std::shared_ptr<std::string> safe_dir_ptr,
                         "If true, clean the target first (runs cmake --build "
                         "--target clean before building)."}}}}},
         {"required", json::array()}};
-    t.execute = [safe_dir_ptr, timeout, cancelled](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr, timeout, cancelled, tool_logs](const json& args) -> Result<std::string> {
         int head = args.value("head", 0);
         int tail = args.value("tail", 0);
         bool clean = args.value("clean", false);
@@ -258,7 +276,7 @@ Tool make_cmake_build_tool(std::shared_ptr<std::string> safe_dir_ptr,
         }
 
         std::string cmd = build_cmd(full_cmd, head, tail);
-        return run_cmake_command(cmd, safe_dir_ptr, timeout, cancelled);
+        return run_cmake_command(cmd, safe_dir_ptr, timeout, cancelled, tool_logs);
     };
     return t;
 }
@@ -268,7 +286,8 @@ Tool make_cmake_build_tool(std::shared_ptr<std::string> safe_dir_ptr,
 // ===================================================================
 
 Tool make_cmake_ctest_tool(std::shared_ptr<std::string> safe_dir_ptr,
-    int timeout, CancellationToken cancelled) {
+    int timeout, CancellationToken cancelled,
+    std::shared_ptr<std::vector<std::string>> tool_logs) {
     Tool t;
     t.name = "cmake_ctest";
     t.description =
@@ -308,7 +327,7 @@ Tool make_cmake_ctest_tool(std::shared_ptr<std::string> safe_dir_ptr,
                         "(free-form text like \"Config defaults\"), "
                         "not filenames."}}}}},
         {"required", json::array()}};
-    t.execute = [safe_dir_ptr, timeout, cancelled](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr, timeout, cancelled, tool_logs](const json& args) -> Result<std::string> {
         int head = args.value("head", 0);
         int tail = args.value("tail", 0);
         std::string base = "ctest --test-dir build --output-on-failure -j$(nproc)";
@@ -329,7 +348,7 @@ Tool make_cmake_ctest_tool(std::shared_ptr<std::string> safe_dir_ptr,
             base += " -R \"" + test_regex + "\"";
         }
         std::string cmd = build_cmd(base, head, tail);
-        return run_cmake_command(cmd, safe_dir_ptr, timeout, cancelled);
+        return run_cmake_command(cmd, safe_dir_ptr, timeout, cancelled, tool_logs);
     };
     return t;
 }

@@ -201,15 +201,23 @@ Tool make_cmd_tool(const std::string& name,
     const std::string& command,
     std::shared_ptr<std::string> safe_dir_ptr,
     int timeout,
-    CancellationToken cancelled);
+    CancellationToken cancelled,
+    std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
+
+// ── View tool output ──
+Tool make_view_tool_output_tool(
+    std::shared_ptr<std::vector<std::string>> tool_logs);
 
 // ── CMake tools ──
-Tool make_cmake_configure_tool(
-    std::shared_ptr<std::string> safe_dir_ptr, int timeout, CancellationToken cancelled);
-Tool make_cmake_build_tool(
-    std::shared_ptr<std::string> safe_dir_ptr, int timeout, CancellationToken cancelled);
-Tool make_cmake_ctest_tool(
-    std::shared_ptr<std::string> safe_dir_ptr, int timeout, CancellationToken cancelled);
+Tool make_cmake_configure_tool(std::shared_ptr<std::string> safe_dir_ptr,
+    int timeout, CancellationToken cancelled,
+    std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
+Tool make_cmake_build_tool(std::shared_ptr<std::string> safe_dir_ptr,
+    int timeout, CancellationToken cancelled,
+    std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
+Tool make_cmake_ctest_tool(std::shared_ptr<std::string> safe_dir_ptr,
+    int timeout, CancellationToken cancelled,
+    std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
 
 struct PrimaryAgent;
 

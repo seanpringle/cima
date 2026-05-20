@@ -39,16 +39,25 @@ ChatSession::ChatSession(
     tools_.add(make_write_plan_tool(::plan));
     tools_.add(make_read_plan_tool(::plan));
 
+    // Tool log buffer for spilling large outputs
+    tool_logs_ = std::make_shared<std::vector<std::string>>();
+
     // CMake tools — always registered; conditionally published in run_once().
-    tools_.add(make_cmake_configure_tool(safe_dir_, config.cmake_configure_timeout, cancelled_));
-    tools_.add(make_cmake_build_tool(safe_dir_, config.cmake_build_timeout, cancelled_));
-    tools_.add(make_cmake_ctest_tool(safe_dir_, config.cmake_ctest_timeout, cancelled_));
+    tools_.add(make_cmake_configure_tool(safe_dir_, config.cmake_configure_timeout,
+        cancelled_, tool_logs_));
+    tools_.add(make_cmake_build_tool(safe_dir_, config.cmake_build_timeout,
+        cancelled_, tool_logs_));
+    tools_.add(make_cmake_ctest_tool(safe_dir_, config.cmake_ctest_timeout,
+        cancelled_, tool_logs_));
 
     // Custom cmd_tools — registered from config.
     for (const auto& ct : config.cmd_tools) {
         tools_.add(make_cmd_tool(ct.name, ct.description, ct.command,
-                                 safe_dir_, config.bash_timeout, cancelled_));
+                                 safe_dir_, config.bash_timeout, cancelled_, tool_logs_));
     }
+
+    // view_tool_output — always available to all agents
+    tools_.add(make_view_tool_output_tool(tool_logs_));
 }
 
 // ===================================================================

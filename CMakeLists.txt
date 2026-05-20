@@ -110,6 +110,7 @@ add_library(cima_core
     src/tools/factories/bash.cpp
     src/tools/factories/cmake.cpp
     src/tools/factories/cmd_tool.cpp
+    src/tools/factories/view_tool_output.cpp
     src/tools/factories/web.cpp
     src/tools/factories/git.cpp
     src/tools/registry.cpp
