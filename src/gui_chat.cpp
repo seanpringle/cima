@@ -654,22 +654,16 @@ void render_config_tab(PrimaryAgent& tab) {
 
     // ── Compact button ──
     {
-        if (ui.compacting) {
-            TextDisabled("Compacting...");
-        } else {
-            int ctx_pct = session.context_usage_percent();
-            string btn_label = "Compact (" + std::to_string(ctx_pct) + "% context used)";
-            if (Button(btn_label.c_str())) {
-                ui.compact_requested = true;
-            }
+        int ctx_pct = session.context_usage_percent();
+        string btn_label = "Compact (" + std::to_string(ctx_pct) + "% context used)";
+        if (Button(btn_label.c_str())) {
+            ui.compact_requested = true;
         }
     }
 
     // ── Clear Messages button ──
     {
-        if (ui.clearing) {
-            TextDisabled("Clearing...");
-        } else if (session.conversation().message_count() > 0) {
+        if (session.conversation().message_count() > 0) {
             int msg_count = static_cast<int>(session.conversation().message_count());
             string btn_label = "Clear Messages (" + std::to_string(msg_count) + ")";
             if (Button(btn_label.c_str())) {
@@ -1139,9 +1133,6 @@ void render_chat_ui(Agent& tab, bool& done) {
         if (tab.chat_state->running) {
             stateInfo = "running";
             stateColor = IM_COL32(100, 255, 100, 255);
-        } else if (ui.compacting) {
-            stateInfo = "compacting";
-            stateColor = IM_COL32(255, 208, 0, 255);
         } else {
             stateInfo = "idle";
             stateColor = IM_COL32(180, 180, 180, 255);

@@ -600,8 +600,6 @@ void ChatSession::stop_mcp_server(const std::string& name) {
 // ---------------------------------------------------------------------------
 
 void ChatSession::clear() {
-    if (*cancelled_)
-        return; // honour cancellation token
     conversation_.clear();
     last_usage_ = Usage{}; // reset so context pct falls back to estimate(0)
 }

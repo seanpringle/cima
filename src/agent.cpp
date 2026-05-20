@@ -310,16 +310,9 @@ void Agent::validate_current_model() {
 
 void Agent::poll_compact() {
     auto& ui = ui_state;
-    if (ui.compact_requested && !ui.compacting) {
-        ui.compacting = true;
+    if (ui.compact_requested) {
         ui.compact_requested = false;
-        ui.compact_future =
-            std::async(std::launch::async, [this]() { return session->compact(); });
-    }
-    if (ui.compacting && ui.compact_future.valid() &&
-        ui.compact_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        ui.compacting = false;
-        auto compact_result = ui.compact_future.get();
+        auto compact_result = session->compact();
         ui.entries.clear();
         if (compact_result) {
             ui.push_entry(EntryType::Content, "Conversation compacted.", false);
@@ -332,18 +325,9 @@ void Agent::poll_compact() {
 
 void Agent::poll_clear() {
     auto& ui = ui_state;
-    if (ui.clear_requested && !ui.clearing) {
-        ui.clearing = true;
+    if (ui.clear_requested) {
         ui.clear_requested = false;
-        ui.clear_future = std::async(std::launch::async, [this]() -> Result<void> {
-            session->clear();
-            return {};
-        });
-    }
-    if (ui.clearing && ui.clear_future.valid() &&
-        ui.clear_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-        ui.clearing = false;
-        ui.clear_future.get();
+        session->clear();
         ui.entries.clear();
         ui.push_entry(EntryType::Content, "Conversation cleared.", false);
     }

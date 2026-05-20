@@ -54,15 +54,11 @@ struct ChatUIState {
 
     bool models_validated = false; // true once the render thread has applied auto-select
 
-    // Compact button state
+    // Compact button state (synchronous, no async needed)
     bool compact_requested = false;
-    bool compacting = false;
-    std::future<Result<void>> compact_future;
 
-    // Clear button state
+    // Clear button state (synchronous, no async needed)
     bool clear_requested = false;
-    bool clearing = false;
-    std::future<Result<void>> clear_future;
 
     std::deque<std::string> input_history;
     std::vector<char> input_buffer = {0};
