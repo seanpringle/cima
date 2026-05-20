@@ -604,7 +604,6 @@ void render_config_tab(PrimaryAgent& tab) {
             return "Other";
         };
 
-        bool indented = false;
         const char* last_cat = nullptr;
         for (const auto& name : names) {
             // Skip MCP tools (gated by server lifecycle), plan tools (always on),
@@ -617,12 +616,9 @@ void render_config_tab(PrimaryAgent& tab) {
                 continue;
 
             const char* cat = category_of(name);
-            if (!indented || cat != last_cat) {
-                if (indented) Unindent();
+            if (cat != last_cat) {
                 Text("── %s ──", cat);
                 last_cat = cat;
-                Indent();
-                indented = true;
             }
 
             bool enabled = session.tool_enabled(name);
@@ -636,8 +632,6 @@ void render_config_tab(PrimaryAgent& tab) {
                 EndTooltip();
             }
         }
-        if (indented)
-            Unindent();
     }
 
     // ── MCP Servers section ──
