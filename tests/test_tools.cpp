@@ -663,9 +663,8 @@ TEST_CASE("git_diff output truncation", "[tools][git_diff]") {
 
     auto result = reg.execute("git_diff", "{}");
     REQUIRE(result);
-    // The diff will show all 599 new lines as additions (since we replaced 1 line with 600)
-    // Plus context. Should hit the 500-line limit.
-    CHECK(result->find("truncated") != std::string::npos);
+    // The diff shows all lines (truncation was removed).
+    CHECK(result->find("modified line 599") != std::string::npos);
 
     fs::remove_all(sd);
 }

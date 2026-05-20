@@ -20,7 +20,7 @@ Tool make_git_status_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout
         "where X is the index status and Y is the working tree status.\n"
         "  ' ' = unmodified, M = modified, A = added, D = deleted, "
         "R = renamed, C = copied, U = updated, ? = untracked, ! = ignored\n"
-        "Output is sorted by path and capped at 200 entries.";
+        "Output is sorted by path.";
     t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},
         {"properties", json::object()},
@@ -43,7 +43,6 @@ Tool make_git_status_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout
             char y; // working tree status
         };
         std::vector<Entry> entries;
-        const int max_entries = 200;
 
         git_status_options opts = GIT_STATUS_OPTIONS_INIT;
         opts.flags = GIT_STATUS_OPT_INCLUDE_UNTRACKED
@@ -51,26 +50,17 @@ Tool make_git_status_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout
                    | GIT_STATUS_OPT_INCLUDE_IGNORED
                    | GIT_STATUS_OPT_SORT_CASE_SENSITIVELY;
 
-        struct CbPayload {
-            std::vector<Entry>* out;
-            int max;
-        };
-        CbPayload payload{&entries, max_entries};
-
         auto cb = [](const char* path, unsigned int status_flags, void* data) -> int {
-            auto* p = static_cast<CbPayload*>(data);
-            if (static_cast<int>(p->out->size()) >= p->max)
-                return 1; // abort iteration
-
+            auto* out = static_cast<std::vector<Entry>*>(data);
             Entry e;
             e.path = path ? path : "";
             e.x = status_char_for_index(status_flags);
             e.y = status_char_for_workdir(status_flags);
-            p->out->push_back(std::move(e));
+            out->push_back(std::move(e));
             return 0; // continue
         };
 
-        int err = git_status_foreach_ext(repo, &opts, cb, &payload);
+        int err = git_status_foreach_ext(repo, &opts, cb, &entries);
         if (err < 0 && err != GIT_EUSER) {
             const git_error* e = git_error_last();
             return std::unexpected("git_status error: " +
@@ -83,18 +73,12 @@ Tool make_git_status_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout
 
         // Format output
         std::string result;
-        bool truncated = (entries.size() >= static_cast<size_t>(max_entries));
-        size_t count = truncated ? max_entries : entries.size();
-        for (size_t i = 0; i < count; i++) {
-            const auto& e = entries[i];
+        for (const auto& e : entries) {
             result += e.x;
             result += e.y;
             result += ' ';
             result += e.path;
             result += '\n';
-        }
-        if (truncated) {
-            result += "...(truncated, >" + std::to_string(entries.size()) + " files)";
         }
         if (result.empty()) {
             result = "(clean — no changes)";
@@ -109,7 +93,6 @@ Tool make_git_diff_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout) 
     t.name = "git_diff";
     t.description =
         "Return a unified diff of unstaged (or staged) changes.\n"
-        "Output is capped at 500 lines / 16000 chars.\n"
         "Use git_status first to see which files have changed, "
         "then git_diff to inspect the actual changes.\n"
         "If 'staged' is true, shows the diff that would be committed "
@@ -197,49 +180,27 @@ Tool make_git_diff_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout) 
         auto diff_cleanup = std::unique_ptr<git_diff, decltype(&git_diff_free)>(
             diff, git_diff_free);
 
-        // Print unified diff into a string, capped at 500 lines / 16000 chars
+        // Print unified diff into a string
         std::string result;
-        const int max_lines = 500;
-        const size_t max_chars = 16000;
-
-        struct DiffCtx {
-            std::string* output;
-            int line_count = 0;
-            bool truncated = false;
-        };
-        DiffCtx ctx{&result, 0, false};
 
         auto print_cb = [](const git_diff_delta* /*delta*/,
                            const git_diff_hunk* /*hunk*/,
                            const git_diff_line* line,
                            void* payload) -> int {
-            auto* c = static_cast<DiffCtx*>(payload);
-            if (c->truncated) return 1;
-            if (c->line_count >= max_lines || c->output->size() >= max_chars) {
-                c->truncated = true;
-                return 1;
-            }
+            auto* output = static_cast<std::string*>(payload);
             // Prepend origin character for +/-/context lines
             if (line->origin == '+' || line->origin == '-' || line->origin == ' ') {
-                c->output->push_back(line->origin);
+                output->push_back(line->origin);
             }
-            c->output->append(line->content, line->content_len);
-            c->line_count++;
+            output->append(line->content, line->content_len);
             return 0;
         };
 
-        err = git_diff_print(diff, GIT_DIFF_FORMAT_PATCH, print_cb, &ctx);
-        if (err && !ctx.truncated) {
-            // Only report as error if we didn't intentionally stop via truncation
+        err = git_diff_print(diff, GIT_DIFF_FORMAT_PATCH, print_cb, &result);
+        if (err) {
             const git_error* e = git_error_last();
             return std::unexpected("git_diff print error: " +
                 (e ? std::string(e->message) : std::string("unknown error")));
-        }
-
-        // Append truncation trailer if needed
-        if (ctx.truncated) {
-            result += "\n...(diff truncated at " + std::to_string(max_lines) +
-                " lines / " + std::to_string(max_chars) + " chars)";
         }
 
         if (result.empty()) {
@@ -1129,45 +1090,24 @@ Tool make_git_show_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout) 
             return result;
         }
 
-        // Print diff, capped at 500 lines / 16000 chars
-        const int max_lines = 500;
-        const size_t max_chars = 16000;
-
-        struct DiffCtx {
-            std::string* output;
-            int line_count = 0;
-            bool truncated = false;
-        };
-        DiffCtx ctx{&result, 0, false};
-
+        // Print diff
         auto print_cb = [](const git_diff_delta* /*delta*/,
                            const git_diff_hunk* /*hunk*/,
                            const git_diff_line* line,
                            void* payload) -> int {
-            auto* c = static_cast<DiffCtx*>(payload);
-            if (c->truncated) return 1;
-            if (c->line_count >= max_lines || c->output->size() >= max_chars) {
-                c->truncated = true;
-                return 1;
-            }
+            auto* output = static_cast<std::string*>(payload);
             if (line->origin == '+' || line->origin == '-' || line->origin == ' ') {
-                c->output->push_back(line->origin);
+                output->push_back(line->origin);
             }
-            c->output->append(line->content, line->content_len);
-            c->line_count++;
+            output->append(line->content, line->content_len);
             return 0;
         };
 
-        err = git_diff_print(diff, GIT_DIFF_FORMAT_PATCH, print_cb, &ctx);
-        if (err && !ctx.truncated) {
+        err = git_diff_print(diff, GIT_DIFF_FORMAT_PATCH, print_cb, &result);
+        if (err) {
             const git_error* e = git_error_last();
             return std::unexpected("git_show error printing diff: " +
                 (e ? std::string(e->message) : std::string("unknown error")));
-        }
-
-        if (ctx.truncated) {
-            result += "\n...(diff truncated at " + std::to_string(max_lines) +
-                " lines / " + std::to_string(max_chars) + " chars)";
         }
 
         return result;

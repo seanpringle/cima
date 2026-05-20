@@ -85,17 +85,10 @@ Tool make_cmd_tool(const std::string& name,
             waitpid(pid, &st, 0);
         };
 
-        auto truncate_output = [](std::string& out) {
-            if (out.size() > 16000) {
-                out = out.substr(0, 16000) + "...(truncated, >16000 chars)";
-            }
-        };
-
         while (true) {
             if (cancelled && *cancelled) {
                 kill_child();
                 close(pipefd[0]);
-                truncate_output(output);
                 return output + "\n(interrupted)";
             }
 
@@ -103,7 +96,6 @@ Tool make_cmd_tool(const std::string& name,
             if (now >= deadline) {
                 kill_child();
                 close(pipefd[0]);
-                truncate_output(output);
                 return output;
             }
 
@@ -112,12 +104,6 @@ Tool make_cmd_tool(const std::string& name,
             if (n > 0) {
                 buf[n] = '\0';
                 output += buf;
-                if (output.size() > 16000) {
-                    kill_child();
-                    close(pipefd[0]);
-                    output = output.substr(0, 16000) + "...(truncated, >16000 chars)";
-                    return output;
-                }
             } else if (n == 0) {
                 break;
             } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
@@ -135,21 +121,6 @@ Tool make_cmd_tool(const std::string& name,
         close(pipefd[0]);
         int status;
         waitpid(pid, &status, 0);
-
-        // Line count truncation
-        int nl = 0;
-        for (char c : output)
-            if (c == '\n')
-                nl++;
-        if (nl > 500) {
-            size_t pos = 0;
-            for (int i = 0; i < 500; i++) {
-                pos = output.find('\n', pos) + 1;
-            }
-            output = output.substr(0, pos) + "...(truncated, >500 lines)";
-        }
-
-        truncate_output(output);
 
         return output;
     };
