@@ -18,7 +18,8 @@ static const std::unordered_set<std::string> cmake_tool_names = {
 };
 
 ChatSession::ChatSession(
-    const Config& config, const Provider& provider, CancellationToken cancelled)
+    const Config& config, const Provider& provider, CancellationToken cancelled,
+    std::shared_ptr<GatingState> gates)
     : model_(provider.model), reasoning_effort_(provider.reasoning_effort),
       provider_name_(provider.name),
       safe_dir_(std::make_shared<std::string>(std::filesystem::current_path().string())),
@@ -26,7 +27,8 @@ ChatSession::ChatSession(
       max_iterations_(config.max_tool_iterations), context_limit_(provider.context_limit),
       system_prompt_(config.SYSTEM_PROMPT), client_(provider.api_base, provider.api_key),
       file_modified_cb_(std::make_shared<FileModifiedCallback>()),
-      cancelled_(cancelled ? std::move(cancelled) : make_cancellation_token()) {
+      cancelled_(cancelled ? std::move(cancelled) : make_cancellation_token()),
+      gates_(gates ? std::move(gates) : std::make_shared<GatingState>()) {
     // Share the cancellation token with tools and client
     tools_.set_cancelled(cancelled_);
     client_.set_cancelled(cancelled_);
@@ -48,30 +50,27 @@ ChatSession::ChatSession(
 // ===================================================================
 
 std::unique_ptr<ChatSession> ChatSession::create_subagent(
-    const Config& config, const Provider& provider, bool read_only, CancellationToken cancelled) {
+    const Config& config, const Provider& provider, bool read_only,
+    CancellationToken cancelled, std::shared_ptr<GatingState> gates) {
     // Build a simpler system prompt for subagents
     std::string sp = Config::SUBAGENT_SYSTEM_PROMPT;
 
     if (!read_only) {
         sp += "You have access to read and write file tools, and git tools.\n";
     }
+    // NOTE: CMAKE_PROMPT_SNIPPET is NOT baked here — it's added dynamically
+    // in build_effective_prompt() based on gates_->cmake_enabled.
 
-    // Check for CMake project and append CMake snippet if present
-    std::error_code ec;
-    if (std::filesystem::exists(std::filesystem::current_path() / "CMakeLists.txt", ec)) {
-        sp += Config::CMAKE_PROMPT_SNIPPET;
-    }
-
-    // Create the session using the private constructor via a wrapper
-    // We construct in-place since the constructor is complex.
-    auto session = std::make_unique<ChatSession>(config, provider, std::move(cancelled));
+    // Create the session, sharing gates with the primary if provided.
+    auto session = std::make_unique<ChatSession>(
+        config, provider, std::move(cancelled), std::move(gates));
     session->system_prompt_ = std::move(sp);
+    session->is_read_only_ = read_only;
 
     // Remove bash and write_plan tools (read_plan is kept for subagents)
     session->tools_.remove("run_bash");
     session->tools_.remove("write_plan");
 
-    // Conditionally remove write tools
     if (read_only) {
         // File write tools
         session->tools_.remove("write_file");
@@ -84,6 +83,10 @@ std::unique_ptr<ChatSession> ChatSession::create_subagent(
         session->tools_.remove("git_commit");
         session->tools_.remove("git_restore");
         session->tools_.remove("git_show");
+        // CMake tools — read-only subagents never get these
+        session->tools_.remove("cmake_configure");
+        session->tools_.remove("cmake_build");
+        session->tools_.remove("cmake_ctest");
     }
 
     return session;
@@ -151,7 +154,12 @@ void ChatSession::discover_context_limit() {
 
 std::string ChatSession::build_effective_prompt() const {
     std::string prompt = system_prompt_;
-    if (cmake_enabled_ && has_cmake_project()) {
+    // Dynamic snippet injection based on active gates.
+    // Read-write subagents share the primary's gates, so they get the
+    // snippet when the primary has cmake enabled. Read-only subagents
+    // never get it (their gates_ is a fresh default with cmake_enabled=false,
+    // and cmake tools were removed from their registry).
+    if (gates_->cmake_enabled && has_cmake_project()) {
         prompt += Config::CMAKE_PROMPT_SNIPPET;
     }
     if (mcp_registry_.has_running_servers()) {
@@ -167,9 +175,9 @@ std::set<std::string> ChatSession::filter_allowed_tools() const {
     std::set<std::string> allowed;
     for (const auto& t : tools_.tools()) {
         bool include = true;
-        if (cmake_tool_names.count(t.name) && (!cmake_enabled_ || !has_cmake_project()))
+        if (cmake_tool_names.count(t.name) && (!gates_->cmake_enabled || !has_cmake_project()))
             include = false;
-        if (t.name == "run_bash" && !bash_enabled_)
+        if (t.name == "run_bash" && !gates_->bash_enabled)
             include = false;
         if (include)
             allowed.insert(t.name);

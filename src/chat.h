@@ -14,6 +14,14 @@
 
 using json = nlohmann::json;
 
+/// Shared gating state for bash and cmake tools.
+/// Read-write subagents share the primary agent's GatingState via shared_ptr,
+/// so gate changes propagate automatically.
+struct GatingState {
+    bool bash_enabled = false;
+    bool cmake_enabled = false;
+};
+
 struct ChatResult {
     std::string content;
     std::string reasoning;
@@ -26,7 +34,9 @@ using OutputCallback = std::function<void(const std::string& text, OutputType ty
 class ChatSession {
   public:
     explicit ChatSession(
-        const Config& config, const Provider& provider, CancellationToken cancelled = nullptr);
+        const Config& config, const Provider& provider,
+        CancellationToken cancelled = nullptr,
+        std::shared_ptr<GatingState> gates = nullptr);
 
     ChatSession(const ChatSession&) = delete;
     ChatSession& operator=(const ChatSession&) = delete;
@@ -35,10 +45,14 @@ class ChatSession {
 
     /// Create a subagent session with restricted tools and a simpler system prompt.
     /// If read_only is true, write tools (file, git) are excluded.
+    /// If gates is non-null, the subagent shares the primary's GatingState
+    /// (read-write subagents).  If null, a fresh default GatingState is used
+    /// (read-only subagents — both gates false).
     static std::unique_ptr<ChatSession> create_subagent(const Config& config,
         const Provider& provider,
         bool read_only,
-        CancellationToken cancelled);
+        CancellationToken cancelled,
+        std::shared_ptr<GatingState> gates = nullptr);
 
     Result<ChatResult> run_once(const std::string& user_input);
     void set_model(const std::string& m) { model_ = m; }
@@ -87,12 +101,18 @@ class ChatSession {
     bool has_cmake_project() const;
 
     /// Enable/disable the run_bash tool for this session.
-    void set_bash_enabled(bool v) { bash_enabled_ = v; }
-    bool bash_enabled() const { return bash_enabled_; }
+    void set_bash_enabled(bool v) { gates_->bash_enabled = v; }
+    bool bash_enabled() const { return gates_->bash_enabled; }
 
     /// Enable/disable the cmake tools for this session.
-    void set_cmake_enabled(bool v) { cmake_enabled_ = v; }
-    bool cmake_enabled() const { return cmake_enabled_; }
+    void set_cmake_enabled(bool v) { gates_->cmake_enabled = v; }
+    bool cmake_enabled() const { return gates_->cmake_enabled; }
+
+    /// True if this session was created as a read-only subagent.
+    bool is_read_only() const { return is_read_only_; }
+
+    /// Access the shared gating state (for propagating gates to subagents).
+    std::shared_ptr<GatingState> gates() const { return gates_; }
 
     /// Provider name this session belongs to.
     const std::string& provider_name() const { return provider_name_; }
@@ -177,7 +197,7 @@ class ChatSession {
     Usage last_usage_;
     int context_limit_ = 300000; // discovered from API, falls back to Config
     bool context_limit_discovered_ = false;
-    bool bash_enabled_ = false;
-    bool cmake_enabled_ = false;         // cmake tools gating (like bash_enabled_)
+    std::shared_ptr<GatingState> gates_ = std::make_shared<GatingState>();
+    bool is_read_only_ = false;
     McpRegistry mcp_registry_;
 };

@@ -202,8 +202,12 @@ void PrimaryAgent::create_subagents() {
         sub_agent.reasoning_effort = provider.reasoning_effort;
 
         sub_agent.chat_state = std::make_unique<AsyncChatState>();
+        // Read-write subagents share the primary's GatingState so gate
+        // changes propagate automatically. Read-only subagents get a
+        // fresh default (both gates false, cmake tools removed).
+        auto gates = sa.read_only ? nullptr : session->gates();
         sub_agent.session = ChatSession::create_subagent(
-            cfg, provider, sa.read_only, sub_agent.chat_state->cancelled);
+            cfg, provider, sa.read_only, sub_agent.chat_state->cancelled, std::move(gates));
         sub_agent.session->set_agent_name(sa.name);
         sub_agent.session->set_output_callback(
             [cs = sub_agent.chat_state.get()](const std::string& text, OutputType type) {
