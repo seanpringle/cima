@@ -91,7 +91,9 @@ json Config::to_json() const {
     j["read_only_paths"] = read_only_paths;
     j["max_tool_iterations"] = max_tool_iterations;
     j["snippets"] = snippets;
+    j["subagent_timeout"] = subagent_timeout;
     j["bash_timeout"] = bash_timeout;
+    j["cmake_enabled"] = cmake_enabled;
     j["cmake_configure_timeout"] = cmake_configure_timeout;
     j["cmake_build_timeout"] = cmake_build_timeout;
     j["cmake_ctest_timeout"] = cmake_ctest_timeout;
@@ -268,7 +270,10 @@ Config Config::load() {
                     field = n;
             }
         };
+        load_timeout("subagent_timeout", cfg.subagent_timeout);
         load_timeout("bash_timeout", cfg.bash_timeout);
+        if (j.contains("cmake_enabled") && j["cmake_enabled"].is_boolean())
+            cfg.cmake_enabled = j["cmake_enabled"].get<bool>();
         load_timeout("cmake_configure_timeout", cfg.cmake_configure_timeout);
         load_timeout("cmake_build_timeout", cfg.cmake_build_timeout);
         load_timeout("cmake_ctest_timeout", cfg.cmake_ctest_timeout);

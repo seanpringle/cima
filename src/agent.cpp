@@ -88,6 +88,7 @@ PrimaryAgent::~PrimaryAgent() {
     session_data.chat_log = std::move(log_arr);
     session_data.plan = session->plan().to_json();
     session_data.bash_enabled = bash_enabled;
+    session_data.cmake_enabled = cmake_enabled;
     session_data.mcp_enabled = mcp_enabled;
 
     std::error_code ec;
@@ -178,6 +179,8 @@ void PrimaryAgent::restore_session_data() {
 
     bash_enabled = session_data.bash_enabled;
     session->set_bash_enabled(session_data.bash_enabled);
+    cmake_enabled = session_data.cmake_enabled;
+    session->set_cmake_enabled(session_data.cmake_enabled);
     mcp_enabled = session_data.mcp_enabled;
 }
 
@@ -218,7 +221,7 @@ Result<SubAgent*> PrimaryAgent::subagent_by_name(const std::string& name) {
 }
 
 void PrimaryAgent::register_subagent_tools() {
-    session->register_call_subagent_tool(*this, cfg.subagents);
+    session->register_call_subagent_tool(*this, cfg.subagents); // uses cfg.subagent_timeout internally
 }
 
 // ── ChatUIState methods ─────────────────────────────────────────────────────

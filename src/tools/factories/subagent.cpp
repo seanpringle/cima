@@ -7,7 +7,8 @@
 // ===================================================================
 
 Tool make_call_subagent_tool(PrimaryAgent& primary,
-    const std::vector<SubagentConfig>& subagent_configs) {
+    const std::vector<SubagentConfig>& subagent_configs,
+    int timeout_sec) {
     Tool t;
     t.name = "call_subagent";
 
@@ -31,7 +32,8 @@ Tool make_call_subagent_tool(PrimaryAgent& primary,
     t.description = desc;
 
     t.permission = ToolPermission::ReadOnly;
-    t.timeout_sec = 600; // 10 minutes
+    t.timeout_sec = timeout_sec;
+
     t.parameters = {{"type", "object"},
         {"properties",
             {{"name",

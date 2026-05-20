@@ -90,6 +90,10 @@ class ChatSession {
     void set_bash_enabled(bool v) { bash_enabled_ = v; }
     bool bash_enabled() const { return bash_enabled_; }
 
+    /// Enable/disable the cmake tools for this session.
+    void set_cmake_enabled(bool v) { cmake_enabled_ = v; }
+    bool cmake_enabled() const { return cmake_enabled_; }
+
     /// Provider name this session belongs to.
     const std::string& provider_name() const { return provider_name_; }
 
@@ -117,7 +121,7 @@ class ChatSession {
     /// the tool description with available names.
     void register_call_subagent_tool(
         PrimaryAgent& primary, const std::vector<SubagentConfig>& subagent_configs = {}) {
-        tools_.add(make_call_subagent_tool(primary, subagent_configs));
+        tools_.add(make_call_subagent_tool(primary, subagent_configs, cfg.subagent_timeout));
     }
 
     /// Access the tool registry (for testing and GUI).
@@ -174,5 +178,6 @@ class ChatSession {
     int context_limit_ = 300000; // discovered from API, falls back to Config
     bool context_limit_discovered_ = false;
     bool bash_enabled_ = false;
+    bool cmake_enabled_ = true;          // cmake tools gating (like bash_enabled_)
     McpRegistry mcp_registry_;
 };

@@ -561,6 +561,20 @@ void render_config_tab(PrimaryAgent& tab) {
         }
     }
 
+    // ── CMake checkbox ──
+    {
+        bool enabled = tab.cmake_enabled;
+        if (Checkbox("Enable cmake tools (cmake_configure, cmake_build, cmake_ctest)", &enabled)) {
+            tab.cmake_enabled = enabled;
+            session.set_cmake_enabled(enabled);
+        }
+        if (IsItemHovered()) {
+            BeginTooltip();
+            TextUnformatted("When disabled, the model cannot use cmake_configure, cmake_build, or cmake_ctest.");
+            EndTooltip();
+        }
+    }
+
     // ── MCP Servers section ──
     if (!cfg.mcp_servers.empty()) {
         Separator();

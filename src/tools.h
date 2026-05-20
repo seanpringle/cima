@@ -207,4 +207,5 @@ struct PrimaryAgent;
 
 // ── Subagent tool ──
 Tool make_call_subagent_tool(
-    PrimaryAgent&, const std::vector<SubagentConfig>& subagent_configs = {});
+    PrimaryAgent&, const std::vector<SubagentConfig>& subagent_configs = {},
+    int timeout_sec = 600);

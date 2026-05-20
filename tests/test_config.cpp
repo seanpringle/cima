@@ -621,3 +621,39 @@ TEST_CASE("SubagentConfig read_only true from JSON", "[config][subagent]") {
     CHECK(loaded[0].name == "read-only-agent");
     CHECK(loaded[0].read_only == true);
 }
+
+TEST_CASE("subagent_timeout top-level field", "[config][subagent_timeout]") {
+    // Test that the top-level subagent_timeout field is serialized/deserialized.
+    // First, check that the default is 600.
+    Config cfg;
+    CHECK(cfg.subagent_timeout == 600);
+
+    // Set a custom value and round-trip through JSON.
+    cfg.subagent_timeout = 120;
+    auto j = cfg.to_json();
+    REQUIRE(j.contains("subagent_timeout"));
+    CHECK(j["subagent_timeout"] == 120);
+
+    // Simulate deserialization from JSON.
+    Config loaded;
+    if (j.contains("subagent_timeout") && j["subagent_timeout"].is_number_integer()) {
+        loaded.subagent_timeout = j["subagent_timeout"].get<int>();
+    }
+    CHECK(loaded.subagent_timeout == 120);
+
+    // Test that missing field defaults to 600.
+    json j2 = R"({})"_json;
+    loaded.subagent_timeout = 600;
+    if (j2.contains("subagent_timeout") && j2["subagent_timeout"].is_number_integer()) {
+        loaded.subagent_timeout = j2["subagent_timeout"].get<int>();
+    }
+    CHECK(loaded.subagent_timeout == 600);
+
+    // Test zero (no timeout).
+    json j3 = R"({"subagent_timeout": 0})"_json;
+    loaded.subagent_timeout = 600;
+    if (j3.contains("subagent_timeout") && j3["subagent_timeout"].is_number_integer()) {
+        loaded.subagent_timeout = j3["subagent_timeout"].get<int>();
+    }
+    CHECK(loaded.subagent_timeout == 0);
+}

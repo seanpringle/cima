@@ -151,7 +151,7 @@ void ChatSession::discover_context_limit() {
 
 std::string ChatSession::build_effective_prompt() const {
     std::string prompt = system_prompt_;
-    if (has_cmake_project()) {
+    if (cmake_enabled_ && has_cmake_project()) {
         prompt += Config::CMAKE_PROMPT_SNIPPET;
     }
     if (mcp_registry_.has_running_servers()) {
@@ -167,7 +167,7 @@ std::set<std::string> ChatSession::filter_allowed_tools() const {
     std::set<std::string> allowed;
     for (const auto& t : tools_.tools()) {
         bool include = true;
-        if (cmake_tool_names.count(t.name) && !has_cmake_project())
+        if (cmake_tool_names.count(t.name) && (!cmake_enabled_ || !has_cmake_project()))
             include = false;
         if (t.name == "run_bash" && !bash_enabled_)
             include = false;

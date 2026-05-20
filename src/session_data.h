@@ -25,6 +25,7 @@ struct SessionData {
     json chat_log;                           // serialized chat log entries (array of entry objects)
     json plan;                               // { "plan": "...", "comments": [...] }
     bool bash_enabled = false;               // run_bash tool enabled for this session
+    bool cmake_enabled = true;               // cmake tools enabled for this session
     std::map<std::string, bool> mcp_enabled; // per-server MCP enabled state
 
     json to_json() const;
