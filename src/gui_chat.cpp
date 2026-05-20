@@ -604,10 +604,9 @@ void render_config_tab(PrimaryAgent& tab) {
             return "Other";
         };
 
+        bool indented = false;
         const char* last_cat = nullptr;
         for (const auto& name : names) {
-            // Skip MCP tools (gated by server lifecycle), plan tools (always on),
-            // view_tool_output (infrastructure), and cmd_* (shown separately).
             // Skip MCP tools (gated by server lifecycle), plan tools (always on),
             // view_tool_output (infrastructure), cmd_* (shown separately),
             // run_bash and cmake_* (have their own dedicated checkboxes).
@@ -618,10 +617,12 @@ void render_config_tab(PrimaryAgent& tab) {
                 continue;
 
             const char* cat = category_of(name);
-            if (cat != last_cat) {
+            if (!indented || cat != last_cat) {
+                if (indented) Unindent();
                 Text("── %s ──", cat);
                 last_cat = cat;
                 Indent();
+                indented = true;
             }
 
             bool enabled = session.tool_enabled(name);
@@ -635,7 +636,7 @@ void render_config_tab(PrimaryAgent& tab) {
                 EndTooltip();
             }
         }
-        if (last_cat)
+        if (indented)
             Unindent();
     }
 
