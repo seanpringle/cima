@@ -599,9 +599,10 @@ void render_config_tab(PrimaryAgent& tab) {
         Separator();
         Text("Tool Gates:");
 
-        // Collect registered tool names, sorted by name.
+        // Collect registered tool names, filter out skipped ones, and sort
+        // by category first (so each group appears as one contiguous block),
+        // then by name within each category.
         auto names = session.tools_for_testing().tool_names();
-        std::sort(names.begin(), names.end());
 
         // Categorisation helpers.
         auto category_of = [](const std::string& name) -> const char* {
@@ -623,14 +624,36 @@ void render_config_tab(PrimaryAgent& tab) {
             return "Other";
         };
 
+        // Category display order.
+        auto cat_order = [](const char* cat) -> int {
+            if (!strcmp(cat, "Execution")) return 0;
+            if (!strcmp(cat, "File"))      return 1;
+            if (!strcmp(cat, "Git"))       return 2;
+            if (!strcmp(cat, "Web"))       return 3;
+            if (!strcmp(cat, "Cmake"))     return 4;
+            return 5; // Other
+        };
+
+        // Filter and sort: first by category order, then alphabetically.
+        names.erase(std::remove_if(names.begin(), names.end(),
+            [](const std::string& name) {
+                // Skip MCP tools (gated by server lifecycle), plan tools (always on),
+                // view_tool_output (infrastructure), and cmd_* (shown separately).
+                return name.rfind("mcp_", 0) == 0 || name == "read_plan" ||
+                       name == "write_plan" || name == "view_tool_output" ||
+                       name.rfind("cmd_", 0) == 0;
+            }),
+            names.end());
+        std::sort(names.begin(), names.end(),
+            [&](const std::string& a, const std::string& b) {
+                int ca = cat_order(category_of(a));
+                int cb = cat_order(category_of(b));
+                if (ca != cb) return ca < cb;
+                return a < b;
+            });
+
         const char* last_cat = nullptr;
         for (const auto& name : names) {
-            // Skip MCP tools (gated by server lifecycle), plan tools (always on),
-            // view_tool_output (infrastructure), and cmd_* (shown separately).
-            if (name.rfind("mcp_", 0) == 0 || name == "read_plan" || name == "write_plan" ||
-                name == "view_tool_output" || name.rfind("cmd_", 0) == 0)
-                continue;
-
             const char* cat = category_of(name);
             if (cat != last_cat) {
                 Text("── %s ──", cat);
