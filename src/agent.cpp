@@ -216,6 +216,15 @@ void PrimaryAgent::restore_session_data() {
         session->set_tool_enabled(name, enabled);
     }
 
+    // Sync legacy gates from tool_gates overrides (in case they differ
+    // from the legacy fields — e.g. from a previous session toggle).
+    bash_enabled = session->tool_enabled("run_bash");
+    session->set_bash_enabled(bash_enabled);
+    cmake_enabled = session->tool_enabled("cmake_configure")
+                 || session->tool_enabled("cmake_build")
+                 || session->tool_enabled("cmake_ctest");
+    session->set_cmake_enabled(cmake_enabled);
+
     // Restore cmd_tools_enabled, keeping entries for config commands AND
     // session custom commands (silently dropping truly stale entries).
     cmd_tools_enabled = session_data.cmd_tools_enabled;

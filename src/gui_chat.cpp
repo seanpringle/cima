@@ -545,36 +545,6 @@ void render_config_tab(PrimaryAgent& tab) {
 
     // Workspace path editing removed — safe_dir locked to cwd at startup
 
-    Separator();
-
-    // ── Bash checkbox ──
-    {
-        bool enabled = tab.bash_enabled;
-        if (Checkbox("Enable run_bash (shell command execution)", &enabled)) {
-            tab.bash_enabled = enabled;
-            session.set_bash_enabled(enabled);
-        }
-        if (IsItemHovered()) {
-            BeginTooltip();
-            TextUnformatted("When disabled, the model cannot execute shell commands via run_bash.");
-            EndTooltip();
-        }
-    }
-
-    // ── CMake checkbox ──
-    {
-        bool enabled = tab.cmake_enabled;
-        if (Checkbox("Enable cmake tools (cmake_configure, cmake_build, cmake_ctest)", &enabled)) {
-            tab.cmake_enabled = enabled;
-            session.set_cmake_enabled(enabled);
-        }
-        if (IsItemHovered()) {
-            BeginTooltip();
-            TextUnformatted("When disabled, the model cannot use cmake_configure, cmake_build, or cmake_ctest.");
-            EndTooltip();
-        }
-    }
-
     // ── Tool Gates section ──
     {
         Separator();
@@ -598,7 +568,7 @@ void render_config_tab(PrimaryAgent& tab) {
             if (name == "web_search" || name == "web_fetch")
                 return "Web";
             if (name == "cmake_configure" || name == "cmake_build" || name == "cmake_ctest")
-                return "Build";
+                return "Cmake";
             if (name == "run_bash" || name == "lua" || name == "call_subagent")
                 return "Execution";
             return "Other";
@@ -607,12 +577,9 @@ void render_config_tab(PrimaryAgent& tab) {
         const char* last_cat = nullptr;
         for (const auto& name : names) {
             // Skip MCP tools (gated by server lifecycle), plan tools (always on),
-            // view_tool_output (infrastructure), cmd_* (shown separately),
-            // run_bash and cmake_* (have their own dedicated checkboxes).
+            // view_tool_output (infrastructure), and cmd_* (shown separately).
             if (name.rfind("mcp_", 0) == 0 || name == "read_plan" || name == "write_plan" ||
-                name == "view_tool_output" || name.rfind("cmd_", 0) == 0 ||
-                name == "run_bash" ||
-                name == "cmake_configure" || name == "cmake_build" || name == "cmake_ctest")
+                name == "view_tool_output" || name.rfind("cmd_", 0) == 0)
                 continue;
 
             const char* cat = category_of(name);
@@ -625,6 +592,14 @@ void render_config_tab(PrimaryAgent& tab) {
             if (Checkbox(name.c_str(), &enabled)) {
                 tab.tool_gates[name] = enabled;
                 session.set_tool_enabled(name, enabled);
+                // Keep legacy gates in sync for tools with special filtering.
+                if (name == "run_bash") {
+                    tab.bash_enabled = enabled;
+                    session.set_bash_enabled(enabled);
+                } else if (name == "cmake_configure" || name == "cmake_build" || name == "cmake_ctest") {
+                    tab.cmake_enabled = enabled;
+                    session.set_cmake_enabled(enabled);
+                }
             }
             if (IsItemHovered()) {
                 BeginTooltip();
