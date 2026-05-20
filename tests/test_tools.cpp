@@ -2092,6 +2092,24 @@ TEST_CASE("web_fetch basic", "[tools][web_fetch]") {
     CHECK(*result == body);
 }
 
+TEST_CASE("web_fetch converts HTML to Markdown", "[tools][web_fetch]") {
+    std::string html = "<html><body><h1>Hello</h1><p>World</p></body></html>";
+    MockHttpServer server(html, 200);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+
+    ToolRegistry reg;
+    reg.add_defaults("/tmp", Config{});
+    std::string fetch_url = server.url().substr(0, server.url().find("?q="));
+    auto result = reg.execute("web_fetch",
+        R"({"url": ")" + fetch_url + R"("})");
+    INFO("fetch_url = " << fetch_url);
+    INFO("error = " << (result ? "none" : result.error()));
+    REQUIRE(result);
+    // The response should contain Markdown equivalents
+    CHECK(result->find("# Hello") != std::string::npos);
+    CHECK(result->find("World") != std::string::npos);
+}
+
 TEST_CASE("web_fetch empty URL rejected", "[tools][web_fetch]") {
     ToolRegistry reg;
     reg.add_defaults("/tmp", Config{});

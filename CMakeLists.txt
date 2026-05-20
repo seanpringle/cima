@@ -19,6 +19,18 @@ FetchContent_Declare(imgui
 )
 FetchContent_MakeAvailable(imgui)
 
+# ── html2md (HTML to Markdown conversion) ──
+FetchContent_Declare(html2md
+    GIT_REPOSITORY https://github.com/tim-gromeyer/html2md.git
+    GIT_TAG v1.7.0
+    GIT_SHALLOW TRUE
+)
+set(BUILD_EXE OFF CACHE BOOL "" FORCE)
+set(BUILD_TEST OFF CACHE BOOL "" FORCE)
+set(BUILD_DOC OFF CACHE BOOL "" FORCE)
+set(PYTHON_BINDINGS OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(html2md)
+
 find_package(CURL REQUIRED)
 find_package(SDL3 REQUIRED)
 find_package(Catch2 REQUIRED)
@@ -131,6 +143,7 @@ target_link_libraries(cima_core PUBLIC
     CURL::libcurl
     cima_git2
     LibXml2::LibXml2
+    html2md
 )
 
 add_executable(cima

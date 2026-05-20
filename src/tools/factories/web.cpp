@@ -1,6 +1,7 @@
 #include "tools.h"
 
 #include <curl/curl.h>
+#include <html2md.h>
 #include <cstdlib>
 #include <mutex>
 #include <string>
@@ -77,8 +78,9 @@ Tool make_web_fetch_tool(int timeout, CancellationToken cancelled,
     t.name = "web_fetch";
     t.description =
         "Fetch the content of a URL. Returns the response body as text. "
+        "HTML pages are automatically converted to clean Markdown. "
         "Use this to read documentation, API references, or web pages. "
-        "Only returns the raw response body; for search results use web_search.";
+        "For search results use web_search.";
     t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},
         {"properties",
@@ -195,6 +197,41 @@ Tool make_web_fetch_tool(int timeout, CancellationToken cancelled,
                     "web_fetch: unsupported Content-Type '" + ct +
                     "' — only text-based content can be fetched");
             }
+        }
+
+        // ── HTML → Markdown conversion ──
+        // If the response is HTML, convert it to Markdown for easier reading.
+        bool is_html = false;
+        if (!content_type.empty()) {
+            std::string ct_lower = content_type;
+            for (auto& c : ct_lower)
+                c = char(std::tolower((unsigned char)c));
+            auto semi = ct_lower.find(';');
+            if (semi != std::string::npos)
+                ct_lower = ct_lower.substr(0, semi);
+            while (!ct_lower.empty() &&
+                   (ct_lower.back() == ' ' || ct_lower.back() == '\t'))
+                ct_lower.pop_back();
+            is_html = (ct_lower == "text/html" ||
+                       ct_lower == "application/xhtml+xml");
+        }
+        // Heuristic: if Content-Type is missing or text/* but body looks like
+        // HTML, convert it anyway (handles misconfigured servers).
+        if (!is_html) {
+            auto start = body.find_first_not_of(" \t\r\n");
+            if (start != std::string::npos) {
+                // Check first non-whitespace character is '<' and there's a
+                // known HTML tag or DOCTYPE declaration early in the body.
+                std::size_t remaining = body.size() - start;
+                is_html =
+                    (remaining >= 7 && body.compare(start, 7, "<!DOCTYPE") == 0) ||
+                    (remaining >= 6 && body.compare(start, 6, "<html ") == 0) ||
+                    (remaining >= 6 && body.compare(start, 6, "<html>") == 0);
+            }
+        }
+
+        if (is_html) {
+            body = html2md::Convert(body);
         }
 
         // ── Spill to tool_logs if output exceeds threshold ──
