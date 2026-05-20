@@ -71,12 +71,12 @@ Tool make_web_search_tool(int timeout, CancellationToken cancelled) {
     return t;
 }
 
-Tool make_web_fetch_tool(int timeout, CancellationToken cancelled) {
+Tool make_web_fetch_tool(int timeout, CancellationToken cancelled,
+    std::shared_ptr<std::vector<std::string>> tool_logs) {
     Tool t;
     t.name = "web_fetch";
     t.description =
         "Fetch the content of a URL. Returns the response body as text. "
-        "Max 100,000 characters. "
         "Use this to read documentation, API references, or web pages. "
         "Only returns the raw response body; for search results use web_search.";
     t.timeout_sec = timeout;
@@ -89,7 +89,7 @@ Tool make_web_fetch_tool(int timeout, CancellationToken cancelled) {
                         "Results are cached per session — re-fetching the same URL "
                         "returns the cached content."}}}}},
         {"required", {"url"}}};
-    t.execute = [cancelled](const json& args) -> Result<std::string> {
+    t.execute = [cancelled, tool_logs](const json& args) -> Result<std::string> {
         auto url = args.value("url", std::string());
         if (url.empty()) {
             return std::unexpected("url is required");
@@ -197,11 +197,23 @@ Tool make_web_fetch_tool(int timeout, CancellationToken cancelled) {
             }
         }
 
-        // ── Truncation ──
-        const size_t max_chars = 100000;
-        if (body.size() > max_chars) {
-            body = body.substr(0, max_chars) +
-                "\n...(truncated, >" + std::to_string(max_chars) + " chars)";
+        // ── Spill to tool_logs if output exceeds threshold ──
+        if (tool_logs) {
+            int nl = 0;
+            for (char c : body)
+                if (c == '\n') nl++;
+            if (nl > 100 || body.size() > 4096) {
+                // Cache the full body before moving
+                {
+                    std::lock_guard<std::mutex> lock(g_fetch_cache_mutex);
+                    g_fetch_cache[url] = body;
+                }
+                size_t id = tool_logs->size() + 1;
+                tool_logs->push_back(std::move(body));
+                return "(long tool output: " + std::to_string(nl) + " lines, " +
+                       std::to_string(tool_logs->back().size()) + " chars. "
+                       "Use view_tool_output(id=" + std::to_string(id) + ") to read it)";
+            }
         }
 
         // ── Cache the result ──

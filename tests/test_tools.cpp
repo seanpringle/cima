@@ -779,7 +779,7 @@ TEST_CASE("git_log max_count cap", "[tools][git_log]") {
     auto result = reg.execute("git_log", R"({"max_count": 100})");
     REQUIRE(result);
 
-    // Count "commit " at start of lines (not in subject text) to verify cap at 50
+    // Count "commit " at start of lines (not in subject text) — cap removed, all commits returned
     int count = 0;
     size_t pos = 0;
     while ((pos = result->find("commit ", pos)) != std::string::npos) {
@@ -789,7 +789,7 @@ TEST_CASE("git_log max_count cap", "[tools][git_log]") {
         }
         pos += 7;
     }
-    CHECK(count == 50);
+    CHECK(count == 56); // all 56 commits returned (make_git_repo creates 1 + 55 more; cap of 50 removed)
 
     fs::remove_all(sd);
 }
@@ -1751,29 +1751,27 @@ TEST_CASE("run_bash timeout kills process", "[tools][run_bash]") {
     fs::remove_all(sd);
 }
 
-TEST_CASE("run_bash output line truncation", "[tools][run_bash]") {
+TEST_CASE("run_bash no line truncation", "[tools][run_bash]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
     reg.add_defaults(sd, Config{});
 
-    // Generate 600 lines (exceeds new 500-line limit)
+    // Generate 600 lines (would have been truncated to 500 before)
     auto result = reg.execute(
         "run_bash", R"({"command": "for i in $(seq 1 600); do echo line $i; done"})");
     REQUIRE(result);
-    CHECK(result->find("truncated") != std::string::npos);
 
-    // Count lines in output
+    // Count lines in output — all 600 should be present (truncation removed)
     int nl = 0;
     for (char c : *result)
         if (c == '\n')
             nl++;
-    // Should be 500 + 1 (the truncation message)
-    CHECK(nl <= 501);
+    CHECK(nl == 600);
 
     fs::remove_all(sd);
 }
 
-TEST_CASE("run_bash output size truncation", "[tools][run_bash]") {
+TEST_CASE("run_bash no size truncation", "[tools][run_bash]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
     reg.add_defaults(sd, Config{});
@@ -1783,8 +1781,8 @@ TEST_CASE("run_bash output size truncation", "[tools][run_bash]") {
         "run_bash",
         R"({"command": "python3 -c 'print(\"x\" * 20000)'"})");
     REQUIRE(result);
-    CHECK(result->find("truncated") != std::string::npos);
-    CHECK(result->size() <= 16100);  // a bit over due to truncation message
+    // Should contain at least 20000 chars (truncation removed)
+    CHECK(result->size() >= 20000);
 
     fs::remove_all(sd);
 }
@@ -2146,7 +2144,7 @@ TEST_CASE("web_fetch data scheme rejected", "[tools][web_fetch]") {
     CHECK(result.error().find("only http and https") != std::string::npos);
 }
 
-TEST_CASE("web_fetch truncates large content", "[tools][web_fetch]") {
+TEST_CASE("web_fetch returns full large content", "[tools][web_fetch]") {
     // Generate content larger than 100k chars
     std::string large_body(100500, 'x');
     MockHttpServer server(large_body, 200);
@@ -2160,8 +2158,8 @@ TEST_CASE("web_fetch truncates large content", "[tools][web_fetch]") {
     INFO("fetch_url = " << fetch_url);
     INFO("error = " << (result ? "none" : result.error()));
     REQUIRE(result);
-    CHECK(result->find("truncated") != std::string::npos);
-    CHECK(result->size() <= 100100); // 100k + truncation message
+    // Full content returned without truncation
+    CHECK(result->size() >= 100000);
 }
 
 TEST_CASE("web_fetch available in plan mode", "[tools][web_fetch]") {

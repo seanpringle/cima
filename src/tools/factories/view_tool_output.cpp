@@ -99,6 +99,26 @@ Tool make_view_tool_output_tool(
             if (range < max_to_read) max_to_read = range;
         }
 
+        // head/tail override start_line/end_line/max_lines (as documented)
+        if (head > 0 || tail > 0) {
+            if (head > 0 && tail > 0) {
+                // Last T lines of the first H lines
+                int h = std::min(head, total_lines);
+                int t = std::min(tail, h);
+                range_start = h - t + 1;
+                range_end = h;
+            } else if (head > 0) {
+                // First H lines
+                range_start = 1;
+                range_end = std::min(head, total_lines);
+            } else { // tail > 0
+                // Last T lines
+                range_start = std::max(1, total_lines - tail + 1);
+                range_end = total_lines;
+            }
+            max_to_read = range_end - range_start + 1;
+        }
+
         // Collect lines in the range
         std::vector<std::pair<int, std::string>> result_lines;
         for (const auto& [ln, text] : all_lines) {

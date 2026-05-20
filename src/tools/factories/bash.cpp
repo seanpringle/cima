@@ -12,17 +12,19 @@
 #include <unistd.h>
 
 Tool make_run_bash_tool(std::shared_ptr<std::string> safe_dir_ptr,
-    int timeout, CancellationToken cancelled) {
+    int timeout, CancellationToken cancelled,
+    std::shared_ptr<std::vector<std::string>> tool_logs) {
     Tool t;
     t.name = "run_bash";
     t.description = "Run a bash command in the project directory "
-                    "(e.g. build, test, lint). Output is capped at 500 lines / 16000 chars.";
+                    "(e.g. build, test, lint). "
+                    "Long output (>100 lines or 4K chars) is redirected to the tool log.";
     t.timeout_sec = 0; // bash manages its own timeout internally
     t.parameters = {{"type", "object"},
         {"properties",
             {{"command", {{"type", "string"}, {"description", "Shell command to execute"}}}}},
         {"required", {"command"}}};
-    t.execute = [safe_dir_ptr, timeout, cancelled](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr, timeout, cancelled, tool_logs](const json& args) -> Result<std::string> {
         auto command = args.value("command", std::string());
         if (command.empty()) {
             return std::unexpected(std::string("command is required"));
@@ -99,17 +101,10 @@ Tool make_run_bash_tool(std::shared_ptr<std::string> safe_dir_ptr,
             waitpid(pid, &st, 0);
         };
 
-        auto truncate_output = [](std::string& out) {
-            if (out.size() > 16000) {
-                out = out.substr(0, 16000) + "...(truncated, >16000 chars)";
-            }
-        };
-
         while (true) {
             if (cancelled && *cancelled) {
                 kill_child();
                 close(pipefd[0]);
-                truncate_output(output);
                 return output + "\n(interrupted)";
             }
 
@@ -117,7 +112,6 @@ Tool make_run_bash_tool(std::shared_ptr<std::string> safe_dir_ptr,
             if (now >= deadline) {
                 kill_child();
                 close(pipefd[0]);
-                truncate_output(output);
                 return output;
             }
 
@@ -126,12 +120,6 @@ Tool make_run_bash_tool(std::shared_ptr<std::string> safe_dir_ptr,
             if (n > 0) {
                 buf[n] = '\0';
                 output += buf;
-                if (output.size() > 16000) {
-                    kill_child();
-                    close(pipefd[0]);
-                    output = output.substr(0, 16000) + "...(truncated, >16000 chars)";
-                    return output;
-                }
             } else if (n == 0) {
                 break; // EOF
             } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
@@ -150,21 +138,19 @@ Tool make_run_bash_tool(std::shared_ptr<std::string> safe_dir_ptr,
         int status;
         waitpid(pid, &status, 0);
 
-        // Line count truncation
-        int nl = 0;
-        for (char c : output)
-            if (c == '\n')
-                nl++;
-        if (nl > 500) {
-            size_t pos = 0;
-            for (int i = 0; i < 500; i++) {
-                pos = output.find('\n', pos) + 1;
+        // Spill to tool_logs if output exceeds threshold
+        if (tool_logs) {
+            int nl = 0;
+            for (char c : output)
+                if (c == '\n') nl++;
+            if (nl > 100 || output.size() > 4096) {
+                size_t id = tool_logs->size() + 1;
+                tool_logs->push_back(std::move(output));
+                return "(long tool output: " + std::to_string(nl) + " lines, " +
+                       std::to_string(tool_logs->back().size()) + " chars. "
+                       "Use view_tool_output(id=" + std::to_string(id) + ") to read it)";
             }
-            output = output.substr(0, pos) + "...(truncated, >500 lines)";
         }
-
-        // Final size cap
-        truncate_output(output);
 
         return output;
     };

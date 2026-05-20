@@ -22,6 +22,12 @@ std::string Config::SYSTEM_PROMPT =
     " it thoroughly and write your Plan with `write_plan()`."
     " Ask the user to review and approve your Plan before implementation.\n"
     "Go back and check your Plan at any time with `read_plan()`.\n"
+    "\n"
+    "## Long tool output\n"
+    "\n"
+    "Tool output > 100 lines or 4K chars may be placed into the tool log."
+    " The output will be a message with a log entry ID."
+    " Use view_tool_output(ID=?,head=N,tail=N) to retrieve it.\n"
     "\n";
 
 std::string Config::SUBAGENT_SYSTEM_PROMPT =
@@ -31,9 +37,9 @@ std::string Config::SUBAGENT_SYSTEM_PROMPT =
 
 std::string Config::CMAKE_PROMPT_SNIPPET =
     "## CMake tools\n"
-    "`cmake_configure(head=H, tail=T)` configures the project (generates compile_commands.json).\n"
-    "`cmake_build(head=H, tail=T)` builds the project.\n"
-    "`cmake_ctest(head=H, tail=T)` runs the test suite.\n"
+    "`cmake_configure()` configures the project (generates compile_commands.json).\n"
+    "`cmake_build()` builds the project.\n"
+    "`cmake_ctest()` runs the test suite.\n"
     "All return raw output with optional head/tail trimming.\n";
 
 // ---------------------------------------------------------------------------

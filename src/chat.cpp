@@ -33,7 +33,7 @@ ChatSession::ChatSession(
     tools_.set_cancelled(cancelled_);
     client_.set_cancelled(cancelled_);
 
-    tools_.add_defaults(safe_dir_, config, /*include_write=*/true, *file_modified_cb_);
+    tools_.add_defaults(safe_dir_, config, /*include_write=*/true, *file_modified_cb_, tool_logs_);
 
     // Each session gets its own plan tools tied to its PlanBoard
     tools_.add(make_write_plan_tool(::plan));

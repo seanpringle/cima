@@ -57,13 +57,15 @@ class ToolRegistry {
     void add_defaults(std::shared_ptr<std::string> safe_dir,
         const Config& config,
         bool include_write = true,
-        FileModifiedCallback on_file_modified = nullptr);
+        FileModifiedCallback on_file_modified = nullptr,
+        std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
 
     // Convenience overload: accepts a plain string safe_dir (wraps in shared_ptr internally).
     void add_defaults(const std::string& safe_dir,
         const Config& config,
         bool include_write = true,
-        FileModifiedCallback on_file_modified = nullptr);
+        FileModifiedCallback on_file_modified = nullptr,
+        std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
 
     json to_openai_tools() const;
     /// Return tools for OpenAI, filtered to only include tools whose names
@@ -161,7 +163,9 @@ std::string extract_uddg_url(const std::string& ddg_url);
 // Tool factory declarations (used by ToolRegistry::add_defaults)
 // ---------------------------------------------------------------------------
 Tool make_list_files_tool(
-    std::shared_ptr<std::string> safe_dir_ptr, const std::vector<std::string>& read_only_paths);
+    std::shared_ptr<std::string> safe_dir_ptr,
+    const std::vector<std::string>& read_only_paths,
+    std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
 Tool make_read_file_lines_tool(
     std::shared_ptr<std::string> safe_dir_ptr, const std::vector<std::string>& read_only_paths);
 Tool make_read_file_tool(
@@ -169,26 +173,34 @@ Tool make_read_file_tool(
 Tool make_grep_files_tool(std::shared_ptr<std::string> safe_dir_ptr,
     const std::vector<std::string>& read_only_paths,
     int timeout,
-    CancellationToken cancelled = nullptr);
+    CancellationToken cancelled = nullptr,
+    std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
 Tool make_write_file_tool(
     std::shared_ptr<std::string> safe_dir_ptr, FileModifiedCallback on_file_modified = nullptr);
 Tool make_edit_file_tool(
     std::shared_ptr<std::string> safe_dir_ptr, FileModifiedCallback on_file_modified = nullptr);
 Tool make_run_bash_tool(
-    std::shared_ptr<std::string> safe_dir_ptr, int timeout, CancellationToken cancelled = nullptr);
+    std::shared_ptr<std::string> safe_dir_ptr, int timeout,
+    CancellationToken cancelled = nullptr,
+    std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
 Tool make_web_search_tool(int timeout, CancellationToken cancelled = nullptr);
-Tool make_web_fetch_tool(int timeout, CancellationToken cancelled = nullptr);
+Tool make_web_fetch_tool(int timeout, CancellationToken cancelled = nullptr,
+    std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
 Tool make_git_status_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout);
-Tool make_git_diff_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout);
-Tool make_git_log_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout);
+Tool make_git_diff_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout,
+    std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
+Tool make_git_log_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout,
+    std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
 Tool make_git_add_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout);
 Tool make_git_commit_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout);
 Tool make_git_restore_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout);
-Tool make_git_show_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout);
+Tool make_git_show_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout,
+    std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
 Tool make_project_tree_tool(std::shared_ptr<std::string> safe_dir_ptr,
     const std::vector<std::string>& read_only_paths,
     int timeout,
-    CancellationToken cancelled = nullptr);
+    CancellationToken cancelled = nullptr,
+    std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
 Tool make_delete_file_tool(std::shared_ptr<std::string> safe_dir_ptr);
 Tool make_move_file_tool(std::shared_ptr<std::string> safe_dir_ptr);
 Tool make_rename_file_tool(std::shared_ptr<std::string> safe_dir_ptr);

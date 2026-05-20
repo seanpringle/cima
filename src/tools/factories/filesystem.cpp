@@ -6,14 +6,15 @@
 #include <vector>
 
 Tool make_list_files_tool(std::shared_ptr<std::string> safe_dir_ptr,
-    const std::vector<std::string>& read_only_paths) {
+    const std::vector<std::string>& read_only_paths,
+    std::shared_ptr<std::vector<std::string>> tool_logs) {
     Tool t;
     t.name = "list_files";
     t.description = "List files and directories in a given path";
     t.parameters = {{"type", "object"},
         {"properties", {{"path", {{"type", "string"}, {"description", "Directory path to list"}}}}},
         {"required", {"path"}}};
-    t.execute = [safe_dir_ptr, read_only_paths](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr, read_only_paths, tool_logs](const json& args) -> Result<std::string> {
         auto raw = args.value("path", std::string());
         auto resolved = resolve_path(raw, *safe_dir_ptr, read_only_paths);
         if (!resolved) {
@@ -51,6 +52,21 @@ Tool make_list_files_tool(std::shared_ptr<std::string> safe_dir_ptr,
         if (result.empty()) {
             result = "(empty directory)";
         }
+
+        // Spill to tool_logs if output exceeds threshold
+        if (tool_logs) {
+            int nl = 0;
+            for (char c : result)
+                if (c == '\n') nl++;
+            if (nl > 100 || result.size() > 4096) {
+                size_t id = tool_logs->size() + 1;
+                tool_logs->push_back(std::move(result));
+                return "(long tool output: " + std::to_string(nl) + " lines, " +
+                       std::to_string(tool_logs->back().size()) + " chars. "
+                       "Use view_tool_output(id=" + std::to_string(id) + ") to read it)";
+            }
+        }
+
         return result;
     };
     return t;
@@ -59,12 +75,13 @@ Tool make_list_files_tool(std::shared_ptr<std::string> safe_dir_ptr,
 Tool make_project_tree_tool(std::shared_ptr<std::string> safe_dir_ptr,
     const std::vector<std::string>& read_only_paths,
     int timeout,
-    CancellationToken cancelled) {
+    CancellationToken cancelled,
+    std::shared_ptr<std::vector<std::string>> tool_logs) {
     Tool t;
     t.name = "project_tree";
     t.description =
         "Recursively list files/directories in a tree-like format.\n"
-        "Maximum depth of 5 to avoid huge outputs. "
+        "Maximum depth of 5 by default. "
         "Use this to understand project structure in a single call "
         "instead of calling list_files repeatedly.";
     t.timeout_sec = timeout;
@@ -77,12 +94,12 @@ Tool make_project_tree_tool(std::shared_ptr<std::string> safe_dir_ptr,
                 {"max_depth",
                     {{"type", "integer"},
                         {"description",
-                            "Maximum recursion depth (default 5, max 10)"}}},
+                            "Maximum recursion depth (default 5)"}}},
                 {"max_lines",
                     {{"type", "integer"},
                         {"description",
-                            "Maximum output lines (default 500, max 500)"}}}}}};
-    t.execute = [safe_dir_ptr, read_only_paths, cancelled](const json& args) -> Result<std::string> {
+                            "Maximum output lines (default 500)"}}}}}};
+    t.execute = [safe_dir_ptr, read_only_paths, cancelled, tool_logs](const json& args) -> Result<std::string> {
         auto raw = args.value("path", std::string("."));
         auto resolved = resolve_path(raw, *safe_dir_ptr, read_only_paths);
         if (!resolved) {
@@ -91,11 +108,9 @@ Tool make_project_tree_tool(std::shared_ptr<std::string> safe_dir_ptr,
 
         int max_depth = args.value("max_depth", 5);
         if (max_depth < 1) max_depth = 1;
-        if (max_depth > 10) max_depth = 10;
 
         int max_lines = args.value("max_lines", 500);
         if (max_lines < 1) max_lines = 1;
-        if (max_lines > 500) max_lines = 500;
 
         std::error_code ec;
         auto status = std::filesystem::status(*resolved, ec);
@@ -200,6 +215,20 @@ Tool make_project_tree_tool(std::shared_ptr<std::string> safe_dir_ptr,
 
         // Walk
         walk(*resolved, 1, "");
+
+        // Spill to tool_logs if output exceeds threshold
+        if (tool_logs) {
+            int nl = 0;
+            for (char c : result)
+                if (c == '\n') nl++;
+            if (nl > 100 || result.size() > 4096) {
+                size_t id = tool_logs->size() + 1;
+                tool_logs->push_back(std::move(result));
+                return "(long tool output: " + std::to_string(nl) + " lines, " +
+                       std::to_string(tool_logs->back().size()) + " chars. "
+                       "Use view_tool_output(id=" + std::to_string(id) + ") to read it)";
+            }
+        }
 
         if (interrupted) {
             result += "(interrupted)\n";

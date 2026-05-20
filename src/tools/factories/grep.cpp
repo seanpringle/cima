@@ -13,10 +13,12 @@
 Tool make_grep_files_tool(std::shared_ptr<std::string> safe_dir_ptr,
     const std::vector<std::string>& read_only_paths,
     int timeout,
-    CancellationToken cancelled) {
+    CancellationToken cancelled,
+    std::shared_ptr<std::vector<std::string>> tool_logs) {
     Tool t;
     t.name = "grep_files";
-    t.description = "Search file contents using a regex pattern (max 200 results)";
+    t.description = "Search file contents using a regex pattern. "
+                    "Long output (>100 lines or 4K chars) is redirected to the tool log.";
     t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},
         {"properties",
@@ -25,7 +27,7 @@ Tool make_grep_files_tool(std::shared_ptr<std::string> safe_dir_ptr,
                     {{"type", "string"},
                         {"description", "File or directory to search in (defaults to .)"}}}}},
         {"required", {"pattern"}}};
-    t.execute = [safe_dir_ptr, read_only_paths, cancelled](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr, read_only_paths, cancelled, tool_logs](const json& args) -> Result<std::string> {
         auto pattern = args.value("pattern", std::string());
         if (pattern.empty()) {
             return std::unexpected(std::string("pattern is required"));
@@ -40,7 +42,6 @@ Tool make_grep_files_tool(std::shared_ptr<std::string> safe_dir_ptr,
         std::regex re(pattern);
         std::string result;
         int count = 0;
-        const int max_results = 200;
 
         auto search_file = [&](const std::filesystem::path& p) {
             std::ifstream file(p);
@@ -48,7 +49,7 @@ Tool make_grep_files_tool(std::shared_ptr<std::string> safe_dir_ptr,
                 return;
             std::string line;
             int line_num = 0;
-            while (std::getline(file, line) && count < max_results) {
+            while (std::getline(file, line)) {
                 line_num++;
                 try {
                     if (std::regex_search(line, re)) {
@@ -91,7 +92,7 @@ Tool make_grep_files_tool(std::shared_ptr<std::string> safe_dir_ptr,
             auto it = std::filesystem::recursive_directory_iterator(
                 *resolved, std::filesystem::directory_options::skip_permission_denied, ec);
             auto end = std::filesystem::recursive_directory_iterator{};
-            for (; it != end && count < max_results; it.increment(ec)) {
+            for (; it != end; it.increment(ec)) {
                 if (cancelled && *cancelled) {
                     result += "(interrupted)";
                     return result;
@@ -118,6 +119,21 @@ Tool make_grep_files_tool(std::shared_ptr<std::string> safe_dir_ptr,
         if (result.empty()) {
             result = "(no matches)";
         }
+
+        // Spill to tool_logs if output exceeds threshold
+        if (tool_logs) {
+            int nl = 0;
+            for (char c : result)
+                if (c == '\n') nl++;
+            if (nl > 100 || result.size() > 4096) {
+                size_t id = tool_logs->size() + 1;
+                tool_logs->push_back(std::move(result));
+                return "(long tool output: " + std::to_string(nl) + " lines, " +
+                       std::to_string(tool_logs->back().size()) + " chars. "
+                       "Use view_tool_output(id=" + std::to_string(id) + ") to read it)";
+            }
+        }
+
         return result;
     };
     return t;

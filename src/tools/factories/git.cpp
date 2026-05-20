@@ -88,7 +88,8 @@ Tool make_git_status_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout
     return t;
 }
 
-Tool make_git_diff_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout) {
+Tool make_git_diff_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout,
+    std::shared_ptr<std::vector<std::string>> tool_logs) {
     Tool t;
     t.name = "git_diff";
     t.description =
@@ -115,7 +116,7 @@ Tool make_git_diff_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout) 
                             "Must be under the safe directory."}}}}},
         {"required", json::array()}};
 
-    t.execute = [safe_dir_ptr](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr, tool_logs](const json& args) -> Result<std::string> {
         // Open git repository
         auto repo_res = open_git_repo(*safe_dir_ptr);
         if (!repo_res) {
@@ -207,12 +208,27 @@ Tool make_git_diff_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout) 
             result = staged ? "(no staged changes)" : "(no unstaged changes)";
         }
 
+        // Spill to tool_logs if output exceeds threshold
+        if (tool_logs) {
+            int nl = 0;
+            for (char c : result)
+                if (c == '\n') nl++;
+            if (nl > 100 || result.size() > 4096) {
+                size_t id = tool_logs->size() + 1;
+                tool_logs->push_back(std::move(result));
+                return "(long tool output: " + std::to_string(nl) + " lines, " +
+                       std::to_string(tool_logs->back().size()) + " chars. "
+                       "Use view_tool_output(id=" + std::to_string(id) + ") to read it)";
+            }
+        }
+
         return result;
     };
     return t;
 }
 
-Tool make_git_log_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout) {
+Tool make_git_log_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout,
+    std::shared_ptr<std::vector<std::string>> tool_logs) {
     Tool t;
     t.name = "git_log";
     t.description =
@@ -228,7 +244,7 @@ Tool make_git_log_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout) {
         {"properties",
             {{"max_count",
                 {{"type", "integer"},
-                    {"description", "Maximum number of commits to return (default 10, max 50)"}}},
+                    {"description", "Maximum number of commits to return (default 10)"}}},
              {"format",
                 {{"type", "string"},
                     {"enum", {"oneline", "short", "full"}},
@@ -239,7 +255,7 @@ Tool make_git_log_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout) {
                                    "Defaults to HEAD."}}}}},
         {"required", json::array()}};
 
-    t.execute = [safe_dir_ptr](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr, tool_logs](const json& args) -> Result<std::string> {
         // Open repo
         auto repo_res = open_git_repo(*safe_dir_ptr);
         if (!repo_res) {
@@ -251,7 +267,6 @@ Tool make_git_log_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout) {
 
         int max_count = args.value("max_count", 10);
         if (max_count < 1) max_count = 1;
-        if (max_count > 50) max_count = 50;
 
         std::string format = args.value("format", std::string("short"));
         std::string branch = args.value("branch", std::string());
@@ -311,15 +326,9 @@ Tool make_git_log_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout) {
         // Walk commits
         std::string result;
         int count = 0;
-        const size_t max_chars = 16000;
 
         git_oid oid;
         while (git_revwalk_next(&oid, walk) == 0 && count < max_count) {
-            // Check output size cap (safety valve)
-            if (result.size() >= max_chars) {
-                result += "...(output truncated at " + std::to_string(max_chars) + " chars)";
-                break;
-            }
 
             git_commit* commit = nullptr;
             err = git_commit_lookup(&commit, repo, &oid);
@@ -437,6 +446,20 @@ Tool make_git_log_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout) {
         // Remove trailing separator
         if (result.size() >= 4 && result.substr(result.size() - 4) == "---\n") {
             result.resize(result.size() - 4);
+        }
+
+        // Spill to tool_logs if output exceeds threshold
+        if (tool_logs) {
+            int nl = 0;
+            for (char c : result)
+                if (c == '\n') nl++;
+            if (nl > 100 || result.size() > 4096) {
+                size_t id = tool_logs->size() + 1;
+                tool_logs->push_back(std::move(result));
+                return "(long tool output: " + std::to_string(nl) + " lines, " +
+                       std::to_string(tool_logs->back().size()) + " chars. "
+                       "Use view_tool_output(id=" + std::to_string(id) + ") to read it)";
+            }
         }
 
         return result;
@@ -922,7 +945,8 @@ Tool make_git_restore_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeou
 // git_show
 // ===================================================================
 
-Tool make_git_show_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout) {
+Tool make_git_show_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout,
+    std::shared_ptr<std::vector<std::string>> tool_logs) {
     Tool t;
     t.name = "git_show";
     t.description =
@@ -943,7 +967,7 @@ Tool make_git_show_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout) 
                         "Git revision to show (commit hash, branch, "
                         "HEAD~N, tag, etc.). Defaults to HEAD."}}}}},
         {"required", json::array()}};
-    t.execute = [safe_dir_ptr](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr, tool_logs](const json& args) -> Result<std::string> {
         // Open repo
         auto repo_res = open_git_repo(*safe_dir_ptr);
         if (!repo_res) {
@@ -1108,6 +1132,20 @@ Tool make_git_show_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout) 
             const git_error* e = git_error_last();
             return std::unexpected("git_show error printing diff: " +
                 (e ? std::string(e->message) : std::string("unknown error")));
+        }
+
+        // Spill to tool_logs if output exceeds threshold
+        if (tool_logs) {
+            int nl = 0;
+            for (char c : result)
+                if (c == '\n') nl++;
+            if (nl > 100 || result.size() > 4096) {
+                size_t id = tool_logs->size() + 1;
+                tool_logs->push_back(std::move(result));
+                return "(long tool output: " + std::to_string(nl) + " lines, " +
+                       std::to_string(tool_logs->back().size()) + " chars. "
+                       "Use view_tool_output(id=" + std::to_string(id) + ") to read it)";
+            }
         }
 
         return result;
