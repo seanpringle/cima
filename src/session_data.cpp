@@ -36,6 +36,13 @@ json SessionData::to_json() const {
     }
     j["cmd_tools_enabled"] = std::move(cte);
 
+    // Serialise tool_gates map
+    json tg = json::object();
+    for (const auto& [name, enabled] : tool_gates) {
+        tg[name] = enabled;
+    }
+    j["tool_gates"] = std::move(tg);
+
     // Serialise snippets map
     json snip = json::object();
     for (const auto& [name, content] : snippets) {
@@ -88,6 +95,16 @@ void SessionData::from_json(const json& j) {
         for (auto it = j["cmd_tools_enabled"].begin(); it != j["cmd_tools_enabled"].end(); ++it) {
             if (it.value().is_boolean()) {
                 cmd_tools_enabled[it.key()] = it.value().get<bool>();
+            }
+        }
+    }
+
+    // Deserialise tool_gates map
+    tool_gates.clear();
+    if (j.contains("tool_gates") && j["tool_gates"].is_object()) {
+        for (auto it = j["tool_gates"].begin(); it != j["tool_gates"].end(); ++it) {
+            if (it.value().is_boolean()) {
+                tool_gates[it.key()] = it.value().get<bool>();
             }
         }
     }

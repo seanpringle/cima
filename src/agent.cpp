@@ -3,6 +3,14 @@
 #include "client.h"
 #include "config.h"
 #include "session_data.h"
+#include "tools/lua_engine.h"
+
+extern "C" {
+#include <lua.h>
+#include <lualib.h>
+#include <lauxlib.h>
+}
+
 #include <algorithm>
 #include <expected>
 #include <thread>
@@ -91,6 +99,7 @@ PrimaryAgent::~PrimaryAgent() {
     session_data.cmake_enabled = cmake_enabled;
     session_data.mcp_enabled = mcp_enabled;
     session_data.cmd_tools_enabled = cmd_tools_enabled;
+    session_data.tool_gates = tool_gates;
 
     std::error_code ec;
     auto cwd = std::filesystem::current_path(ec);
@@ -123,6 +132,14 @@ void PrimaryAgent::create_chat_session() {
         std::lock_guard<std::mutex> lock(cs->mutex);
         cs->pending.emplace_back(text, type);
     });
+
+    // ── Lua tool — owned by PrimaryAgent, registered only for primary session ──
+    lua_state_.reset(luaL_newstate(), lua_close);
+    lua_mutex_ = std::make_shared<std::mutex>();
+    if (lua_state_) {
+        luaL_openlibs(lua_state_.get());
+        session->tools_for_testing().add(make_lua_tool(lua_state_, lua_mutex_, cfg.lua_timeout));
+    }
 }
 
 void PrimaryAgent::restore_session_data() {
@@ -183,6 +200,21 @@ void PrimaryAgent::restore_session_data() {
     cmake_enabled = session_data.cmake_enabled;
     session->set_cmake_enabled(session_data.cmake_enabled);
     mcp_enabled = session_data.mcp_enabled;
+
+    // ── Tool gates: start with defaults for tools that start OFF ──
+    tool_gates.clear();
+    tool_gates["run_bash"] = bash_enabled;
+    tool_gates["cmake_configure"] = cmake_enabled;
+    tool_gates["cmake_build"] = cmake_enabled;
+    tool_gates["cmake_ctest"] = cmake_enabled;
+    // Override with persisted values from session data.
+    for (const auto& [name, enabled] : session_data.tool_gates) {
+        tool_gates[name] = enabled;
+    }
+    // Propagate to session.
+    for (const auto& [name, enabled] : tool_gates) {
+        session->set_tool_enabled(name, enabled);
+    }
 
     // Restore cmd_tools_enabled, keeping entries for config commands AND
     // session custom commands (silently dropping truly stale entries).

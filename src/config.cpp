@@ -42,6 +42,12 @@ std::string Config::CMAKE_PROMPT_SNIPPET =
     "`cmake_ctest()` runs the test suite.\n"
     "All return raw output with optional head/tail trimming.\n";
 
+std::string Config::LUA_PROMPT_SNIPPET =
+    "## Lua tool\n\n"
+    "`lua()` executes Lua code in a persistent Lua VM. The Lua state persists "
+    "across calls (global variables carry over). Returns a JSON array of scalars "
+    "(strings and numbers only). Tables cannot be returned.\n";
+
 // ---------------------------------------------------------------------------
 // Config file path
 // ---------------------------------------------------------------------------

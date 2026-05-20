@@ -107,6 +107,7 @@ struct Config {
     static std::string SYSTEM_PROMPT;
     static std::string SUBAGENT_SYSTEM_PROMPT;
     static std::string CMAKE_PROMPT_SNIPPET;
+    static std::string LUA_PROMPT_SNIPPET;
 
     /// Load config from ~/.config/cima/cima.json, applying defaults for
     /// any missing fields.  Creates the file with defaults if it doesn't exist.

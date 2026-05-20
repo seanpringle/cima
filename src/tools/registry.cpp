@@ -231,6 +231,25 @@ Tool* ToolRegistry::find(const std::string& name) {
     return nullptr;
 }
 
+bool ToolRegistry::has(const std::string& name) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    for (const auto& t : tools_) {
+        if (t.name == name)
+            return true;
+    }
+    return false;
+}
+
+std::vector<std::string> ToolRegistry::tool_names() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::vector<std::string> names;
+    names.reserve(tools_.size());
+    for (const auto& t : tools_) {
+        names.push_back(t.name);
+    }
+    return names;
+}
+
 bool ToolRegistry::remove(const std::string& name) {
     std::lock_guard<std::mutex> lock(mutex_);
     for (auto it = tools_.begin(); it != tools_.end(); ++it) {

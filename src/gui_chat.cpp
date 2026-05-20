@@ -575,6 +575,70 @@ void render_config_tab(PrimaryAgent& tab) {
         }
     }
 
+    // ── Tool Gates section ──
+    {
+        Separator();
+        Text("Tool Gates:");
+
+        // Collect registered tool names, sorted by name.
+        auto names = session.tools_for_testing().tool_names();
+        std::sort(names.begin(), names.end());
+
+        // Categorisation helpers.
+        auto category_of = [](const std::string& name) -> const char* {
+            if (name == "list_files" || name == "read_file" || name == "read_file_lines" ||
+                name == "grep_files" || name == "project_tree" || name == "write_file" ||
+                name == "edit_file" || name == "delete_file" || name == "move_file" ||
+                name == "rename_file")
+                return "File";
+            if (name == "git_status" || name == "git_diff" || name == "git_log" ||
+                name == "git_show" || name == "git_add" || name == "git_commit" ||
+                name == "git_restore")
+                return "Git";
+            if (name == "web_search" || name == "web_fetch")
+                return "Web";
+            if (name == "cmake_configure" || name == "cmake_build" || name == "cmake_ctest")
+                return "Build";
+            if (name == "run_bash" || name == "lua" || name == "call_subagent")
+                return "Execution";
+            return "Other";
+        };
+
+        const char* last_cat = nullptr;
+        for (const auto& name : names) {
+            // Skip MCP tools (gated by server lifecycle), plan tools (always on),
+            // view_tool_output (infrastructure), and cmd_* (shown separately).
+            // Skip MCP tools (gated by server lifecycle), plan tools (always on),
+            // view_tool_output (infrastructure), cmd_* (shown separately),
+            // run_bash and cmake_* (have their own dedicated checkboxes).
+            if (name.rfind("mcp_", 0) == 0 || name == "read_plan" || name == "write_plan" ||
+                name == "view_tool_output" || name.rfind("cmd_", 0) == 0 ||
+                name == "run_bash" ||
+                name == "cmake_configure" || name == "cmake_build" || name == "cmake_ctest")
+                continue;
+
+            const char* cat = category_of(name);
+            if (cat != last_cat) {
+                Text("── %s ──", cat);
+                last_cat = cat;
+                Indent();
+            }
+
+            bool enabled = session.tool_enabled(name);
+            if (Checkbox(name.c_str(), &enabled)) {
+                tab.tool_gates[name] = enabled;
+                session.set_tool_enabled(name, enabled);
+            }
+            if (IsItemHovered()) {
+                BeginTooltip();
+                TextUnformatted(name.c_str());
+                EndTooltip();
+            }
+        }
+        if (last_cat)
+            Unindent();
+    }
+
     // ── MCP Servers section ──
     if (!cfg.mcp_servers.empty()) {
         Separator();

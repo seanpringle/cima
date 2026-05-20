@@ -78,6 +78,12 @@ class ToolRegistry {
     /// Return the names of all registered tools with the given permission.
     std::set<std::string> tool_names_by_permission(ToolPermission perm) const;
 
+    /// Return true if a tool with the given name is registered.
+    bool has(const std::string& name) const;
+
+    /// Return the names of all registered tools.
+    std::vector<std::string> tool_names() const;
+
     /// Remove a tool by name.  Returns true if the tool was found and removed.
     bool remove(const std::string& name);
 

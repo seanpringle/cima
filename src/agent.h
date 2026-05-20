@@ -2,7 +2,10 @@
 
 #include "gui_app.h"
 #include "session_data.h"
+
 #include <memory>
+
+struct lua_State;
 
 struct Agent {
     std::unique_ptr<ChatSession> session;
@@ -75,8 +78,14 @@ struct PrimaryAgent : Agent {
     // Custom cmd_tools: per-tool enabled state (persisted)
     std::map<std::string, bool> cmd_tools_enabled;
 
+    // Per-tool gate overrides (persisted): tool name -> enabled
+    std::map<std::string, bool> tool_gates;
+
     // MCP: per-server error message (transient, not persisted)
     std::map<std::string, std::string> mcp_error;
+
+    std::shared_ptr<lua_State> lua_state_;   // persistent Lua VM (nullptr = disabled)
+    std::shared_ptr<std::mutex> lua_mutex_;  // mutex for thread-safe Lua access
 
     std::vector<SubAgent> subagents;
 

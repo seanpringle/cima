@@ -16,13 +16,18 @@
 
 using json = nlohmann::json;
 
-/// Shared gating state for bash and cmake tools.
+/// Shared gating state for tool enable/disable checkboxes.
 /// Read-write subagents share the primary agent's GatingState via shared_ptr,
 /// so gate changes propagate automatically.
 struct GatingState {
     bool bash_enabled = false;
     bool cmake_enabled = false;
     std::map<std::string, bool> custom_tools; // cmd_<name> -> enabled
+
+    // Per-tool gates: maps tool name -> enabled.
+    // A tool with no entry is unconditionally allowed (backward compatible).
+    // A tool with an entry set to false is denied in filter_allowed_tools().
+    std::map<std::string, bool> tool_gates;
 };
 
 struct ChatResult {
@@ -127,6 +132,20 @@ class ChatSession {
         return it != gates_->custom_tools.end() && it->second;
     }
 
+    /// Enable/disable any tool by name via tool_gates.
+    /// When disabled, an entry tool_gates[name]=false is created.
+    /// When enabled, the entry is removed (restoring default-allow).
+    void set_tool_enabled(const std::string& name, bool v) {
+        if (v) gates_->tool_gates.erase(name);
+        else   gates_->tool_gates[name] = false;
+    }
+    /// Return whether a tool is enabled.
+    /// A tool with no entry in tool_gates is allowed by default.
+    bool tool_enabled(const std::string& name) const {
+        auto it = gates_->tool_gates.find(name);
+        return it == gates_->tool_gates.end() || it->second;
+    }
+
     /// Provider name this session belongs to.
     const std::string& provider_name() const { return provider_name_; }
 
@@ -226,7 +245,5 @@ class ChatSession {
     std::shared_ptr<GatingState> gates_ = std::make_shared<GatingState>();
     bool is_read_only_ = false;
     std::shared_ptr<std::vector<std::string>> tool_logs_;
-    std::shared_ptr<lua_State> lua_state_;   // persistent Lua VM (nullptr = disabled)
-    std::shared_ptr<std::mutex> lua_mutex_;  // mutex for thread-safe Lua access
     McpRegistry mcp_registry_;
 };

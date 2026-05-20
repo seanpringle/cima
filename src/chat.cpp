@@ -1,12 +1,5 @@
 #include "chat.h"
 #include "plan.h"
-#include "tools/lua_engine.h"
-
-extern "C" {
-#include <lua.h>
-#include <lualib.h>
-#include <lauxlib.h>
-}
 
 #include <exception>
 #include <filesystem>
@@ -35,9 +28,7 @@ ChatSession::ChatSession(
       system_prompt_(config.SYSTEM_PROMPT), client_(provider.api_base, provider.api_key),
       file_modified_cb_(std::make_shared<FileModifiedCallback>()),
       cancelled_(cancelled ? std::move(cancelled) : make_cancellation_token()),
-      gates_(gates ? std::move(gates) : std::make_shared<GatingState>()),
-      lua_state_(luaL_newstate(), lua_close),
-      lua_mutex_(std::make_shared<std::mutex>()) {
+      gates_(gates ? std::move(gates) : std::make_shared<GatingState>()) {
     // Share the cancellation token with tools and client
     tools_.set_cancelled(cancelled_);
     client_.set_cancelled(cancelled_);
@@ -67,12 +58,6 @@ ChatSession::ChatSession(
 
     // view_tool_output — always available to all agents
     tools_.add(make_view_tool_output_tool(tool_logs_));
-
-    // ── Lua tool — always available (removed for subagents in create_subagent) ──
-    if (lua_state_) {
-        luaL_openlibs(lua_state_.get());
-        tools_.add(make_lua_tool(lua_state_, lua_mutex_, config_.lua_timeout));
-    }
 }
 
 // ===================================================================
@@ -97,10 +82,10 @@ std::unique_ptr<ChatSession> ChatSession::create_subagent(
     session->system_prompt_ = std::move(sp);
     session->is_read_only_ = read_only;
 
-    // Remove bash, write_plan, and lua tools (read_plan is kept for subagents)
+    // Remove bash and write_plan tools (read_plan is kept for subagents).
+    // Lua tool is never registered for subagents — it's owned by PrimaryAgent.
     session->tools_.remove("run_bash");
     session->tools_.remove("write_plan");
-    session->tools_.remove("lua");
 
     if (read_only) {
         // File write tools
@@ -193,6 +178,9 @@ std::string ChatSession::build_effective_prompt() const {
     if (gates_->cmake_enabled && has_cmake_project()) {
         prompt += Config::CMAKE_PROMPT_SNIPPET;
     }
+    if (tools_.has("lua") && tool_enabled("lua")) {
+        prompt += Config::LUA_PROMPT_SNIPPET;
+    }
     if (mcp_registry_.has_running_servers()) {
         prompt += "\n## MCP tools\n\n"
                   "Tools from external MCP servers are available.\n"
@@ -206,14 +194,22 @@ std::set<std::string> ChatSession::filter_allowed_tools() const {
     std::set<std::string> allowed;
     for (const auto& t : tools_.tools()) {
         bool include = true;
+        // CMake tools: require cmake_enabled AND CMakeLists.txt
         if (cmake_tool_names.count(t.name) && (!gates_->cmake_enabled || !has_cmake_project()))
             include = false;
+        // Bash: gated by bash_enabled
         if (t.name == "run_bash" && !gates_->bash_enabled)
             include = false;
         // Custom cmd_* tools: each gated individually by gates_->custom_tools.
         if (t.name.rfind("cmd_", 0) == 0) {
             auto it = gates_->custom_tools.find(t.name);
             if (it == gates_->custom_tools.end() || !it->second)
+                include = false;
+        }
+        // Generic per-tool gate from tool_gates map.
+        if (include) {
+            auto it = gates_->tool_gates.find(t.name);
+            if (it != gates_->tool_gates.end() && !it->second)
                 include = false;
         }
         if (include)
