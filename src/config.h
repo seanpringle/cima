@@ -91,6 +91,7 @@ struct Config {
     int grep_timeout = 10;
     int web_search_timeout = 15;
     int web_fetch_timeout = 15;
+    int lua_timeout = 30;      // Lua eval execution timeout
 
     // ── CMake tools ──
     bool cmake_enabled = false; // user-facing toggle (like bash_enabled)

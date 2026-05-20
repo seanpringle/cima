@@ -112,6 +112,7 @@ json Config::to_json() const {
     j["grep_timeout"] = grep_timeout;
     j["web_search_timeout"] = web_search_timeout;
     j["web_fetch_timeout"] = web_fetch_timeout;
+    j["lua_timeout"] = lua_timeout;
     // ── Subagents ──
     json sa_arr = json::array();
     for (const auto& sa : subagents) {
@@ -316,6 +317,7 @@ Config Config::load() {
         load_timeout("grep_timeout", cfg.grep_timeout);
         load_timeout("web_search_timeout", cfg.web_search_timeout);
         load_timeout("web_fetch_timeout", cfg.web_fetch_timeout);
+        load_timeout("lua_timeout", cfg.lua_timeout);
 
         // Font settings
         if (j.contains("font_sans") && j["font_sans"].is_string()) {

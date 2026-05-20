@@ -35,6 +35,7 @@ find_package(CURL REQUIRED)
 find_package(SDL3 REQUIRED)
 find_package(Catch2 REQUIRED)
 find_package(LibXml2 REQUIRED)
+find_package(Lua 5.4 REQUIRED)
 
 # ── fontconfig (font discovery on Linux) ──
 find_package(PkgConfig QUIET)
@@ -134,16 +135,19 @@ add_library(cima_core
     src/session.cpp
     src/session_data.cpp
     src/tools/factories/subagent.cpp
+    src/tools/factories/lua.cpp
     src/mcp/mcp_client.cpp
     src/mcp/mcp_registry.cpp
 )
 target_include_directories(cima_core PUBLIC src)
+target_include_directories(cima_core PUBLIC ${LUA_INCLUDE_DIR})
 target_link_libraries(cima_core PUBLIC
     nlohmann_json::nlohmann_json
     CURL::libcurl
     cima_git2
     LibXml2::LibXml2
     html2md
+    ${LUA_LIBRARIES}
 )
 
 add_executable(cima

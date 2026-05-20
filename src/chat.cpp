@@ -1,5 +1,12 @@
 #include "chat.h"
 #include "plan.h"
+#include "tools/lua_engine.h"
+
+extern "C" {
+#include <lua.h>
+#include <lualib.h>
+#include <lauxlib.h>
+}
 
 #include <exception>
 #include <filesystem>
@@ -28,7 +35,9 @@ ChatSession::ChatSession(
       system_prompt_(config.SYSTEM_PROMPT), client_(provider.api_base, provider.api_key),
       file_modified_cb_(std::make_shared<FileModifiedCallback>()),
       cancelled_(cancelled ? std::move(cancelled) : make_cancellation_token()),
-      gates_(gates ? std::move(gates) : std::make_shared<GatingState>()) {
+      gates_(gates ? std::move(gates) : std::make_shared<GatingState>()),
+      lua_state_(luaL_newstate(), lua_close),
+      lua_mutex_(std::make_shared<std::mutex>()) {
     // Share the cancellation token with tools and client
     tools_.set_cancelled(cancelled_);
     client_.set_cancelled(cancelled_);
@@ -58,6 +67,12 @@ ChatSession::ChatSession(
 
     // view_tool_output — always available to all agents
     tools_.add(make_view_tool_output_tool(tool_logs_));
+
+    // ── Lua tool — always available (removed for subagents in create_subagent) ──
+    if (lua_state_) {
+        luaL_openlibs(lua_state_.get());
+        tools_.add(make_lua_tool(lua_state_, lua_mutex_, config_.lua_timeout));
+    }
 }
 
 // ===================================================================
@@ -82,9 +97,10 @@ std::unique_ptr<ChatSession> ChatSession::create_subagent(
     session->system_prompt_ = std::move(sp);
     session->is_read_only_ = read_only;
 
-    // Remove bash and write_plan tools (read_plan is kept for subagents)
+    // Remove bash, write_plan, and lua tools (read_plan is kept for subagents)
     session->tools_.remove("run_bash");
     session->tools_.remove("write_plan");
+    session->tools_.remove("lua");
 
     if (read_only) {
         // File write tools

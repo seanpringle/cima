@@ -226,5 +226,7 @@ class ChatSession {
     std::shared_ptr<GatingState> gates_ = std::make_shared<GatingState>();
     bool is_read_only_ = false;
     std::shared_ptr<std::vector<std::string>> tool_logs_;
+    std::shared_ptr<lua_State> lua_state_;   // persistent Lua VM (nullptr = disabled)
+    std::shared_ptr<std::mutex> lua_mutex_;  // mutex for thread-safe Lua access
     McpRegistry mcp_registry_;
 };
