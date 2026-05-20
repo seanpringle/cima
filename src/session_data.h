@@ -26,7 +26,8 @@ struct SessionData {
     json plan;                               // { "plan": "...", "comments": [...] }
     bool bash_enabled = false;               // run_bash tool enabled for this session
     bool cmake_enabled = false;              // cmake tools enabled for this session
-    std::map<std::string, bool> mcp_enabled; // per-server MCP enabled state
+    std::map<std::string, bool> mcp_enabled;    // per-server MCP enabled state
+    std::map<std::string, bool> cmd_tools_enabled; // per-cmd-tool enabled state
 
     json to_json() const;
     void from_json(const json& j);

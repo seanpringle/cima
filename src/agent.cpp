@@ -90,6 +90,7 @@ PrimaryAgent::~PrimaryAgent() {
     session_data.bash_enabled = bash_enabled;
     session_data.cmake_enabled = cmake_enabled;
     session_data.mcp_enabled = mcp_enabled;
+    session_data.cmd_tools_enabled = cmd_tools_enabled;
 
     std::error_code ec;
     auto cwd = std::filesystem::current_path(ec);
@@ -182,6 +183,25 @@ void PrimaryAgent::restore_session_data() {
     cmake_enabled = session_data.cmake_enabled;
     session->set_cmake_enabled(session_data.cmake_enabled);
     mcp_enabled = session_data.mcp_enabled;
+
+    // Restore cmd_tools_enabled, silently dropping stale entries
+    // (tools whose name no longer appears in cfg.cmd_tools).
+    cmd_tools_enabled = session_data.cmd_tools_enabled;
+    for (auto it = cmd_tools_enabled.begin(); it != cmd_tools_enabled.end(); ) {
+        bool found = false;
+        for (const auto& ct : cfg.cmd_tools) {
+            if (ct.name == it->first) { found = true; break; }
+        }
+        if (!found) {
+            it = cmd_tools_enabled.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    // Apply enabled state to the session's gates (shared with rw subagents).
+    for (const auto& [name, enabled] : cmd_tools_enabled) {
+        session->set_custom_tool_enabled("cmd_" + name, enabled);
+    }
 }
 
 void PrimaryAgent::create_subagents() {

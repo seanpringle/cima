@@ -29,6 +29,13 @@ json SessionData::to_json() const {
     }
     j["mcp_enabled"] = std::move(mcp);
 
+    // Serialise cmd_tools_enabled map
+    json cte = json::object();
+    for (const auto& [name, enabled] : cmd_tools_enabled) {
+        cte[name] = enabled;
+    }
+    j["cmd_tools_enabled"] = std::move(cte);
+
     return j;
 }
 
@@ -54,6 +61,16 @@ void SessionData::from_json(const json& j) {
         for (auto it = j["mcp_enabled"].begin(); it != j["mcp_enabled"].end(); ++it) {
             if (it.value().is_boolean()) {
                 mcp_enabled[it.key()] = it.value().get<bool>();
+            }
+        }
+    }
+
+    // Deserialise cmd_tools_enabled map
+    cmd_tools_enabled.clear();
+    if (j.contains("cmd_tools_enabled") && j["cmd_tools_enabled"].is_object()) {
+        for (auto it = j["cmd_tools_enabled"].begin(); it != j["cmd_tools_enabled"].end(); ++it) {
+            if (it.value().is_boolean()) {
+                cmd_tools_enabled[it.key()] = it.value().get<bool>();
             }
         }
     }

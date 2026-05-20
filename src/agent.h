@@ -51,6 +51,9 @@ struct PrimaryAgent : Agent {
     // MCP: per-server enabled state (persisted in assistant_data.json)
     std::map<std::string, bool> mcp_enabled;
 
+    // Custom cmd_tools: per-tool enabled state (persisted)
+    std::map<std::string, bool> cmd_tools_enabled;
+
     // MCP: per-server error message (transient, not persisted)
     std::map<std::string, std::string> mcp_error;
 

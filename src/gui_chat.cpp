@@ -629,7 +629,26 @@ void render_config_tab(PrimaryAgent& tab) {
         }
     }
 
-    Separator();
+    // ── Custom cmd_tools checkboxes ──
+    if (!cfg.cmd_tools.empty()) {
+        Separator();
+        Text("Custom Commands:");
+        for (const auto& ct : cfg.cmd_tools) {
+            std::string tool_name = "cmd_" + ct.name;
+            bool enabled = tab.cmd_tools_enabled[ct.name];
+            bool changed = Checkbox(ct.name.c_str(), &enabled);
+            if (changed) {
+                tab.cmd_tools_enabled[ct.name] = enabled;
+                session.set_custom_tool_enabled(tool_name, enabled);
+            }
+            if (IsItemHovered()) {
+                BeginTooltip();
+                TextUnformatted(ct.description.c_str());
+                Text("command: %s", ct.command.c_str());
+                EndTooltip();
+            }
+        }
+    }
 
     Separator();
 

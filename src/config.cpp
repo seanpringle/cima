@@ -117,6 +117,17 @@ json Config::to_json() const {
     }
     j["subagents"] = std::move(sa_arr);
 
+    // ── cmd_tools ──
+    json ct_arr = json::array();
+    for (const auto& ct : cmd_tools) {
+        json ctj;
+        ctj["name"] = ct.name;
+        ctj["description"] = ct.description;
+        ctj["command"] = ct.command;
+        ct_arr.push_back(std::move(ctj));
+    }
+    j["cmd_tools"] = std::move(ct_arr);
+
     return j;
 }
 
@@ -251,6 +262,19 @@ Config Config::load() {
                 sa.read_only = saj.value("read_only", false);
                 if (!sa.name.empty()) {
                     cfg.subagents.push_back(std::move(sa));
+                }
+            }
+        }
+
+        // ── Parse cmd_tools array ──
+        if (j.contains("cmd_tools") && j["cmd_tools"].is_array()) {
+            for (const auto& ctj : j["cmd_tools"]) {
+                CmdToolConfig ct;
+                ct.name = ctj.value("name", std::string());
+                ct.description = ctj.value("description", std::string());
+                ct.command = ctj.value("command", std::string());
+                if (!ct.name.empty() && !ct.command.empty()) {
+                    cfg.cmd_tools.push_back(std::move(ct));
                 }
             }
         }

@@ -43,6 +43,12 @@ ChatSession::ChatSession(
     tools_.add(make_cmake_configure_tool(safe_dir_, config.cmake_configure_timeout, cancelled_));
     tools_.add(make_cmake_build_tool(safe_dir_, config.cmake_build_timeout, cancelled_));
     tools_.add(make_cmake_ctest_tool(safe_dir_, config.cmake_ctest_timeout, cancelled_));
+
+    // Custom cmd_tools — registered from config.
+    for (const auto& ct : config.cmd_tools) {
+        tools_.add(make_cmd_tool(ct.name, ct.description, ct.command,
+                                 safe_dir_, config.bash_timeout, cancelled_));
+    }
 }
 
 // ===================================================================
@@ -179,6 +185,12 @@ std::set<std::string> ChatSession::filter_allowed_tools() const {
             include = false;
         if (t.name == "run_bash" && !gates_->bash_enabled)
             include = false;
+        // Custom cmd_* tools: each gated individually by gates_->custom_tools.
+        if (t.name.rfind("cmd_", 0) == 0) {
+            auto it = gates_->custom_tools.find(t.name);
+            if (it == gates_->custom_tools.end() || !it->second)
+                include = false;
+        }
         if (include)
             allowed.insert(t.name);
     }

@@ -52,6 +52,13 @@ struct SubagentConfig {
     bool read_only = false;  // if true, no write tools (file, git)
 };
 
+/// A single custom command tool definition from cima.json.
+struct CmdToolConfig {
+    std::string name;        // used as "cmd_<name>" tool name
+    std::string description; // shown in tool description
+    std::string command;     // predefined bash command to execute
+};
+
 struct Provider {
     std::string name;     // unique identifier, e.g. "opencode.go"
     std::string api_base; // e.g. "https://api.opencode.go/v1"
@@ -70,6 +77,7 @@ struct Config {
     int context_limit = 300000;                  // model context window (tokens)
     std::map<std::string, std::string> snippets; // from cima.json
     std::vector<SubagentConfig> subagents;       // from cima.json
+    std::vector<CmdToolConfig> cmd_tools;        // from cima.json
 
     // Tool timeouts (seconds, 0 = no timeout)
     int subagent_timeout = 600;

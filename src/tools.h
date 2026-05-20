@@ -195,6 +195,14 @@ Tool make_rename_file_tool(std::shared_ptr<std::string> safe_dir_ptr);
 
 class ChatSession; // forward decl for SubagentLookup
 
+// ── Custom command tool ──
+Tool make_cmd_tool(const std::string& name,
+    const std::string& description,
+    const std::string& command,
+    std::shared_ptr<std::string> safe_dir_ptr,
+    int timeout,
+    CancellationToken cancelled);
+
 // ── CMake tools ──
 Tool make_cmake_configure_tool(
     std::shared_ptr<std::string> safe_dir_ptr, int timeout, CancellationToken cancelled);

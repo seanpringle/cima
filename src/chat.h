@@ -8,6 +8,7 @@
 #include "tools.h"
 #include "types.h"
 
+#include <map>
 #include <nlohmann/json.hpp>
 
 #include <string>
@@ -20,6 +21,7 @@ using json = nlohmann::json;
 struct GatingState {
     bool bash_enabled = false;
     bool cmake_enabled = false;
+    std::map<std::string, bool> custom_tools; // cmd_<name> -> enabled
 };
 
 struct ChatResult {
@@ -113,6 +115,16 @@ class ChatSession {
 
     /// Access the shared gating state (for propagating gates to subagents).
     std::shared_ptr<GatingState> gates() const { return gates_; }
+
+    /// Enable/disable a custom cmd_* tool by its full name (e.g. "cmd_lint").
+    void set_custom_tool_enabled(const std::string& name, bool v) {
+        if (v) gates_->custom_tools[name] = true;
+        else   gates_->custom_tools.erase(name);
+    }
+    bool custom_tool_enabled(const std::string& name) const {
+        auto it = gates_->custom_tools.find(name);
+        return it != gates_->custom_tools.end() && it->second;
+    }
 
     /// Provider name this session belongs to.
     const std::string& provider_name() const { return provider_name_; }
