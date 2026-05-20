@@ -650,6 +650,96 @@ void render_config_tab(PrimaryAgent& tab) {
         }
     }
 
+    // ── Session Snippets CRUD ──
+    {
+        Separator();
+        Text("Session Snippets:");
+
+        // Validation helper
+        auto validate_snippet_name = [](const std::string& name) -> std::string {
+            if (name.empty())
+                return "Name must not be empty";
+            for (char c : name) {
+                if (std::isspace(static_cast<unsigned char>(c)))
+                    return "Name must not contain spaces";
+                if (c == '!')
+                    return "Name must not contain '!'";
+            }
+            return {};
+        };
+
+        // ── Inline editor (Add / Edit) ──
+        if (tab.snippet_edit.active) {
+            PushID("snippet-edit");
+            InputText("Name", tab.snippet_edit.name_buf.data(),
+                tab.snippet_edit.name_buf.capacity());
+            InputText("Content", tab.snippet_edit.content_buf.data(),
+                tab.snippet_edit.content_buf.capacity());
+            if (!tab.snippet_edit.error.empty()) {
+                PushStyleColor(ImGuiCol_Text, IM_COL32(255, 0, 0, 255));
+                TextUnformatted(tab.snippet_edit.error.c_str());
+                PopStyleColor();
+            }
+            if (Button("Save")) {
+                std::string name(tab.snippet_edit.name_buf.c_str());
+                std::string err = validate_snippet_name(name);
+                if (!err.empty()) {
+                    tab.snippet_edit.error = std::move(err);
+                } else {
+                    // Remove old entry if renaming an existing snippet
+                    if (!tab.snippet_edit.original_name.empty())
+                        tab.session_data.snippets.erase(tab.snippet_edit.original_name);
+                    tab.session_data.snippets[name] =
+                        std::string(tab.snippet_edit.content_buf.c_str());
+                    tab.snippet_edit.active = false;
+                    tab.snippet_edit.error.clear();
+                }
+            }
+            SameLine();
+            if (Button("Cancel")) {
+                tab.snippet_edit.active = false;
+                tab.snippet_edit.error.clear();
+            }
+            PopID();
+        } else {
+            if (Button("+ Add Snippet")) {
+                tab.snippet_edit = {};
+                tab.snippet_edit.active = true;
+                tab.snippet_edit.original_name.clear();
+                tab.snippet_edit.name_buf.clear();
+                tab.snippet_edit.content_buf.clear();
+                tab.snippet_edit.error.clear();
+            }
+        }
+
+        // ── List existing snippets ──
+        for (auto it = tab.session_data.snippets.begin();
+             it != tab.session_data.snippets.end();) {
+            PushID(it->first.c_str());
+            if (Button("X")) {
+                it = tab.session_data.snippets.erase(it);
+                PopID();
+                continue;
+            }
+            SameLine();
+            // Show name and content preview (first 60 chars)
+            std::string preview = it->second.substr(0, 60);
+            if (it->second.size() > 60)
+                preview += "…";
+            Text("%s: \"%s\"", it->first.c_str(), preview.c_str());
+            SameLine();
+            if (Button("Edit")) {
+                tab.snippet_edit.active = true;
+                tab.snippet_edit.original_name = it->first;
+                tab.snippet_edit.name_buf = it->first;
+                tab.snippet_edit.content_buf = it->second;
+                tab.snippet_edit.error.clear();
+            }
+            ++it;
+            PopID();
+        }
+    }
+
     Separator();
 
     // ── Compact button ──
@@ -699,7 +789,9 @@ void render_config_tab(PrimaryAgent& tab) {
 
 // ── Tag expansion for !snippet-name references ──
 // Expands !snippetname to the full snippet content.  Non-matching tags are left as-is.
-static std::string expand_tags(std::string input) {
+// Session snippets take precedence over config snippets when names collide.
+static std::string expand_tags(
+    std::string input, const std::map<std::string, std::string>& session_snippets) {
     std::string result;
     size_t i = 0;
     while (i < input.size()) {
@@ -710,7 +802,15 @@ static std::string expand_tags(std::string input) {
                 end++;
             std::string name = input.substr(start, end - start);
             if (!name.empty()) {
-                auto it = cfg.snippets.find(name);
+                // Session snippets take precedence
+                auto it = session_snippets.find(name);
+                if (it != session_snippets.end()) {
+                    result += it->second;
+                    i = end;
+                    continue;
+                }
+                // Fall back to config/file-based snippets
+                it = cfg.snippets.find(name);
                 if (it != cfg.snippets.end()) {
                     result += it->second;
                     i = end;
@@ -910,7 +1010,7 @@ void render_subagent_chat(SubAgent& tab) {
     EndChild();
 }
 
-void render_chat_ui(Agent& tab, bool& done) {
+void render_chat_ui(PrimaryAgent& tab, bool& done) {
     auto& ui = tab.ui_state;
     auto& chat = *tab.chat_state;
     auto& session = *tab.session;
@@ -1051,12 +1151,18 @@ void render_chat_ui(Agent& tab, bool& done) {
     }
 
     // ── Snippet reference combo (inserts !snippetname tag at cursor) ──
+    // Merges config snippets and session snippets; session names override config.
     {
-        if (!cfg.snippets.empty()) {
+        // Build combined map: session snippets override config snippets
+        auto all_snippets = cfg.snippets;
+        for (const auto& [name, content] : tab.session_data.snippets) {
+            all_snippets[name] = content; // session wins
+        }
+        if (!all_snippets.empty()) {
             SameLine(0, GetStyle().ItemSpacing.y);
             SetNextItemWidth(GetContentRegionAvail().x); // ~combo_width
             if (BeginCombo("##snippet-ref", "snippets")) {
-                for (const auto& [name, content] : cfg.snippets) {
+                for (const auto& [name, content] : all_snippets) {
                     if (Selectable(name.c_str())) {
                         std::string tag = "!" + name;
                         insert_text_at_cursor(tag);
@@ -1111,7 +1217,8 @@ void render_chat_ui(Agent& tab, bool& done) {
             // Push to UI with tags visible (user sees @Page / !Snippet)
             ui.push_entry(EntryType::UserText, input, false);
             // Expand !snippet-name tags before sending to the agent
-            string expanded = expand_tags(input);
+            // Session snippets take precedence over config snippets.
+            string expanded = expand_tags(input, tab.session_data.snippets);
             tab.start_chat(expanded);
             for (auto it = history.begin(); it != history.end();
                 it = *it == input ? history.erase(it) : ++it)
