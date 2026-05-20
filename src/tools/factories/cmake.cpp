@@ -129,18 +129,6 @@ static Result<std::string> run_cmake_command(
     return output;
 }
 
-// ── Helper: build the command string with optional head/tail filtering ──
-static std::string build_cmd(const std::string& base_cmd, int head, int tail) {
-    std::string cmd = base_cmd + " 2>&1";
-    if (head > 0) {
-        cmd += " | head -n " + std::to_string(head);
-    }
-    if (tail > 0) {
-        cmd += " | tail -n " + std::to_string(tail);
-    }
-    return cmd;
-}
-
 // ===================================================================
 // cmake_configure
 // ===================================================================
@@ -155,28 +143,19 @@ Tool make_cmake_configure_tool(std::shared_ptr<std::string> safe_dir_ptr,
         "to configure the project into a build/ folder and enable "
         "generating compile commands.\n"
         "Returns raw combined stdout/stderr.\n"
-        "If H is 0, omit head step. If T is 0, omit tail step.\n"
         "Use `flags` array for additional cmake -D flags, "
         "e.g. flags=[\"-DCMAKE_BUILD_TYPE=Debug\", \"-DBUILD_TESTS=OFF\"].";
     t.permission = ToolPermission::Write;
     t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},
         {"properties",
-            {{"head",
-                {{"type", "integer"},
-                    {"description", "Take first N lines (0 = no head filter, default 0)"}}},
-             {"tail",
-                {{"type", "integer"},
-                    {"description", "Take last N lines (0 = no tail filter, default 0)"}}},
-             {"flags",
+            {{"flags",
                 {{"type", "array"}, {"items", {{"type", "string"}}},
                     {"description",
                         "Optional array of additional flags, e.g. "
                         "[\"-DCMAKE_BUILD_TYPE=Debug\"]"}}}}},
         {"required", json::array()}};
     t.execute = [safe_dir_ptr, timeout, cancelled, tool_logs](const json& args) -> Result<std::string> {
-        int head = args.value("head", 0);
-        int tail = args.value("tail", 0);
         std::string base = "cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON";
 
         auto flags = args.value("flags", json::array());
@@ -200,7 +179,7 @@ Tool make_cmake_configure_tool(std::shared_ptr<std::string> safe_dir_ptr,
             }
         }
 
-        std::string cmd = build_cmd(base, head, tail);
+        std::string cmd = base + " 2>&1";
         return run_cmake_command(cmd, safe_dir_ptr, timeout, cancelled, tool_logs);
     };
     return t;
@@ -218,7 +197,6 @@ Tool make_cmake_build_tool(std::shared_ptr<std::string> safe_dir_ptr,
     t.description =
         "Run `cmake --build build/ -j$(nproc)` to build the project.\n"
         "Returns raw combined stdout/stderr.\n"
-        "If H is 0, omit head step. If T is 0, omit tail step.\n"
         "Use `target` to build only a specific target, "
         "e.g. target=\"test_tools\".\n"
         "Use `clean` to clean before building, "
@@ -227,13 +205,7 @@ Tool make_cmake_build_tool(std::shared_ptr<std::string> safe_dir_ptr,
     t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},
         {"properties",
-            {{"head",
-                {{"type", "integer"},
-                    {"description", "Take first N lines (0 = no head filter, default 0)"}}},
-             {"tail",
-                {{"type", "integer"},
-                    {"description", "Take last N lines (0 = no tail filter, default 0)"}}},
-             {"target",
+            {{"target",
                 {{"type", "string"},
                     {"description",
                         "Optional CMake target to build, e.g. \"test_tools\", "
@@ -245,8 +217,6 @@ Tool make_cmake_build_tool(std::shared_ptr<std::string> safe_dir_ptr,
                         "--target clean before building)."}}}}},
         {"required", json::array()}};
     t.execute = [safe_dir_ptr, timeout, cancelled, tool_logs](const json& args) -> Result<std::string> {
-        int head = args.value("head", 0);
-        int tail = args.value("tail", 0);
         bool clean = args.value("clean", false);
         std::string target = args.value("target", std::string());
 
@@ -275,7 +245,7 @@ Tool make_cmake_build_tool(std::shared_ptr<std::string> safe_dir_ptr,
             full_cmd = cmake_cmd;
         }
 
-        std::string cmd = build_cmd(full_cmd, head, tail);
+        std::string cmd = full_cmd + " 2>&1";
         return run_cmake_command(cmd, safe_dir_ptr, timeout, cancelled, tool_logs);
     };
     return t;
@@ -294,7 +264,6 @@ Tool make_cmake_ctest_tool(std::shared_ptr<std::string> safe_dir_ptr,
         "Run `ctest --test-dir build --output-on-failure -j$(nproc)` "
         "to run the test suite.\n"
         "Returns raw combined stdout/stderr.\n"
-        "If H is 0, omit head step. If T is 0, omit tail step.\n"
         "Use `test_regex` to filter which tests run. "
         "This is passed directly to `ctest -R` as a regex "
         "(see `man ctest` for regex rules).\n"
@@ -310,13 +279,7 @@ Tool make_cmake_ctest_tool(std::shared_ptr<std::string> safe_dir_ptr,
     t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},
         {"properties",
-            {{"head",
-                {{"type", "integer"},
-                    {"description", "Take first N lines (0 = no head filter, default 0)"}}},
-             {"tail",
-                {{"type", "integer"},
-                    {"description", "Take last N lines (0 = no tail filter, default 0)"}}},
-             {"test_regex",
+            {{"test_regex",
                 {{"type", "string"},
                     {"description",
                         "Optional regex pattern to filter which tests run "
@@ -328,8 +291,6 @@ Tool make_cmake_ctest_tool(std::shared_ptr<std::string> safe_dir_ptr,
                         "not filenames."}}}}},
         {"required", json::array()}};
     t.execute = [safe_dir_ptr, timeout, cancelled, tool_logs](const json& args) -> Result<std::string> {
-        int head = args.value("head", 0);
-        int tail = args.value("tail", 0);
         std::string base = "ctest --test-dir build --output-on-failure -j$(nproc)";
         auto test_regex = args.value("test_regex", std::string());
         if (!test_regex.empty()) {
@@ -347,7 +308,7 @@ Tool make_cmake_ctest_tool(std::shared_ptr<std::string> safe_dir_ptr,
             }
             base += " -R \"" + test_regex + "\"";
         }
-        std::string cmd = build_cmd(base, head, tail);
+        std::string cmd = base + " 2>&1";
         return run_cmake_command(cmd, safe_dir_ptr, timeout, cancelled, tool_logs);
     };
     return t;

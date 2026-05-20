@@ -10,7 +10,9 @@ Tool make_view_tool_output_tool(
     t.description =
         "View the output of a previously executed tool that produced a large result. "
         "Use the 'id' from the long-output reference message. "
-        "IDs are 1-based. Returns lines prefixed with line numbers, like read_file_lines.";
+        "IDs are 1-based. Returns lines prefixed with line numbers, like read_file_lines.\n"
+        "If H>0, shows the first H lines. If T>0, shows the last T lines (of the "
+        "head-filtered set if both are specified). Overrides start_line/end_line/max_lines.";
     t.permission = ToolPermission::ReadOnly;
     t.timeout_sec = 30;
     t.parameters = {{"type", "object"},
@@ -19,6 +21,12 @@ Tool make_view_tool_output_tool(
                 {{"type", "integer"},
                     {"description",
                         "1-based ID from the long-output reference message"}}},
+             {"head",
+                {{"type", "integer"},
+                    {"description", "Take first N lines (0 = no head filter, default 0)"}}},
+             {"tail",
+                {{"type", "integer"},
+                    {"description", "Take last N lines (0 = no tail filter, default 0)"}}},
              {"start_line",
                 {{"type", "integer"},
                     {"description",
@@ -48,6 +56,8 @@ Tool make_view_tool_output_tool(
 
         const std::string& content = (*tool_logs)[idx];
 
+        int head = args.value("head", 0);
+        int tail = args.value("tail", 0);
         int start_line = args.value("start_line", 1);
         int end_line = args.value("end_line", 0); // 0 = not specified
         int max_lines = args.value("max_lines", 200);
@@ -59,20 +69,10 @@ Tool make_view_tool_output_tool(
         if (max_lines < 1) max_lines = 1;
         if (max_lines > 500) max_lines = 500;
 
-        // Walk lines to find the range
-        std::string result;
-        int line_num = 0;
-        int count = 0;
-
-        // Determine max lines to read
-        int max_to_read = max_lines;
-        if (end_line != 0) {
-            int range = end_line - start_line + 1;
-            if (range < max_to_read) max_to_read = range;
-        }
-
-        // Scan through content line by line
+        // Split content into lines, tracking original line numbers
+        std::vector<std::pair<int, std::string>> all_lines;
         size_t pos = 0;
+        int line_num = 0;
         while (pos < content.size()) {
             size_t next = content.find('\n', pos);
             std::string line;
@@ -84,31 +84,78 @@ Tool make_view_tool_output_tool(
                 pos = next + 1;
             }
             line_num++;
+            all_lines.emplace_back(line_num, std::move(line));
+        }
+        int total_lines = line_num;
 
-            if (line_num >= start_line && count < max_to_read) {
-                result += std::to_string(line_num) + ": " + line + "\n";
-                count++;
-            }
+        // Determine which lines to show based on read_file_lines-style params
+        int range_start = start_line;
+        int range_end = end_line != 0 ? end_line : total_lines;
+        if (range_end > total_lines) range_end = total_lines;
 
-            if (count >= max_to_read)
-                break;
+        int max_to_read = max_lines;
+        if (end_line != 0) {
+            int range = end_line - start_line + 1;
+            if (range < max_to_read) max_to_read = range;
         }
 
-        // Check if there are more lines
-        bool has_more = (pos < content.size()) ||
-                        (end_line != 0 && line_num < end_line);
-        if (has_more) {
-            // Count remaining lines
-            int remaining = 0;
-            while (pos < content.size()) {
-                size_t next = content.find('\n', pos);
-                if (next == std::string::npos) break;
-                pos = next + 1;
-                remaining++;
+        // Collect lines in the range
+        std::vector<std::pair<int, std::string>> result_lines;
+        for (const auto& [ln, text] : all_lines) {
+            if (ln >= range_start && ln <= range_end &&
+                static_cast<int>(result_lines.size()) < max_to_read) {
+                result_lines.emplace_back(ln, text);
             }
-            result += "...(truncated, >" + std::to_string(count + remaining) +
+        }
+        bool line_range_exhausted = (static_cast<int>(result_lines.size()) < max_to_read &&
+            (end_line == 0 || range_end >= total_lines));
+
+        // Apply head/tail (overrides read_file_lines filtering if specified)
+        if (head > 0 && static_cast<int>(result_lines.size()) > head) {
+            result_lines.resize(head);
+        }
+        if (tail > 0 && static_cast<int>(result_lines.size()) > tail) {
+            result_lines.erase(result_lines.begin(),
+                result_lines.begin() + (result_lines.size() - tail));
+        }
+
+        // Format output
+        std::string result;
+        for (const auto& [ln, text] : result_lines) {
+            result += std::to_string(ln) + ": " + text + "\n";
+        }
+        int shown = static_cast<int>(result_lines.size());
+
+        // Determine if there's more content beyond what was shown
+        bool has_more = false;
+        int remaining = 0;
+        if (head > 0 || tail > 0) {
+            // With head/tail, just report if there are hidden lines
+            int hidden = total_lines - shown;
+            if (hidden > 0) {
+                has_more = true;
+                remaining = hidden;
+            }
+        } else if (end_line != 0) {
+            // Using end_line: check if we didn't reach end_line
+            int last_shown = shown > 0 ? result_lines.back().first : start_line - 1;
+            if (last_shown < end_line) {
+                has_more = true;
+                remaining = (end_line - last_shown);
+            }
+        } else {
+            // Using default end (to EOF): check if we hit the max_lines cap
+            bool capped = (shown >= max_to_read && shown < total_lines);
+            if (capped) {
+                has_more = true;
+                remaining = total_lines - (shown > 0 ? result_lines.back().first : 0);
+            }
+        }
+
+        if (has_more) {
+            result += "...(truncated, >" + std::to_string(shown + remaining) +
                 " lines from line " + std::to_string(start_line) + ")";
-        } else if (count == 0 && start_line > 1) {
+        } else if (shown == 0 && start_line > 1) {
             result = "(start_line " + std::to_string(start_line) +
                 " is beyond end of file)";
         }
