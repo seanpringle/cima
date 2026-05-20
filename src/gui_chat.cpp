@@ -627,10 +627,10 @@ void render_config_tab(PrimaryAgent& tab) {
         // Category display order.
         auto cat_order = [](const char* cat) -> int {
             if (!strcmp(cat, "Execution")) return 0;
-            if (!strcmp(cat, "File"))      return 1;
-            if (!strcmp(cat, "Git"))       return 2;
-            if (!strcmp(cat, "Web"))       return 3;
-            if (!strcmp(cat, "Cmake"))     return 4;
+            if (!strcmp(cat, "Cmake"))     return 1;
+            if (!strcmp(cat, "File"))      return 2;
+            if (!strcmp(cat, "Git"))       return 3;
+            if (!strcmp(cat, "Web"))       return 4;
             return 5; // Other
         };
 
