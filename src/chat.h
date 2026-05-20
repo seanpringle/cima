@@ -157,7 +157,19 @@ class ChatSession {
         tools_.add(make_call_subagent_tool(primary, subagent_configs, cfg.subagent_timeout));
     }
 
+    /// Register a session custom command tool. If a tool with the same
+    /// cmd_<name> already exists (from config), it is removed first
+    /// (session masks config).
+    void register_custom_command(const std::string& name,
+        const std::string& description, const std::string& command,
+        int timeout_sec);
+
+    /// Unregister a session custom command tool by name. If a config version
+    /// exists with the same name, it is re-registered (config reappears).
+    void unregister_custom_command(const std::string& name);
+
     /// Access the tool registry (for testing and GUI).
+    ToolRegistry& tools_for_testing() { return tools_; }
     const ToolRegistry& tools_for_testing() const { return tools_; }
 
   private:
@@ -192,6 +204,7 @@ class ChatSession {
     /// Returns an error only if the user cancels (caller should rollback).
     Result<void> execute_tool_calls(
         int64_t msg_id, const std::vector<ToolCall>& calls, int remaining_iters);
+    const Config& config_;
     std::string model_;
     std::string reasoning_effort_;
     std::string agent_name_;

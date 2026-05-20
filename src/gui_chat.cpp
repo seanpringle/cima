@@ -650,6 +650,149 @@ void render_config_tab(PrimaryAgent& tab) {
         }
     }
 
+    // ── Session Custom Commands CRUD ──
+    {
+        Separator();
+        Text("Session Custom Commands:");
+
+        // Validation helper
+        auto validate_cmd_name = [](const std::string& name) -> std::string {
+            if (name.empty())
+                return "Name must not be empty";
+            for (char c : name) {
+                if (std::isspace(static_cast<unsigned char>(c)))
+                    return "Name must not contain spaces";
+            }
+            return {};
+        };
+
+        // ── Inline editor (Add / Edit) ──
+        if (tab.cmd_edit.active) {
+            PushID("cmd-edit");
+            InputText("Name", tab.cmd_edit.name_buf.data(),
+                tab.cmd_edit.name_buf.capacity());
+            InputText("Description", tab.cmd_edit.desc_buf.data(),
+                tab.cmd_edit.desc_buf.capacity());
+            InputText("Command", tab.cmd_edit.command_buf.data(),
+                tab.cmd_edit.command_buf.capacity());
+            if (!tab.cmd_edit.error.empty()) {
+                PushStyleColor(ImGuiCol_Text, IM_COL32(255, 0, 0, 255));
+                TextUnformatted(tab.cmd_edit.error.c_str());
+                PopStyleColor();
+            }
+            if (Button("Save")) {
+                std::string name(tab.cmd_edit.name_buf.c_str());
+                std::string desc(tab.cmd_edit.desc_buf.c_str());
+                std::string command(tab.cmd_edit.command_buf.c_str());
+                std::string err = validate_cmd_name(name);
+                if (err.empty() && command.empty())
+                    err = "Command must not be empty";
+                if (!err.empty()) {
+                    tab.cmd_edit.error = std::move(err);
+                } else {
+                    // Remove old entry if renaming
+                    if (!tab.cmd_edit.original_name.empty() &&
+                        tab.cmd_edit.original_name != name) {
+                        tab.session_data.custom_commands.erase(
+                            tab.cmd_edit.original_name);
+                        // Unregister old tool name
+                        session.unregister_custom_command(
+                            tab.cmd_edit.original_name);
+                    }
+                    // Store new definition
+                    CmdToolConfig cmd;
+                    cmd.name = name;
+                    cmd.description = desc;
+                    cmd.command = command;
+                    tab.session_data.custom_commands[name] = std::move(cmd);
+                    // Register/update the tool live
+                    session.register_custom_command(
+                        name, desc, command, cfg.bash_timeout);
+                    // Mark as enabled
+                    tab.cmd_tools_enabled[name] = true;
+                    tab.cmd_edit.active = false;
+                    tab.cmd_edit.error.clear();
+                }
+            }
+            SameLine();
+            if (Button("Cancel")) {
+                tab.cmd_edit.active = false;
+                tab.cmd_edit.error.clear();
+            }
+            PopID();
+        } else {
+            if (Button("+ Add Command")) {
+                tab.cmd_edit = {};
+                tab.cmd_edit.active = true;
+                tab.cmd_edit.original_name.clear();
+                tab.cmd_edit.name_buf.clear();
+                tab.cmd_edit.desc_buf.clear();
+                tab.cmd_edit.command_buf.clear();
+                tab.cmd_edit.error.clear();
+            }
+        }
+
+        // ── List existing commands ──
+        for (auto it = tab.session_data.custom_commands.begin();
+             it != tab.session_data.custom_commands.end();) {
+            PushID(it->first.c_str());
+            // Enable/disable checkbox
+            bool enabled = tab.cmd_tools_enabled[it->first];
+            if (Checkbox("##en", &enabled)) {
+                tab.cmd_tools_enabled[it->first] = enabled;
+                session.set_custom_tool_enabled("cmd_" + it->first, enabled);
+            }
+            SameLine();
+            // Name + description preview
+            std::string preview = it->second.description;
+            if (preview.size() > 60) {
+                preview.resize(60);
+                preview += "…";
+            }
+            Text("%s: %s", it->first.c_str(), preview.c_str());
+            // Show overrides indicator
+            bool masks_config = false;
+            for (const auto& ct : cfg.cmd_tools) {
+                if (ct.name == it->first) { masks_config = true; break; }
+            }
+            if (masks_config) {
+                SameLine();
+                TextDisabled("(overrides config)");
+            }
+            SameLine();
+            if (Button("Edit")) {
+                tab.cmd_edit.active = true;
+                tab.cmd_edit.original_name = it->first;
+                tab.cmd_edit.name_buf = it->first;
+                tab.cmd_edit.desc_buf = it->second.description;
+                tab.cmd_edit.command_buf = it->second.command;
+                tab.cmd_edit.error.clear();
+            }
+            SameLine();
+            if (Button("X")) {
+                // Unregister tool (re-registers config version if exists)
+                session.unregister_custom_command(it->first);
+                tab.session_data.custom_commands.erase(it->first);
+                tab.cmd_tools_enabled.erase(it->first);
+                // Re-apply to gates
+                session.set_custom_tool_enabled("cmd_" + it->first, false);
+                // If config version exists, re-enable it by default
+                for (const auto& ct : cfg.cmd_tools) {
+                    if (ct.name == it->first) {
+                        tab.cmd_tools_enabled[ct.name] = true;
+                        session.set_custom_tool_enabled(
+                            "cmd_" + ct.name, true);
+                        break;
+                    }
+                }
+                PopID();
+                break; // iterator invalidated, restart loop
+            }
+            ++it;
+            PopID();
+        }
+    }
+
     // ── Session Snippets CRUD ──
     {
         Separator();

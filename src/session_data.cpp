@@ -43,6 +43,16 @@ json SessionData::to_json() const {
     }
     j["snippets"] = std::move(snip);
 
+    // Serialise custom_commands map
+    json cc = json::object();
+    for (const auto& [name, cmd] : custom_commands) {
+        json entry;
+        entry["description"] = cmd.description;
+        entry["command"] = cmd.command;
+        cc[name] = std::move(entry);
+    }
+    j["custom_commands"] = std::move(cc);
+
     return j;
 }
 
@@ -88,6 +98,22 @@ void SessionData::from_json(const json& j) {
         for (auto it = j["snippets"].begin(); it != j["snippets"].end(); ++it) {
             if (it.value().is_string()) {
                 snippets[it.key()] = it.value().get<std::string>();
+            }
+        }
+    }
+
+    // Deserialise custom_commands map
+    custom_commands.clear();
+    if (j.contains("custom_commands") && j["custom_commands"].is_object()) {
+        for (auto it = j["custom_commands"].begin(); it != j["custom_commands"].end(); ++it) {
+            if (it.value().is_object()) {
+                CmdToolConfig cmd;
+                cmd.name = it.key();
+                cmd.description = it.value().value("description", std::string());
+                cmd.command = it.value().value("command", std::string());
+                if (!cmd.name.empty() && !cmd.command.empty()) {
+                    custom_commands[it.key()] = std::move(cmd);
+                }
             }
         }
     }

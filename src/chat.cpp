@@ -20,7 +20,7 @@ static const std::unordered_set<std::string> cmake_tool_names = {
 ChatSession::ChatSession(
     const Config& config, const Provider& provider, CancellationToken cancelled,
     std::shared_ptr<GatingState> gates)
-    : model_(provider.model), reasoning_effort_(provider.reasoning_effort),
+    : config_(config), model_(provider.model), reasoning_effort_(provider.reasoning_effort),
       provider_name_(provider.name),
       safe_dir_(std::make_shared<std::string>(std::filesystem::current_path().string())),
       api_base_(provider.api_base), api_key_(provider.api_key),
@@ -602,4 +602,34 @@ void ChatSession::stop_mcp_server(const std::string& name) {
 void ChatSession::clear() {
     conversation_.clear();
     last_usage_ = Usage{}; // reset so context pct falls back to estimate(0)
+}
+
+// ===================================================================
+// Session custom command registration
+// ===================================================================
+
+void ChatSession::register_custom_command(const std::string& name,
+    const std::string& description, const std::string& command,
+    int timeout_sec) {
+    std::string tool_name = "cmd_" + name;
+    // Remove config version if exists (session masks config)
+    tools_.remove(tool_name);
+    // Register session version
+    tools_.add(make_cmd_tool(name, description, command,
+                             safe_dir_, timeout_sec, cancelled_, tool_logs_));
+    // Default to enabled
+    set_custom_tool_enabled(tool_name, true);
+}
+
+void ChatSession::unregister_custom_command(const std::string& name) {
+    std::string tool_name = "cmd_" + name;
+    tools_.remove(tool_name);
+    // Re-register config version if it exists
+    for (const auto& ct : config_.cmd_tools) {
+        if (ct.name == name) {
+            tools_.add(make_cmd_tool(ct.name, ct.description, ct.command,
+                                     safe_dir_, config_.bash_timeout, cancelled_, tool_logs_));
+            break;
+        }
+    }
 }

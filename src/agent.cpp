@@ -184,21 +184,29 @@ void PrimaryAgent::restore_session_data() {
     session->set_cmake_enabled(session_data.cmake_enabled);
     mcp_enabled = session_data.mcp_enabled;
 
-    // Restore cmd_tools_enabled, silently dropping stale entries
-    // (tools whose name no longer appears in cfg.cmd_tools).
+    // Restore cmd_tools_enabled, keeping entries for config commands AND
+    // session custom commands (silently dropping truly stale entries).
     cmd_tools_enabled = session_data.cmd_tools_enabled;
     for (auto it = cmd_tools_enabled.begin(); it != cmd_tools_enabled.end(); ) {
-        bool found = false;
+        bool in_config = false;
         for (const auto& ct : cfg.cmd_tools) {
-            if (ct.name == it->first) { found = true; break; }
+            if (ct.name == it->first) { in_config = true; break; }
         }
-        if (!found) {
+        bool in_session = session_data.custom_commands.count(it->first) > 0;
+        if (!in_config && !in_session) {
             it = cmd_tools_enabled.erase(it);
         } else {
             ++it;
         }
     }
-    // Apply enabled state to the session's gates (shared with rw subagents).
+
+    // Register session custom commands (masks config commands with same name).
+    for (const auto& [name, cmd] : session_data.custom_commands) {
+        session->register_custom_command(
+            name, cmd.description, cmd.command, cfg.bash_timeout);
+    }
+
+    // Apply enabled state to all cmd_tools (config + session).
     for (const auto& [name, enabled] : cmd_tools_enabled) {
         session->set_custom_tool_enabled("cmd_" + name, enabled);
     }

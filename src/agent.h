@@ -53,10 +53,21 @@ struct SnippetEditState {
     std::string error;                    // validation error to display
 };
 
+/// Editing state for the session custom commands CRUD UI (Config tab).
+struct CmdEditState {
+    bool active = false;           // true when editing/add is open
+    std::string original_name;     // empty = new, non-empty = editing existing
+    std::string name_buf;          // name input buffer
+    std::string desc_buf;          // description input buffer
+    std::string command_buf;       // command input buffer
+    std::string error;             // validation error to display
+};
+
 struct PrimaryAgent : Agent {
     bool bash_enabled = false; // run_bash tool enabled for this tab
     bool cmake_enabled = false; // cmake tools enabled for this tab
     SnippetEditState snippet_edit; // session snippets CRUD editing state
+    CmdEditState cmd_edit; // session custom commands CRUD editing state
 
     // MCP: per-server enabled state (persisted in assistant_data.json)
     std::map<std::string, bool> mcp_enabled;
