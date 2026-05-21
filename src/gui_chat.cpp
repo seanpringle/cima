@@ -595,6 +595,7 @@ void render_config_tab(PrimaryAgent& tab) {
     }
 
     // ── Sub-tab bar ──
+    // ── Sub-tab bar ──
     {
         Separator();
 
@@ -604,405 +605,350 @@ void render_config_tab(PrimaryAgent& tab) {
             if (BeginTabItem("  Tool Calls  ")) {
                 Text("Tool Gates:");
 
-                // Collect registered tool names, filter out skipped ones, and sort
-                // by category first (so each group appears as one contiguous block),
-                // then by name within each category.
                 auto names = session.tools_for_testing().tool_names();
 
-        // Categorisation helpers.
-        auto category_of = [](const std::string& name) -> const char* {
-            if (name == "list_directory" || name == "read_file" || name == "read_file_lines" ||
-                name == "stat_file" || name == "grep_files" || name == "project_tree" ||
-                name == "write_file" || name == "edit_file" || name == "delete_file" ||
-                name == "move_file" || name == "rename_file" || name == "create_directory" ||
-                name == "delete_directory")
-                return "File";
-            if (name == "git_status" || name == "git_diff" || name == "git_log" ||
-                name == "git_show" || name == "git_add" || name == "git_commit" ||
-                name == "git_restore")
-                return "Git";
-            if (name == "web_search" || name == "web_fetch")
-                return "Web";
-            if (name == "cmake_configure" || name == "cmake_build" || name == "cmake_ctest")
-                return "Cmake";
-            if (name == "run_bash" || name == "call_subagent")
-                return "Execution";
-            return "Other";
-        };
+                // Categorisation helpers.
+                auto category_of = [](const std::string& name) -> const char* {
+                    if (name == "list_directory" || name == "read_file" || name == "read_file_lines" ||
+                        name == "stat_file" || name == "grep_files" || name == "project_tree" ||
+                        name == "write_file" || name == "edit_file" || name == "delete_file" ||
+                        name == "move_file" || name == "rename_file" || name == "create_directory" ||
+                        name == "delete_directory")
+                        return "File";
+                    if (name == "git_status" || name == "git_diff" || name == "git_log" ||
+                        name == "git_show" || name == "git_add" || name == "git_commit" ||
+                        name == "git_restore")
+                        return "Git";
+                    if (name == "web_search" || name == "web_fetch")
+                        return "Web";
+                    if (name == "cmake_configure" || name == "cmake_build" || name == "cmake_ctest")
+                        return "Cmake";
+                    if (name == "run_bash" || name == "call_subagent")
+                        return "Execution";
+                    return "Other";
+                };
 
-        // Category display order.
-        auto cat_order = [](const char* cat) -> int {
-            if (!strcmp(cat, "Execution")) return 0;
-            if (!strcmp(cat, "Cmake"))     return 1;
-            if (!strcmp(cat, "File"))      return 2;
-            if (!strcmp(cat, "Git"))       return 3;
-            if (!strcmp(cat, "Web"))       return 4;
-            return 5; // Other
-        };
+                // Category display order.
+                auto cat_order = [](const char* cat) -> int {
+                    if (!strcmp(cat, "Execution")) return 0;
+                    if (!strcmp(cat, "Cmake"))     return 1;
+                    if (!strcmp(cat, "File"))      return 2;
+                    if (!strcmp(cat, "Git"))       return 3;
+                    if (!strcmp(cat, "Web"))       return 4;
+                    return 5; // Other
+                };
 
-        // Filter and sort: first by category order, then alphabetically.
-        names.erase(std::remove_if(names.begin(), names.end(),
-            [](const std::string& name) {
-                // Skip MCP tools (gated by server lifecycle), plan tools (always on),
-                // view_tool_output (infrastructure), and cmd_* (shown separately).
-                return name.rfind("mcp_", 0) == 0 || name == "read_plan" ||
-                       name == "write_plan" || name == "view_tool_output" ||
-                       name.rfind("cmd_", 0) == 0;
-            }),
-            names.end());
-        std::sort(names.begin(), names.end(),
-            [&](const std::string& a, const std::string& b) {
-                int ca = cat_order(category_of(a));
-                int cb = cat_order(category_of(b));
-                if (ca != cb) return ca < cb;
-                return a < b;
-            });
+                // Filter and sort.
+                names.erase(std::remove_if(names.begin(), names.end(),
+                    [](const std::string& name) {
+                        return name.rfind("mcp_", 0) == 0 || name == "read_plan" ||
+                               name == "write_plan" || name == "view_tool_output" ||
+                               name.rfind("cmd_", 0) == 0;
+                    }),
+                    names.end());
+                std::sort(names.begin(), names.end(),
+                    [&](const std::string& a, const std::string& b) {
+                        int ca = cat_order(category_of(a));
+                        int cb = cat_order(category_of(b));
+                        if (ca != cb) return ca < cb;
+                        return a < b;
+                    });
 
-        const char* last_cat = nullptr;
-        for (const auto& name : names) {
-            const char* cat = category_of(name);
-            if (cat != last_cat) {
-                Text("── %s ──", cat);
-                last_cat = cat;
-            }
-
-            bool enabled = session.tool_enabled(name);
-            if (Checkbox(name.c_str(), &enabled)) {
-                tab.tool_gates[name] = enabled;
-                session.set_tool_enabled(name, enabled);
-                // Keep legacy gates in sync for tools with special filtering.
-                if (name == "run_bash") {
-                    tab.bash_enabled = enabled;
-                    session.set_bash_enabled(enabled);
-                } else if (name == "cmake_configure" || name == "cmake_build" || name == "cmake_ctest") {
-                    tab.cmake_enabled = enabled;
-                    session.set_cmake_enabled(enabled);
-                }
-            }
-            if (IsItemHovered()) {
-                BeginTooltip();
-                TextUnformatted(name.c_str());
-                EndTooltip();
-            }
-        }
-            }
-            EndTabItem();
-        }
-
-        // ── MCP Servers sub-tab ──
-        if (BeginTabItem("  MCP Servers  ")) {
-            if (cfg.mcp_servers.empty()) {
-                TextDisabled("No MCP servers configured.");
-            } else {
-        for (const auto& mcp : cfg.mcp_servers) {
-            bool enabled = tab.mcp_enabled[mcp.name];
-            bool changed = Checkbox(mcp.name.c_str(), &enabled);
-            if (changed) {
-                tab.mcp_enabled[mcp.name] = enabled;
-                tab.mcp_error.erase(mcp.name);
-                if (enabled) {
-                    auto result = session.start_mcp_server(mcp);
-                    if (!result) {
-                        tab.mcp_error[mcp.name] = result.error();
-                        tab.mcp_enabled[mcp.name] = false; // revert checkbox
+                const char* last_cat = nullptr;
+                for (const auto& name : names) {
+                    const char* cat = category_of(name);
+                    if (cat != last_cat) {
+                        Text("── %s ──", cat);
+                        last_cat = cat;
                     }
+                    bool enabled = session.tool_enabled(name);
+                    if (Checkbox(name.c_str(), &enabled)) {
+                        tab.tool_gates[name] = enabled;
+                        session.set_tool_enabled(name, enabled);
+                        if (name == "run_bash") {
+                            tab.bash_enabled = enabled;
+                            session.set_bash_enabled(enabled);
+                        } else if (name == "cmake_configure" || name == "cmake_build" || name == "cmake_ctest") {
+                            tab.cmake_enabled = enabled;
+                            session.set_cmake_enabled(enabled);
+                        }
+                    }
+                    if (IsItemHovered()) {
+                        BeginTooltip();
+                        TextUnformatted(name.c_str());
+                        EndTooltip();
+                    }
+                }
+                EndTabItem();
+            }
+
+            // ── MCP Servers sub-tab ──
+            if (BeginTabItem("  MCP Servers  ")) {
+                if (cfg.mcp_servers.empty()) {
+                    TextDisabled("No MCP servers configured.");
                 } else {
-                    session.stop_mcp_server(mcp.name);
-                }
-            }
-
-            // Transport type label
-            SameLine();
-            TextDisabled("(%s)", mcp.transport.c_str());
-
-            // Status / error
-            if (session.mcp_registry().is_running(mcp.name)) {
-                SameLine();
-                TextColored(ImVec4(0, 1, 0, 1), "(*) running");
-            } else if (tab.mcp_error.count(mcp.name)) {
-                SameLine();
-                TextColored(ImVec4(1, 0, 0, 1), "(!) %s", tab.mcp_error[mcp.name].c_str());
-            }
-
-            // Tooltip with server details
-            if (IsItemHovered()) {
-                BeginTooltip();
-                Text("command: %s", mcp.command.c_str());
-                if (!mcp.args.empty()) {
-                    std::string args_str;
-                    for (const auto& a : mcp.args) {
-                        if (!args_str.empty())
-                            args_str += " ";
-                        args_str += a;
+                    for (const auto& mcp : cfg.mcp_servers) {
+                        bool enabled = tab.mcp_enabled[mcp.name];
+                        bool changed = Checkbox(mcp.name.c_str(), &enabled);
+                        if (changed) {
+                            tab.mcp_enabled[mcp.name] = enabled;
+                            tab.mcp_error.erase(mcp.name);
+                            if (enabled) {
+                                auto result = session.start_mcp_server(mcp);
+                                if (!result) {
+                                    tab.mcp_error[mcp.name] = result.error();
+                                    tab.mcp_enabled[mcp.name] = false;
+                                }
+                            } else {
+                                session.stop_mcp_server(mcp.name);
+                            }
+                        }
+                        SameLine();
+                        TextDisabled("(%s)", mcp.transport.c_str());
+                        if (session.mcp_registry().is_running(mcp.name)) {
+                            SameLine();
+                            TextColored(ImVec4(0, 1, 0, 1), "(*) running");
+                        } else if (tab.mcp_error.count(mcp.name)) {
+                            SameLine();
+                            TextColored(ImVec4(1, 0, 0, 1), "(!) %s", tab.mcp_error[mcp.name].c_str());
+                        }
+                        if (IsItemHovered()) {
+                            BeginTooltip();
+                            Text("command: %s", mcp.command.c_str());
+                            if (!mcp.args.empty()) {
+                                std::string args_str;
+                                for (const auto& a : mcp.args) {
+                                    if (!args_str.empty()) args_str += " ";
+                                    args_str += a;
+                                }
+                                Text("args: %s", args_str.c_str());
+                            }
+                            if (!mcp.url.empty())
+                                Text("url: %s", mcp.url.c_str());
+                            EndTooltip();
+                        }
                     }
-                    Text("args: %s", args_str.c_str());
                 }
-                if (!mcp.url.empty())
-                    Text("url: %s", mcp.url.c_str());
-                EndTooltip();
-            }
-        }
-        }
-            EndTabItem();
-        }
-
-        // ── Commands sub-tab ──
-        if (BeginTabItem("  Commands  ")) {
-            if (!cfg.cmd_tools.empty()) {
-        for (const auto& ct : cfg.cmd_tools) {
-            std::string tool_name = "cmd_" + ct.name;
-            bool enabled = tab.cmd_tools_enabled[ct.name];
-            bool changed = Checkbox(ct.name.c_str(), &enabled);
-            if (changed) {
-                tab.cmd_tools_enabled[ct.name] = enabled;
-                session.set_custom_tool_enabled(tool_name, enabled);
-            }
-            if (IsItemHovered()) {
-                BeginTooltip();
-                TextUnformatted(ct.description.c_str());
-                Text("command: %s", ct.command.c_str());
-                EndTooltip();
-            }
-        }
+                EndTabItem();
             }
 
-            // ── Session Custom Commands CRUD ──
+            // ── Commands sub-tab ──
+            if (BeginTabItem("  Commands  ")) {
+                if (!cfg.cmd_tools.empty()) {
+                    for (const auto& ct : cfg.cmd_tools) {
+                        std::string tool_name = "cmd_" + ct.name;
+                        bool enabled = tab.cmd_tools_enabled[ct.name];
+                        bool changed = Checkbox(ct.name.c_str(), &enabled);
+                        if (changed) {
+                            tab.cmd_tools_enabled[ct.name] = enabled;
+                            session.set_custom_tool_enabled(tool_name, enabled);
+                        }
+                        if (IsItemHovered()) {
+                            BeginTooltip();
+                            TextUnformatted(ct.description.c_str());
+                            Text("command: %s", ct.command.c_str());
+                            EndTooltip();
+                        }
+                    }
+                }
 
-        // Validation helper
-        auto validate_cmd_name = [](const std::string& name) -> std::string {
-            if (name.empty())
-                return "Name must not be empty";
-            for (char c : name) {
-                if (std::isspace(static_cast<unsigned char>(c)))
-                    return "Name must not contain spaces";
-            }
-            return {};
-        };
+                // ── Session Custom Commands CRUD ──
+                auto validate_cmd_name = [](const std::string& name) -> std::string {
+                    if (name.empty()) return "Name must not be empty";
+                    for (char c : name) {
+                        if (std::isspace(static_cast<unsigned char>(c)))
+                            return "Name must not contain spaces";
+                    }
+                    return {};
+                };
 
-        // ── Inline editor (Add / Edit) ──
-        if (tab.cmd_edit.active) {
-            PushID("cmd-edit");
-            InputText("Name", tab.cmd_edit.name_buf.data(),
-                tab.cmd_edit.name_buf.size());
-            InputText("Description", tab.cmd_edit.desc_buf.data(),
-                tab.cmd_edit.desc_buf.size());
-            InputText("Command", tab.cmd_edit.command_buf.data(),
-                tab.cmd_edit.command_buf.size());
-            if (!tab.cmd_edit.error.empty()) {
-                PushStyleColor(ImGuiCol_Text, IM_COL32(255, 0, 0, 255));
-                TextUnformatted(tab.cmd_edit.error.c_str());
-                PopStyleColor();
-            }
-            if (Button("Save")) {
-                std::string name(tab.cmd_edit.name_buf.data());
-                std::string desc(tab.cmd_edit.desc_buf.data());
-                std::string command(tab.cmd_edit.command_buf.data());
-                std::string err = validate_cmd_name(name);
-                if (err.empty() && command.empty())
-                    err = "Command must not be empty";
-                if (!err.empty()) {
-                    tab.cmd_edit.error = std::move(err);
+                if (tab.cmd_edit.active) {
+                    PushID("cmd-edit");
+                    InputText("Name", tab.cmd_edit.name_buf.data(), tab.cmd_edit.name_buf.size());
+                    InputText("Description", tab.cmd_edit.desc_buf.data(), tab.cmd_edit.desc_buf.size());
+                    InputText("Command", tab.cmd_edit.command_buf.data(), tab.cmd_edit.command_buf.size());
+                    if (!tab.cmd_edit.error.empty()) {
+                        PushStyleColor(ImGuiCol_Text, IM_COL32(255, 0, 0, 255));
+                        TextUnformatted(tab.cmd_edit.error.c_str());
+                        PopStyleColor();
+                    }
+                    if (Button("Save")) {
+                        std::string name(tab.cmd_edit.name_buf.data());
+                        std::string desc(tab.cmd_edit.desc_buf.data());
+                        std::string command(tab.cmd_edit.command_buf.data());
+                        std::string err = validate_cmd_name(name);
+                        if (err.empty() && command.empty())
+                            err = "Command must not be empty";
+                        if (!err.empty()) {
+                            tab.cmd_edit.error = std::move(err);
+                        } else {
+                            if (!tab.cmd_edit.original_name.empty() && tab.cmd_edit.original_name != name) {
+                                tab.session_data.custom_commands.erase(tab.cmd_edit.original_name);
+                                session.unregister_custom_command(tab.cmd_edit.original_name);
+                            }
+                            CmdToolConfig cmd;
+                            cmd.name = name;
+                            cmd.description = desc;
+                            cmd.command = command;
+                            tab.session_data.custom_commands[name] = std::move(cmd);
+                            session.register_custom_command(name, desc, command, cfg.bash_timeout);
+                            tab.cmd_tools_enabled[name] = true;
+                            tab.cmd_edit.active = false;
+                            tab.cmd_edit.error.clear();
+                        }
+                    }
+                    SameLine();
+                    if (Button("Cancel")) {
+                        tab.cmd_edit.active = false;
+                        tab.cmd_edit.error.clear();
+                    }
+                    PopID();
                 } else {
-                    // Remove old entry if renaming
-                    if (!tab.cmd_edit.original_name.empty() &&
-                        tab.cmd_edit.original_name != name) {
-                        tab.session_data.custom_commands.erase(
-                            tab.cmd_edit.original_name);
-                        // Unregister old tool name
-                        session.unregister_custom_command(
-                            tab.cmd_edit.original_name);
+                    if (Button("+ Add Command")) {
+                        tab.cmd_edit = {};
+                        tab.cmd_edit.active = true;
+                        std::fill(tab.cmd_edit.name_buf.begin(), tab.cmd_edit.name_buf.end(), 0);
+                        std::fill(tab.cmd_edit.desc_buf.begin(), tab.cmd_edit.desc_buf.end(), 0);
+                        std::fill(tab.cmd_edit.command_buf.begin(), tab.cmd_edit.command_buf.end(), 0);
                     }
-                    // Store new definition
-                    CmdToolConfig cmd;
-                    cmd.name = name;
-                    cmd.description = desc;
-                    cmd.command = command;
-                    tab.session_data.custom_commands[name] = std::move(cmd);
-                    // Register/update the tool live
-                    session.register_custom_command(
-                        name, desc, command, cfg.bash_timeout);
-                    // Mark as enabled
-                    tab.cmd_tools_enabled[name] = true;
-                    tab.cmd_edit.active = false;
-                    tab.cmd_edit.error.clear();
                 }
-            }
-            SameLine();
-            if (Button("Cancel")) {
-                tab.cmd_edit.active = false;
-                tab.cmd_edit.error.clear();
-            }
-            PopID();
-        } else {
-            if (Button("+ Add Command")) {
-                tab.cmd_edit = {};
-                tab.cmd_edit.active = true;
-                tab.cmd_edit.original_name.clear();
-                std::fill(tab.cmd_edit.name_buf.begin(), tab.cmd_edit.name_buf.end(), 0);
-                std::fill(tab.cmd_edit.desc_buf.begin(), tab.cmd_edit.desc_buf.end(), 0);
-                std::fill(tab.cmd_edit.command_buf.begin(), tab.cmd_edit.command_buf.end(), 0);
-                tab.cmd_edit.error.clear();
-            }
-        }
 
-        // ── List existing commands ──
-        for (auto it = tab.session_data.custom_commands.begin();
-             it != tab.session_data.custom_commands.end();) {
-            PushID(it->first.c_str());
-            // Enable/disable checkbox
-            bool enabled = tab.cmd_tools_enabled[it->first];
-            if (Checkbox("##en", &enabled)) {
-                tab.cmd_tools_enabled[it->first] = enabled;
-                session.set_custom_tool_enabled("cmd_" + it->first, enabled);
-            }
-            SameLine();
-            // Name + description preview
-            std::string preview = it->second.description;
-            if (preview.size() > 60) {
-                preview.resize(60);
-                preview += "…";
-            }
-            Text("%s: %s", it->first.c_str(), preview.c_str());
-            // Show overrides indicator
-            bool masks_config = false;
-            for (const auto& ct : cfg.cmd_tools) {
-                if (ct.name == it->first) { masks_config = true; break; }
-            }
-            if (masks_config) {
-                SameLine();
-                TextDisabled("(overrides config)");
-            }
-            SameLine();
-            if (Button("Edit")) {
-                tab.cmd_edit.active = true;
-                tab.cmd_edit.original_name = it->first;
-                std::fill(tab.cmd_edit.name_buf.begin(), tab.cmd_edit.name_buf.end(), 0);
-                std::fill(tab.cmd_edit.desc_buf.begin(), tab.cmd_edit.desc_buf.end(), 0);
-                std::fill(tab.cmd_edit.command_buf.begin(), tab.cmd_edit.command_buf.end(), 0);
-                std::copy(it->first.begin(), it->first.end(), tab.cmd_edit.name_buf.begin());
-                std::copy(it->second.description.begin(), it->second.description.end(), tab.cmd_edit.desc_buf.begin());
-                std::copy(it->second.command.begin(), it->second.command.end(), tab.cmd_edit.command_buf.begin());
-                tab.cmd_edit.error.clear();
-            }
-            SameLine();
-            if (Button("X")) {
-                // Unregister tool (re-registers config version if exists)
-                session.unregister_custom_command(it->first);
-                tab.session_data.custom_commands.erase(it->first);
-                tab.cmd_tools_enabled.erase(it->first);
-                // Re-apply to gates
-                session.set_custom_tool_enabled("cmd_" + it->first, false);
-                // If config version exists, re-enable it by default
-                for (const auto& ct : cfg.cmd_tools) {
-                    if (ct.name == it->first) {
-                        tab.cmd_tools_enabled[ct.name] = true;
-                        session.set_custom_tool_enabled(
-                            "cmd_" + ct.name, true);
+                for (auto it = tab.session_data.custom_commands.begin();
+                     it != tab.session_data.custom_commands.end();) {
+                    PushID(it->first.c_str());
+                    bool enabled = tab.cmd_tools_enabled[it->first];
+                    if (Checkbox("##en", &enabled)) {
+                        tab.cmd_tools_enabled[it->first] = enabled;
+                        session.set_custom_tool_enabled("cmd_" + it->first, enabled);
+                    }
+                    SameLine();
+                    std::string preview = it->second.description;
+                    if (preview.size() > 60) { preview.resize(60); preview += "\xe2\x80\xa6"; }
+                    Text("%s: %s", it->first.c_str(), preview.c_str());
+                    bool masks_config = false;
+                    for (const auto& ct : cfg.cmd_tools) {
+                        if (ct.name == it->first) { masks_config = true; break; }
+                    }
+                    if (masks_config) {
+                        SameLine();
+                        TextDisabled("(overrides config)");
+                    }
+                    SameLine();
+                    if (Button("Edit")) {
+                        tab.cmd_edit.active = true;
+                        tab.cmd_edit.original_name = it->first;
+                        std::fill(tab.cmd_edit.name_buf.begin(), tab.cmd_edit.name_buf.end(), 0);
+                        std::fill(tab.cmd_edit.desc_buf.begin(), tab.cmd_edit.desc_buf.end(), 0);
+                        std::fill(tab.cmd_edit.command_buf.begin(), tab.cmd_edit.command_buf.end(), 0);
+                        std::copy(it->first.begin(), it->first.end(), tab.cmd_edit.name_buf.begin());
+                        std::copy(it->second.description.begin(), it->second.description.end(), tab.cmd_edit.desc_buf.begin());
+                        std::copy(it->second.command.begin(), it->second.command.end(), tab.cmd_edit.command_buf.begin());
+                        tab.cmd_edit.error.clear();
+                    }
+                    SameLine();
+                    if (Button("X")) {
+                        session.unregister_custom_command(it->first);
+                        tab.session_data.custom_commands.erase(it->first);
+                        tab.cmd_tools_enabled.erase(it->first);
+                        session.set_custom_tool_enabled("cmd_" + it->first, false);
+                        for (const auto& ct : cfg.cmd_tools) {
+                            if (ct.name == it->first) {
+                                tab.cmd_tools_enabled[ct.name] = true;
+                                session.set_custom_tool_enabled("cmd_" + ct.name, true);
+                                break;
+                            }
+                        }
+                        PopID();
                         break;
                     }
+                    ++it;
+                    PopID();
                 }
-                PopID();
-                break; // iterator invalidated, restart loop
+                EndTabItem();
             }
-            ++it;
-            PopID();
-            }
-            EndTabItem();
-        }
 
-        // ── Snippets sub-tab ──
-        if (BeginTabItem("  Snippets  ")) {
+            // ── Snippets sub-tab ──
+            if (BeginTabItem("  Snippets  ")) {
+                auto validate_snippet_name = [](const std::string& name) -> std::string {
+                    if (name.empty()) return "Name must not be empty";
+                    for (char c : name) {
+                        if (std::isspace(static_cast<unsigned char>(c)))
+                            return "Name must not contain spaces";
+                        if (c == '!') return "Name must not contain '!'";
+                    }
+                    return {};
+                };
 
-        // Validation helper
-        auto validate_snippet_name = [](const std::string& name) -> std::string {
-            if (name.empty())
-                return "Name must not be empty";
-            for (char c : name) {
-                if (std::isspace(static_cast<unsigned char>(c)))
-                    return "Name must not contain spaces";
-                if (c == '!')
-                    return "Name must not contain '!'";
-            }
-            return {};
-        };
-
-        // ── Inline editor (Add / Edit) ──
-        if (tab.snippet_edit.active) {
-            PushID("snippet-edit");
-            InputText("Name", tab.snippet_edit.name_buf.data(),
-                tab.snippet_edit.name_buf.size());
-            InputText("Content", tab.snippet_edit.content_buf.data(),
-                tab.snippet_edit.content_buf.size());
-            if (!tab.snippet_edit.error.empty()) {
-                PushStyleColor(ImGuiCol_Text, IM_COL32(255, 0, 0, 255));
-                TextUnformatted(tab.snippet_edit.error.data());
-                PopStyleColor();
-            }
-            if (Button("Save")) {
-                std::string name(tab.snippet_edit.name_buf.data());
-                std::string err = validate_snippet_name(name);
-                if (!err.empty()) {
-                    tab.snippet_edit.error = std::move(err);
+                if (tab.snippet_edit.active) {
+                    PushID("snippet-edit");
+                    InputText("Name", tab.snippet_edit.name_buf.data(), tab.snippet_edit.name_buf.size());
+                    InputText("Content", tab.snippet_edit.content_buf.data(), tab.snippet_edit.content_buf.size());
+                    if (!tab.snippet_edit.error.empty()) {
+                        PushStyleColor(ImGuiCol_Text, IM_COL32(255, 0, 0, 255));
+                        TextUnformatted(tab.snippet_edit.error.data());
+                        PopStyleColor();
+                    }
+                    if (Button("Save")) {
+                        std::string name(tab.snippet_edit.name_buf.data());
+                        std::string err = validate_snippet_name(name);
+                        if (!err.empty()) {
+                            tab.snippet_edit.error = std::move(err);
+                        } else {
+                            if (!tab.snippet_edit.original_name.empty())
+                                tab.session_data.snippets.erase(tab.snippet_edit.original_name);
+                            tab.session_data.snippets[name] = std::string(tab.snippet_edit.content_buf.data());
+                            tab.snippet_edit.active = false;
+                            tab.snippet_edit.error.clear();
+                        }
+                    }
+                    SameLine();
+                    if (Button("Cancel")) {
+                        tab.snippet_edit.active = false;
+                        tab.snippet_edit.error.clear();
+                    }
+                    PopID();
                 } else {
-                    // Remove old entry if renaming an existing snippet
-                    if (!tab.snippet_edit.original_name.empty())
-                        tab.session_data.snippets.erase(tab.snippet_edit.original_name);
-                    tab.session_data.snippets[name] =
-                        std::string(tab.snippet_edit.content_buf.data());
-                    tab.snippet_edit.active = false;
-                    tab.snippet_edit.error.clear();
+                    if (Button("+ Add Snippet")) {
+                        tab.snippet_edit = {};
+                        tab.snippet_edit.active = true;
+                        std::fill(tab.snippet_edit.name_buf.begin(), tab.snippet_edit.name_buf.end(), 0);
+                        std::fill(tab.snippet_edit.content_buf.begin(), tab.snippet_edit.content_buf.end(), 0);
+                    }
                 }
-            }
-            SameLine();
-            if (Button("Cancel")) {
-                tab.snippet_edit.active = false;
-                tab.snippet_edit.error.clear();
-            }
-            PopID();
-        } else {
-            if (Button("+ Add Snippet")) {
-                tab.snippet_edit = {};
-                tab.snippet_edit.active = true;
-                tab.snippet_edit.original_name.clear();
-                std::fill(tab.snippet_edit.name_buf.begin(), tab.snippet_edit.name_buf.end(), 0);
-                std::fill(tab.snippet_edit.content_buf.begin(), tab.snippet_edit.content_buf.end(), 0);
-                tab.snippet_edit.error.clear();
-            }
-        }
 
-        // ── List existing snippets ──
-        for (auto it = tab.session_data.snippets.begin();
-             it != tab.session_data.snippets.end();) {
-            PushID(it->first.c_str());
-            if (Button("X")) {
-                it = tab.session_data.snippets.erase(it);
-                PopID();
-                continue;
+                for (auto it = tab.session_data.snippets.begin();
+                     it != tab.session_data.snippets.end();) {
+                    PushID(it->first.c_str());
+                    if (Button("X")) {
+                        it = tab.session_data.snippets.erase(it);
+                        PopID();
+                        continue;
+                    }
+                    SameLine();
+                    std::string preview = it->second.substr(0, 60);
+                    if (it->second.size() > 60) preview += "\xe2\x80\xa6";
+                    Text("%s: \"%s\"", it->first.c_str(), preview.c_str());
+                    SameLine();
+                    if (Button("Edit")) {
+                        tab.snippet_edit.active = true;
+                        tab.snippet_edit.original_name = it->first;
+                        std::fill(tab.snippet_edit.name_buf.begin(), tab.snippet_edit.name_buf.end(), 0);
+                        std::fill(tab.snippet_edit.content_buf.begin(), tab.snippet_edit.content_buf.end(), 0);
+                        std::copy(it->first.begin(), it->first.end(), tab.snippet_edit.name_buf.begin());
+                        std::copy(it->second.begin(), it->second.end(), tab.snippet_edit.content_buf.begin());
+                        tab.snippet_edit.error.clear();
+                    }
+                    ++it;
+                    PopID();
+                }
+                EndTabItem();
             }
-            SameLine();
-            // Show name and content preview (first 60 chars)
-            std::string preview = it->second.substr(0, 60);
-            if (it->second.size() > 60)
-                preview += "…";
-            Text("%s: \"%s\"", it->first.c_str(), preview.c_str());
-            SameLine();
-            if (Button("Edit")) {
-                tab.snippet_edit.active = true;
-                tab.snippet_edit.original_name = it->first;
-                std::fill(tab.snippet_edit.name_buf.begin(), tab.snippet_edit.name_buf.end(), 0);
-                std::fill(tab.snippet_edit.content_buf.begin(), tab.snippet_edit.content_buf.end(), 0);
-                std::copy(it->first.begin(), it->first.end(), tab.snippet_edit.name_buf.begin());
-                std::copy(it->second.begin(), it->second.end(), tab.snippet_edit.content_buf.begin());
-                tab.snippet_edit.error.clear();
-            }
-            ++it;
-            PopID();
-            }
-            EndTabItem();
-        }
 
-        EndTabBar();
+            EndTabBar();
+        }
     }
+
+    Separator();
 }
 
 // ── Tag expansion for !snippet-name references ──
