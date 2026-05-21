@@ -33,6 +33,7 @@ struct SessionData {
     std::map<std::string, bool> ro_subagent_tool_gates; // read-only subagent gates (persisted)
     std::map<std::string, std::string> snippets; // session-local snippet overrides (persisted)
     std::map<std::string, CmdToolConfig> custom_commands; // session-local custom commands (persisted)
+    std::vector<McpEndpoint> custom_mcp_servers; // session-local custom MCP servers (persisted)
 
     json to_json() const;
     void from_json(const json& j);

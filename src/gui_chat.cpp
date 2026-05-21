@@ -765,9 +765,8 @@ void render_config_tab(PrimaryAgent& tab) {
 
             // ── MCP Servers sub-tab ──
             if (BeginTabItem("  MCP Servers  ")) {
-                if (cfg.mcp_servers.empty()) {
-                    TextDisabled("No MCP servers configured.");
-                } else {
+                if (!cfg.mcp_servers.empty()) {
+                    TextDisabled("Configured servers:");
                     for (const auto& mcp : cfg.mcp_servers) {
                         bool enabled = tab.mcp_enabled[mcp.name];
                         bool changed = Checkbox(mcp.name.c_str(), &enabled);
@@ -809,6 +808,295 @@ void render_config_tab(PrimaryAgent& tab) {
                             EndTooltip();
                         }
                     }
+                } else {
+                    TextDisabled("No MCP servers configured.");
+                }
+
+                // ── Custom MCP Servers CRUD ──
+                auto validate_mcp_name = [](const std::string& name) -> std::string {
+                    if (name.empty()) return "Name must not be empty";
+                    for (char c : name) {
+                        if (std::isspace(static_cast<unsigned char>(c)))
+                            return "Name must not contain spaces";
+                    }
+                    return {};
+                };
+
+                // Check if name conflicts with any config server
+                auto is_config_server = [&tab](const std::string& name) -> bool {
+                    for (const auto& m : cfg.mcp_servers) {
+                        if (m.name == name) return true;
+                    }
+                    return false;
+                };
+
+                if (tab.mcp_edit.active) {
+                    PushID("mcp-edit");
+
+                   InputText("Name", tab.mcp_edit.name_buf.data(), tab.mcp_edit.name_buf.size());
+                    if (BeginCombo("Transport", tab.mcp_edit.transport_buf.data())) {
+                        for (const char* opt : {"stdio", "streamable-http"}) {
+                            bool selected = strcmp(tab.mcp_edit.transport_buf.data(), opt) == 0;
+                            if (Selectable(opt, selected)) {
+                                std::fill(tab.mcp_edit.transport_buf.begin(), tab.mcp_edit.transport_buf.end(), 0);
+                                std::copy(opt, opt + strlen(opt), tab.mcp_edit.transport_buf.begin());
+                            }
+                            if (selected) break;
+                        }
+                        EndCombo();
+                    }
+
+                    // Show "Command" or "URL" label based on transport
+                    std::string ctrl_label = (strcmp(tab.mcp_edit.transport_buf.data(), "streamable-http") == 0)
+                        ? "URL" : "Command";
+                    InputText(ctrl_label.c_str(), tab.mcp_edit.command_or_url_buf.data(),
+                              tab.mcp_edit.command_or_url_buf.size());
+
+                    InputText("Args", tab.mcp_edit.args_buf.data(), tab.mcp_edit.args_buf.size());
+                    InputText("CWD", tab.mcp_edit.cwd_buf.data(), tab.mcp_edit.cwd_buf.size());
+
+                    // API Key shown only for HTTP transport
+                    bool is_http = strcmp(tab.mcp_edit.transport_buf.data(), "streamable-http") == 0;
+                    if (is_http) {
+                        InputText("API Key", tab.mcp_edit.api_key_buf.data(), tab.mcp_edit.api_key_buf.size());
+                    }
+
+                    InputText("Timeout", tab.mcp_edit.timeout_buf.data(), tab.mcp_edit.timeout_buf.size());
+
+                    if (!tab.mcp_edit.error.empty()) {
+                        PushStyleColor(ImGuiCol_Text, IM_COL32(255, 0, 0, 255));
+                        TextUnformatted(tab.mcp_edit.error.c_str());
+                        PopStyleColor();
+                    }
+                    if (Button("Save")) {
+                        std::string name(tab.mcp_edit.name_buf.data());
+                        std::string transport(tab.mcp_edit.transport_buf.data());
+                        std::string cmd_or_url(tab.mcp_edit.command_or_url_buf.data());
+                        std::string args_str(tab.mcp_edit.args_buf.data());
+                        std::string cwd(tab.mcp_edit.cwd_buf.data());
+                        std::string api_key(tab.mcp_edit.api_key_buf.data());
+                        std::string timeout_str(tab.mcp_edit.timeout_buf.data());
+
+                        std::string err = validate_mcp_name(name);
+                        if (err.empty() && cmd_or_url.empty())
+                            err = "Command/URL must not be empty";
+
+                        // Check uniqueness against config + existing custom servers
+                        if (err.empty()) {
+                            bool name_in_config = is_config_server(name);
+                            bool name_in_custom = false;
+                            for (const auto& m : tab.session_data.custom_mcp_servers) {
+                                if (m.name == name && name != tab.mcp_edit.original_name) {
+                                    name_in_custom = true;
+                                    break;
+                                }
+                            }
+                            if (name_in_config || name_in_custom)
+                                err = "Name already in use";
+                        }
+
+                        // Validate timeout is a positive integer
+                        if (err.empty() && !timeout_str.empty()) {
+                            try {
+                                int t = std::stoi(timeout_str);
+                                if (t <= 0) err = "Timeout must be positive";
+                            } catch (...) {
+                                err = "Timeout must be a valid number";
+                            }
+                        }
+
+                        if (!err.empty()) {
+                            tab.mcp_edit.error = std::move(err);
+                        } else {
+                            // Parse args string into vector
+                            std::vector<std::string> args_vec;
+                            if (!args_str.empty()) {
+                                std::stringstream ss(args_str);
+                                std::string arg;
+                                while (std::getline(ss, arg, ' ')) {
+                                    if (!arg.empty()) args_vec.push_back(arg);
+                                }
+                            }
+
+                            int timeout_sec = 60;
+                            if (!timeout_str.empty()) {
+                                try { timeout_sec = std::stoi(timeout_str); } catch (...) {}
+                            }
+
+                            McpEndpoint mcp;
+                            mcp.name = name;
+                            mcp.transport = transport;
+                            mcp.command = cmd_or_url;
+                            mcp.args = std::move(args_vec);
+                            mcp.cwd = cwd;
+                            if (transport == "streamable-http") {
+                                mcp.url = cmd_or_url;
+                                mcp.api_key = api_key;
+                                mcp.command.clear();
+                            } else {
+                                mcp.command = cmd_or_url;
+                            }
+                            mcp.timeout_sec = timeout_sec;
+
+                            // Update existing or add new
+                            if (!tab.mcp_edit.original_name.empty()) {
+                                // Find and replace in vector
+                                for (auto it = tab.session_data.custom_mcp_servers.begin();
+                                     it != tab.session_data.custom_mcp_servers.end(); ++it) {
+                                    if (it->name == tab.mcp_edit.original_name) {
+                                        it->name = name;
+                                        it->transport = transport;
+                                        it->command = mcp.command;
+                                        it->args = mcp.args;
+                                        it->cwd = cwd;
+                                        it->url = mcp.url;
+                                        it->api_key = api_key;
+                                        it->timeout_sec = timeout_sec;
+                                        break;
+                                    }
+                                }
+                            } else {
+                                tab.session_data.custom_mcp_servers.push_back(std::move(mcp));
+                            }
+
+                            // Start the server if enabled
+                            tab.mcp_enabled[name] = true;
+                            auto result = session.start_custom_mcp_server(
+                                tab.session_data.custom_mcp_servers.back());
+                            if (!result) {
+                                tab.mcp_error[name] = result.error();
+                                tab.mcp_enabled[name] = false;
+                            }
+
+                            tab.mcp_edit.active = false;
+                            tab.mcp_edit.error.clear();
+                        }
+                    }
+                    SameLine();
+                    if (Button("Cancel")) {
+                        tab.mcp_edit.active = false;
+                        tab.mcp_edit.error.clear();
+                    }
+                    PopID();
+                } else {
+                    if (Button("+ Add Custom Server")) {
+                        tab.mcp_edit = {};
+                        std::fill(tab.mcp_edit.name_buf.begin(), tab.mcp_edit.name_buf.end(), 0);
+                        std::fill(tab.mcp_edit.transport_buf.begin(), tab.mcp_edit.transport_buf.end(), 0);
+                        std::copy("stdio", "stdio" + 5, tab.mcp_edit.transport_buf.begin());
+                        std::fill(tab.mcp_edit.command_or_url_buf.begin(), tab.mcp_edit.command_or_url_buf.end(), 0);
+                        std::fill(tab.mcp_edit.args_buf.begin(), tab.mcp_edit.args_buf.end(), 0);
+                        std::fill(tab.mcp_edit.cwd_buf.begin(), tab.mcp_edit.cwd_buf.end(), 0);
+                        std::fill(tab.mcp_edit.api_key_buf.begin(), tab.mcp_edit.api_key_buf.end(), 0);
+                        std::fill(tab.mcp_edit.timeout_buf.begin(), tab.mcp_edit.timeout_buf.end(), 0);
+                        std::copy("60", "60" + 2, tab.mcp_edit.timeout_buf.begin());
+                    }
+                }
+
+                              // List custom MCP servers
+                for (auto it = tab.session_data.custom_mcp_servers.begin();
+                     it != tab.session_data.custom_mcp_servers.end();) {
+                    PushID(it->name.c_str());
+                    bool enabled = tab.mcp_enabled[it->name];
+                    if (Checkbox("##en", &enabled)) {
+                        tab.mcp_enabled[it->name] = enabled;
+                        tab.mcp_error.erase(it->name);
+                        if (enabled) {
+                            auto result = session.start_custom_mcp_server(*it);
+                            if (!result) {
+                                tab.mcp_error[it->name] = result.error();
+                                tab.mcp_enabled[it->name] = false;
+                            }
+                        } else {
+                            session.stop_custom_mcp_server(it->name);
+                        }
+                    }
+                    SameLine();
+                    std::string label = it->name + " (" + it->transport + ")";
+                    Text("%s", label.c_str());
+
+                    if (session.mcp_registry().is_running(it->name)) {
+                        SameLine();
+                        TextColored(ImVec4(0, 1, 0, 1), "(*) running");
+                    } else if (tab.mcp_error.count(it->name)) {
+                        SameLine();
+                        TextColored(ImVec4(1, 0, 0, 1), "(!) %s", tab.mcp_error[it->name].c_str());
+                    }
+
+                    if (IsItemHovered()) {
+                        BeginTooltip();
+                        Text("command: %s", it->command.c_str());
+                        if (!it->args.empty()) {
+                            std::string args_str;
+                            for (const auto& a : it->args) {
+                                if (!args_str.empty()) args_str += " ";
+                                args_str += a;
+                            }
+                            Text("args: %s", args_str.c_str());
+                        }
+                        if (!it->url.empty())
+                            Text("url: %s", it->url.c_str());
+                        if (!it->cwd.empty())
+                            Text("cwd: %s", it->cwd.c_str());
+                        if (!it->api_key.empty())
+                            Text("api_key: (set)");
+                        EndTooltip();
+                    }
+
+                    SameLine();
+                    if (Button("Edit")) {
+                        tab.mcp_edit.active = true;
+                        tab.mcp_edit.original_name = it->name;
+                        std::fill(tab.mcp_edit.name_buf.begin(), tab.mcp_edit.name_buf.end(), 0);
+                        std::fill(tab.mcp_edit.transport_buf.begin(), tab.mcp_edit.transport_buf.end(), 0);
+                        std::fill(tab.mcp_edit.command_or_url_buf.begin(), tab.mcp_edit.command_or_url_buf.end(), 0);
+                        std::fill(tab.mcp_edit.args_buf.begin(), tab.mcp_edit.args_buf.end(), 0);
+                        std::fill(tab.mcp_edit.cwd_buf.begin(), tab.mcp_edit.cwd_buf.end(), 0);
+                        std::fill(tab.mcp_edit.api_key_buf.begin(), tab.mcp_edit.api_key_buf.end(), 0);
+                        std::fill(tab.mcp_edit.timeout_buf.begin(), tab.mcp_edit.timeout_buf.end(), 0);
+
+                        std::copy(it->name.begin(), it->name.end(), tab.mcp_edit.name_buf.begin());
+                        std::copy(it->transport.begin(), it->transport.end(), tab.mcp_edit.transport_buf.begin());
+
+                        if (it->transport == "streamable-http") {
+                            std::copy(it->url.begin(), it->url.end(), tab.mcp_edit.command_or_url_buf.begin());
+                        } else {
+                            std::copy(it->command.begin(), it->command.end(), tab.mcp_edit.command_or_url_buf.begin());
+                        }
+
+                        // Serialize args back to space-separated string
+                        if (!it->args.empty()) {
+                            std::string args_str;
+                            for (size_t i = 0; i < it->args.size(); ++i) {
+                                if (i > 0) args_str += " ";
+                                args_str += it->args[i];
+                            }
+                            std::copy(args_str.begin(), args_str.end(), tab.mcp_edit.args_buf.begin());
+                        }
+
+                        if (!it->cwd.empty()) {
+                            std::copy(it->cwd.begin(), it->cwd.end(), tab.mcp_edit.cwd_buf.begin());
+                        }
+                        if (!it->api_key.empty()) {
+                            std::copy(it->api_key.begin(), it->api_key.end(), tab.mcp_edit.api_key_buf.begin());
+                        }
+
+                        std::string timeout_str = std::to_string(it->timeout_sec);
+                        std::copy(timeout_str.begin(), timeout_str.end(), tab.mcp_edit.timeout_buf.begin());
+
+                        tab.mcp_edit.error.clear();
+                    }
+                    SameLine();
+                    if (Button("X")) {
+                        session.stop_custom_mcp_server(it->name);
+                        it = tab.session_data.custom_mcp_servers.erase(it);
+                        tab.mcp_enabled.erase(it->name);
+                        tab.mcp_error.erase(it->name);
+                        PopID();
+                        continue;
+                    }
+                    ++it;
+                    PopID();
                 }
                 EndTabItem();
             }

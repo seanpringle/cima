@@ -163,6 +163,12 @@ class ChatSession {
     /// Removes its tools from the ToolRegistry.
     void stop_mcp_server(const std::string& name);
 
+    /// Start a session-scoped (custom) MCP server from its endpoint config.
+    Result<void> start_custom_mcp_server(const McpEndpoint& config);
+
+    /// Stop a session-scoped (custom) MCP server by name.
+    void stop_custom_mcp_server(const std::string& name);
+
     /// Access the underlying MCP registry (for GUI status queries).
     McpRegistry& mcp_registry() { return mcp_registry_; }
     const McpRegistry& mcp_registry() const { return mcp_registry_; }

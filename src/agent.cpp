@@ -58,6 +58,13 @@ PrimaryAgent::~PrimaryAgent() {
         t.cancel_and_wait();
     cancel_and_wait();
 
+    // Stop all custom MCP servers before saving session data.
+    for (const auto& mcp : session_data.custom_mcp_servers) {
+        if (session->mcp_registry().is_running(mcp.name)) {
+            session->stop_custom_mcp_server(mcp.name);
+        }
+    }
+
     session_data.provider_name = provider_name;
     session_data.model = model_name;
     session_data.reasoning_effort = reasoning_effort;
@@ -271,6 +278,15 @@ void PrimaryAgent::restore_session_data() {
     // Apply enabled state to all cmd_tools (config + session).
     for (const auto& [name, enabled] : cmd_tools_enabled) {
         session->set_custom_tool_enabled("cmd_" + name, enabled);
+    }
+
+    // Restore custom MCP servers: start any that were previously enabled.
+    for (const auto& mcp : session_data.custom_mcp_servers) {
+        if (mcp_enabled.count(mcp.name) && mcp_enabled[mcp.name]) {
+            auto result = session->start_custom_mcp_server(mcp);
+            if (!result)
+                mcp_error[mcp.name] = result.error();
+        }
     }
 }
 

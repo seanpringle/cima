@@ -64,6 +64,21 @@ struct CmdEditState {
     std::string error;             // validation error to display
 };
 
+/// Editing state for the session custom MCP servers CRUD UI.
+struct McpServerEditState {
+    bool active = false;                  // true when editing/add is open
+    std::string original_name;            // empty = new, non-empty = editing existing
+    // Input buffers — char arrays passed directly to ImGui InputText
+    std::array<char,128> name_buf;        // server name input
+    std::array<char,64> transport_buf;    // "stdio" or "streamable-http"
+    std::array<char,512> command_or_url_buf;  // command (stdio) or URL (http)
+    std::array<char,1024> args_buf;       // space-separated args
+    std::array<char,256> cwd_buf;         // working directory
+    std::array<char,512> api_key_buf;     // Bearer token (HTTP only)
+    std::array<char,32> timeout_buf;      // timeout in seconds as string
+    std::string error;                    // validation error to display
+};
+
 struct PrimaryAgent : Agent {
     bool bash_enabled = false; // run_bash tool enabled for this tab
     bool cmake_enabled = false; // cmake tools enabled for this tab
@@ -83,8 +98,11 @@ struct PrimaryAgent : Agent {
     std::map<std::string, bool> rw_subagent_tool_gates; // read-write subagent gates
     std::map<std::string, bool> ro_subagent_tool_gates; // read-only subagent gates
 
-    // MCP: per-server error message (transient, not persisted)
+     // MCP: per-server error message (transient, not persisted)
     std::map<std::string, std::string> mcp_error;
+
+    // Custom MCP server CRUD editing state
+    McpServerEditState mcp_edit;
 
     std::vector<SubAgent> subagents;
 

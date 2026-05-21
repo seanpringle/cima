@@ -604,6 +604,14 @@ void ChatSession::stop_mcp_server(const std::string& name) {
     mcp_registry_.stop_server(name);
 }
 
+Result<void> ChatSession::start_custom_mcp_server(const McpEndpoint& config) {
+    return start_mcp_server(config);
+}
+
+void ChatSession::stop_custom_mcp_server(const std::string& name) {
+    stop_mcp_server(name);
+}
+
 // ---------------------------------------------------------------------------
 // Clear
 // ---------------------------------------------------------------------------

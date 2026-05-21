@@ -74,6 +74,23 @@ json SessionData::to_json() const {
     }
     j["custom_commands"] = std::move(cc);
 
+    // Serialise custom_mcp_servers vector
+    json mcp_arr = json::array();
+    for (const auto& m : custom_mcp_servers) {
+        json mj;
+        mj["name"] = m.name;
+        mj["transport"] = m.transport;
+        mj["command"] = m.command;
+        mj["args"] = m.args;
+        mj["cwd"] = m.cwd;
+        mj["url"] = m.url;
+        mj["api_key"] = m.api_key;
+        mj["env"] = m.env;
+        mj["timeout_sec"] = m.timeout_sec;
+        mcp_arr.push_back(std::move(mj));
+    }
+    j["custom_mcp_servers"] = std::move(mcp_arr);
+
     return j;
 }
 
@@ -165,6 +182,39 @@ void SessionData::from_json(const json& j) {
                 if (!cmd.name.empty() && !cmd.command.empty()) {
                     custom_commands[it.key()] = std::move(cmd);
                 }
+            }
+        }
+    }
+
+    // Deserialise custom_mcp_servers array
+    custom_mcp_servers.clear();
+    if (j.contains("custom_mcp_servers") && j["custom_mcp_servers"].is_array()) {
+        for (const auto& mj : j["custom_mcp_servers"]) {
+            McpEndpoint m;
+            m.name = mj.value("name", std::string());
+            m.transport = mj.value("transport", std::string("stdio"));
+            m.command = mj.value("command", std::string());
+            m.url = mj.value("url", std::string());
+            m.api_key = mj.value("api_key", std::string());
+            m.cwd = mj.value("cwd", std::string());
+            m.timeout_sec = mj.value("timeout_sec", 60);
+
+            if (mj.contains("args") && mj["args"].is_array()) {
+                for (const auto& a : mj["args"]) {
+                    if (a.is_string())
+                        m.args.push_back(a.get<std::string>());
+                }
+            }
+
+            if (mj.contains("env") && mj["env"].is_object()) {
+                for (auto it = mj["env"].begin(); it != mj["env"].end(); ++it) {
+                    if (it.value().is_string())
+                        m.env[it.key()] = it.value().get<std::string>();
+                }
+            }
+
+            if (!m.name.empty()) {
+                custom_mcp_servers.push_back(std::move(m));
             }
         }
     }
