@@ -605,8 +605,7 @@ void render_config_tab(PrimaryAgent& tab) {
             if (BeginTabItem("  Tool Calls  ")) {
                 if (BeginTable("ToolGateTable", 4,
                         ImGuiTableFlags_BordersV | ImGuiTableFlags_BordersOuterH |
-                        ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp |
-                        ImGuiTableFlags_ScrollY)) {
+                        ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
                     // Column setup
                     TableSetupColumn("Tool", ImGuiTableColumnFlags_WidthStretch);
                     TableSetupColumn("Primary", ImGuiTableColumnFlags_WidthFixed);
