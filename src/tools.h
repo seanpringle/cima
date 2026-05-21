@@ -168,10 +168,14 @@ std::string extract_uddg_url(const std::string& ddg_url);
 // ---------------------------------------------------------------------------
 // Tool factory declarations (used by ToolRegistry::add_defaults)
 // ---------------------------------------------------------------------------
-Tool make_list_files_tool(
+Tool make_list_directory_tool(
     std::shared_ptr<std::string> safe_dir_ptr,
     const std::vector<std::string>& read_only_paths,
     std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
+Tool make_create_directory_tool(
+    std::shared_ptr<std::string> safe_dir_ptr);
+Tool make_delete_directory_tool(
+    std::shared_ptr<std::string> safe_dir_ptr);
 Tool make_read_file_lines_tool(
     std::shared_ptr<std::string> safe_dir_ptr, const std::vector<std::string>& read_only_paths);
 Tool make_read_file_tool(

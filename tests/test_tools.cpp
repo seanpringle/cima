@@ -110,7 +110,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
 
     json tools = reg.to_openai_tools();
     REQUIRE(tools.is_array());
-    REQUIRE(tools.size() == 20);
+    REQUIRE(tools.size() == 22);
 
     // Check structure of first tool
     CHECK(tools[0]["type"] == "function");
@@ -126,12 +126,13 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
         names.insert(t["function"]["name"].get<std::string>());
     }
     CHECK(names == std::set<std::string>{
-                       "list_files", "read_file", "read_file_lines", "grep_files", "write_file",
+                       "list_directory", "read_file", "read_file_lines", "grep_files", "write_file",
                        "edit_file", "run_bash", "web_search", "web_fetch",
                        "project_tree", "git_status", "git_diff", "git_log",
                        "git_add", "git_commit",
                        "git_restore", "git_show",
-                       "delete_file", "move_file", "rename_file"});
+                       "delete_file", "move_file", "rename_file",
+                       "create_directory", "delete_directory"});
 }
 
 TEST_CASE("ToolRegistry without write tools (Planner-style)", "[tools][registry]") {
@@ -140,7 +141,7 @@ TEST_CASE("ToolRegistry without write tools (Planner-style)", "[tools][registry]
 
     json tools = reg.to_openai_tools();
     REQUIRE(tools.is_array());
-    // 11 read-only tools: list_files, read_file, read_file_lines, grep_files,
+    // 11 read-only tools: list_directory, read_file, read_file_lines, grep_files,
     // project_tree, web_search, web_fetch, git_status, git_diff, git_log, git_show
     REQUIRE(tools.size() == 11);
 
@@ -159,7 +160,7 @@ TEST_CASE("ToolRegistry without write tools (Planner-style)", "[tools][registry]
     CHECK(names.find("rename_file") == names.end());
 
     // Read-only tools should be present
-    CHECK(names.find("list_files") != names.end());
+    CHECK(names.find("list_directory") != names.end());
     CHECK(names.find("read_file") != names.end());
     CHECK(names.find("read_file_lines") != names.end());
     CHECK(names.find("grep_files") != names.end());
@@ -172,10 +173,10 @@ TEST_CASE("ToolRegistry without write tools (Planner-style)", "[tools][registry]
 }
 
 // ===================================================================
-// list_files
+// list_directory
 // ===================================================================
 
-TEST_CASE("list_files basic", "[tools][list_files]") {
+TEST_CASE("list_directory basic", "[tools][list_directory]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
     reg.add_defaults(sd, Config{});
@@ -185,7 +186,7 @@ TEST_CASE("list_files basic", "[tools][list_files]") {
     std::ofstream(sd + "/b.txt") << "world";
     fs::create_directory(sd + "/sub");
 
-    auto result = reg.execute("list_files", R"({"path": "."})");
+    auto result = reg.execute("list_directory", R"({"path": "."})");
     REQUIRE(result);
 
     // Output should contain our files
@@ -196,14 +197,147 @@ TEST_CASE("list_files basic", "[tools][list_files]") {
     fs::remove_all(sd);
 }
 
-TEST_CASE("list_files path traversal rejected", "[tools][list_files]") {
+TEST_CASE("list_directory path traversal rejected", "[tools][list_directory]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
     reg.add_defaults(sd, Config{});
 
-    auto result = reg.execute("list_files", R"({"path": "../../etc"})");
+    auto result = reg.execute("list_directory", R"({"path": "../../etc"})");
     CHECK_FALSE(result);
     CHECK(result.error().find("path must be under") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+// ===================================================================
+// create_directory
+// ===================================================================
+
+TEST_CASE("create_directory basic", "[tools][create_directory]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    auto result = reg.execute("create_directory", R"({"path": "my_dir"})");
+    REQUIRE(result);
+    CHECK(result->find("created") != std::string::npos);
+    CHECK(std::filesystem::exists(sd + "/my_dir"));
+    CHECK(std::filesystem::is_directory(sd + "/my_dir"));
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("create_directory nested", "[tools][create_directory]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    auto result = reg.execute("create_directory", R"({"path": "a/b/c"})");
+    REQUIRE(result);
+    CHECK(result->find("created") != std::string::npos);
+    CHECK(std::filesystem::exists(sd + "/a/b/c"));
+    CHECK(std::filesystem::is_directory(sd + "/a/b/c"));
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("create_directory already exists", "[tools][create_directory]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    // Create it once
+    std::filesystem::create_directories(sd + "/existing");
+    CHECK(std::filesystem::exists(sd + "/existing"));
+
+    // Create it again — should succeed silently
+    auto result = reg.execute("create_directory", R"({"path": "existing"})");
+    REQUIRE(result);
+    CHECK(result->find("already exists") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("create_directory path traversal rejected", "[tools][create_directory]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    auto result = reg.execute("create_directory", R"({"path": "../../etc/evil"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("path must be under") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+// ===================================================================
+// delete_directory
+// ===================================================================
+
+TEST_CASE("delete_directory basic", "[tools][delete_directory]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    // Create a directory first
+    std::filesystem::create_directories(sd + "/to_delete");
+    CHECK(std::filesystem::exists(sd + "/to_delete"));
+
+    // Delete it
+    auto result = reg.execute("delete_directory", R"({"path": "to_delete"})");
+    REQUIRE(result);
+    CHECK(result->find("removed") != std::string::npos);
+    CHECK(!std::filesystem::exists(sd + "/to_delete"));
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("delete_directory only works on empty dir", "[tools][delete_directory]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    // Create a directory with a file inside
+    std::filesystem::create_directories(sd + "/not_empty");
+    std::ofstream(sd + "/not_empty/file.txt") << "content";
+    CHECK(std::filesystem::exists(sd + "/not_empty/file.txt"));
+
+    // Try to delete — should fail because directory is not empty
+    auto result = reg.execute("delete_directory", R"({"path": "not_empty"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("not empty") != std::string::npos);
+
+    // Verify directory still exists
+    CHECK(std::filesystem::exists(sd + "/not_empty"));
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("delete_directory path traversal rejected", "[tools][delete_directory]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    auto result = reg.execute("delete_directory", R"({"path": "../../etc"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("path must be under") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("delete_directory not a directory", "[tools][delete_directory]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    // Create a regular file
+    std::ofstream(sd + "/a_file") << "hello";
+    CHECK(std::filesystem::exists(sd + "/a_file"));
+
+    // Try to delete it with delete_directory — should fail
+    auto result = reg.execute("delete_directory", R"({"path": "a_file"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("Not a directory") != std::string::npos);
 
     fs::remove_all(sd);
 }

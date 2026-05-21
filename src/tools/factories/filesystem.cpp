@@ -5,11 +5,11 @@
 #include <string>
 #include <vector>
 
-Tool make_list_files_tool(std::shared_ptr<std::string> safe_dir_ptr,
+Tool make_list_directory_tool(std::shared_ptr<std::string> safe_dir_ptr,
     const std::vector<std::string>& read_only_paths,
     std::shared_ptr<std::vector<std::string>> tool_logs) {
     Tool t;
-    t.name = "list_files";
+    t.name = "list_directory";
     t.description = "List files and directories in a given path";
     t.parameters = {{"type", "object"},
         {"properties", {{"path", {{"type", "string"}, {"description", "Directory path to list"}}}}},
@@ -83,7 +83,7 @@ Tool make_project_tree_tool(std::shared_ptr<std::string> safe_dir_ptr,
         "Recursively list files/directories in a tree-like format.\n"
         "Maximum depth of 5 by default. "
         "Use this to understand project structure in a single call "
-        "instead of calling list_files repeatedly.";
+        "instead of calling list_directory repeatedly.";
     t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},
         {"properties",
@@ -257,6 +257,83 @@ Tool make_project_tree_tool(std::shared_ptr<std::string> safe_dir_ptr,
         }
 
         return result;
+    };
+    return t;
+}
+
+// ── create_directory ─────────────────────────────────────────────────
+
+Tool make_create_directory_tool(std::shared_ptr<std::string> safe_dir_ptr) {
+    Tool t;
+    t.name = "create_directory";
+    t.description = "Create a directory (like mkdir -p). Creates parent "
+                    "directories if needed. Succeeds silently if the "
+                    "directory already exists.";
+    t.parameters = {{"type", "object"},
+        {"properties",
+            {{"path", {{"type", "string"}, {"description", "Directory path to create"}}}}},
+        {"required", {"path"}}};
+    t.execute = [safe_dir_ptr](const json& args) -> Result<std::string> {
+        auto raw = args.value("path", std::string());
+
+        auto resolved = resolve_path(raw, *safe_dir_ptr);
+        if (!resolved) {
+            return std::unexpected(resolved.error());
+        }
+
+        std::error_code ec;
+        bool created = std::filesystem::create_directories(*resolved, ec);
+        if (ec) {
+            return std::unexpected("Failed to create directory: " + ec.message());
+        }
+        if (created) {
+            return "ok (created " + *resolved + ")";
+        } else {
+            return "ok (already exists: " + *resolved + ")";
+        }
+    };
+    return t;
+}
+
+// ── delete_directory ─────────────────────────────────────────────────
+
+Tool make_delete_directory_tool(std::shared_ptr<std::string> safe_dir_ptr) {
+    Tool t;
+    t.name = "delete_directory";
+    t.description = "Delete an empty directory. Only works if the "
+                    "directory is empty (no files or subdirectories).";
+    t.parameters = {{"type", "object"},
+        {"properties",
+            {{"path", {{"type", "string"}, {"description", "Directory path to delete"}}}}},
+        {"required", {"path"}}};
+    t.execute = [safe_dir_ptr](const json& args) -> Result<std::string> {
+        auto raw = args.value("path", std::string());
+
+        auto resolved = resolve_path(raw, *safe_dir_ptr);
+        if (!resolved) {
+            return std::unexpected(resolved.error());
+        }
+
+        std::error_code ec;
+        auto status = std::filesystem::status(*resolved, ec);
+        if (ec) {
+            return std::unexpected("Cannot access path: " + *resolved);
+        }
+        if (!std::filesystem::is_directory(status)) {
+            return std::unexpected("Not a directory: " + *resolved);
+        }
+        if (!std::filesystem::is_empty(*resolved, ec)) {
+            if (ec) {
+                return std::unexpected("Cannot check directory: " + ec.message());
+            }
+            return std::unexpected("Directory is not empty: " + *resolved);
+        }
+
+        bool removed = std::filesystem::remove(*resolved, ec);
+        if (ec || !removed) {
+            return std::unexpected("Failed to delete directory: " + ec.message());
+        }
+        return "ok (removed " + *resolved + ")";
     };
     return t;
 }
