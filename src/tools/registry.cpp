@@ -133,11 +133,6 @@ void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
             add(std::move(t));
         }
         {
-            auto t = make_rename_file_tool(safe_dir_ptr);
-            t.permission = ToolPermission::Write;
-            add(std::move(t));
-        }
-        {
             auto t = make_create_directory_tool(safe_dir_ptr);
             t.permission = ToolPermission::Write;
             add(std::move(t));

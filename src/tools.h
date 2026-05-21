@@ -216,7 +216,6 @@ Tool make_project_tree_tool(std::shared_ptr<std::string> safe_dir_ptr,
     std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
 Tool make_delete_file_tool(std::shared_ptr<std::string> safe_dir_ptr);
 Tool make_move_file_tool(std::shared_ptr<std::string> safe_dir_ptr);
-Tool make_rename_file_tool(std::shared_ptr<std::string> safe_dir_ptr);
 
 class ChatSession; // forward decl for SubagentLookup
 

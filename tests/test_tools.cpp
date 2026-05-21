@@ -110,7 +110,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
 
     json tools = reg.to_openai_tools();
     REQUIRE(tools.is_array());
-    REQUIRE(tools.size() == 23);
+    REQUIRE(tools.size() == 22);
 
     // Check structure of first tool
     CHECK(tools[0]["type"] == "function");
@@ -132,7 +132,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
                        "project_tree", "git_status", "git_diff", "git_log",
                        "git_add", "git_commit",
                        "git_restore", "git_show",
-                       "delete_file", "move_file", "rename_file",
+                       "delete_file", "move_file",
                        "create_directory", "delete_directory"});
 }
 
@@ -158,7 +158,6 @@ TEST_CASE("ToolRegistry without write tools (Planner-style)", "[tools][registry]
     CHECK(names.find("git_commit") == names.end());
     CHECK(names.find("delete_file") == names.end());
     CHECK(names.find("move_file") == names.end());
-    CHECK(names.find("rename_file") == names.end());
 
     // Read-only tools should be present
     CHECK(names.find("list_directory") != names.end());
@@ -2678,110 +2677,6 @@ TEST_CASE("move_file absolute path inside safe_dir", "[tools][move_file]") {
 
     CHECK_FALSE(fs::exists(sd + "/source.txt"));
     CHECK(fs::exists(dst));
-
-    fs::remove_all(sd);
-}
-
-// ===================================================================
-// rename_file
-// ===================================================================
-
-TEST_CASE("rename_file basic", "[tools][rename_file]") {
-    auto sd = make_temp_dir();
-    ToolRegistry reg;
-    reg.add_defaults(sd, Config{});
-
-    std::ofstream(sd + "/old_name.txt") << "content";
-
-    auto result = reg.execute("rename_file",
-        R"({"path": "old_name.txt", "new_name": "new_name.txt"})");
-    REQUIRE(result);
-    CHECK(result->find("ok") != std::string::npos);
-    CHECK(result->find("renamed") != std::string::npos);
-
-    CHECK_FALSE(fs::exists(sd + "/old_name.txt"));
-    CHECK(fs::exists(sd + "/new_name.txt"));
-
-    fs::remove_all(sd);
-}
-
-TEST_CASE("rename_file with path separators rejected", "[tools][rename_file]") {
-    auto sd = make_temp_dir();
-    ToolRegistry reg;
-    reg.add_defaults(sd, Config{});
-
-    std::ofstream(sd + "/test.txt") << "content";
-
-    auto result = reg.execute("rename_file",
-        R"({"path": "test.txt", "new_name": "subdir/moved.txt"})");
-    CHECK_FALSE(result);
-    CHECK(result.error().find("must be a filename") != std::string::npos);
-
-    // Original should remain
-    CHECK(fs::exists(sd + "/test.txt"));
-
-    fs::remove_all(sd);
-}
-
-TEST_CASE("rename_file not found", "[tools][rename_file]") {
-    auto sd = make_temp_dir();
-    ToolRegistry reg;
-    reg.add_defaults(sd, Config{});
-
-    auto result = reg.execute("rename_file",
-        R"({"path": "nonexistent.txt", "new_name": "new.txt"})");
-    CHECK_FALSE(result);
-    CHECK(result.error().find("File not found") != std::string::npos);
-
-    fs::remove_all(sd);
-}
-
-TEST_CASE("rename_file destination already exists", "[tools][rename_file]") {
-    auto sd = make_temp_dir();
-    ToolRegistry reg;
-    reg.add_defaults(sd, Config{});
-
-    std::ofstream(sd + "/source.txt") << "source";
-    std::ofstream(sd + "/existing.txt") << "existing";
-
-    auto result = reg.execute("rename_file",
-        R"({"path": "source.txt", "new_name": "existing.txt"})");
-    CHECK_FALSE(result);
-    CHECK(result.error().find("Destination already exists") != std::string::npos);
-
-    // Both should still exist
-    CHECK(fs::exists(sd + "/source.txt"));
-    CHECK(fs::exists(sd + "/existing.txt"));
-
-    fs::remove_all(sd);
-}
-
-TEST_CASE("rename_file path traversal in source", "[tools][rename_file]") {
-    auto sd = make_temp_dir();
-    ToolRegistry reg;
-    reg.add_defaults(sd, Config{});
-
-    auto result = reg.execute("rename_file",
-        R"({"path": "../../etc/passwd", "new_name": "safe.txt"})");
-    CHECK_FALSE(result);
-
-    fs::remove_all(sd);
-}
-
-TEST_CASE("rename_file directory rejected", "[tools][rename_file]") {
-    auto sd = make_temp_dir();
-    ToolRegistry reg;
-    reg.add_defaults(sd, Config{});
-
-    fs::create_directories(sd + "/mydir");
-
-    auto result = reg.execute("rename_file",
-        R"({"path": "mydir", "new_name": "newdir"})");
-    CHECK_FALSE(result);
-    CHECK(result.error().find("Not a regular file") != std::string::npos);
-
-    // Directory should still exist with original name
-    CHECK(fs::exists(sd + "/mydir"));
 
     fs::remove_all(sd);
 }
