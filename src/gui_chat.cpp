@@ -978,9 +978,10 @@ void render_config_tab(PrimaryAgent& tab) {
                         tab.mcp_edit.error.clear();
                     }
                     PopID();
-                } else {
+                 } else {
                     if (Button("+ Add Custom Server")) {
                         tab.mcp_edit = {};
+                        tab.mcp_edit.active = true;
                         std::fill(tab.mcp_edit.name_buf.begin(), tab.mcp_edit.name_buf.end(), 0);
                         std::fill(tab.mcp_edit.transport_buf.begin(), tab.mcp_edit.transport_buf.end(), 0);
                         std::copy("stdio", "stdio" + 5, tab.mcp_edit.transport_buf.begin());
