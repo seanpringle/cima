@@ -594,15 +594,20 @@ void render_config_tab(PrimaryAgent& tab) {
         }
     }
 
-    // ── Tool Gates section ──
+    // ── Sub-tab bar ──
     {
         Separator();
-        Text("Tool Gates:");
 
-        // Collect registered tool names, filter out skipped ones, and sort
-        // by category first (so each group appears as one contiguous block),
-        // then by name within each category.
-        auto names = session.tools_for_testing().tool_names();
+        if (BeginTabBar("ConfigSubTabs")) {
+
+            // ── Tool Calls sub-tab ──
+            if (BeginTabItem("  Tool Calls  ")) {
+                Text("Tool Gates:");
+
+                // Collect registered tool names, filter out skipped ones, and sort
+                // by category first (so each group appears as one contiguous block),
+                // then by name within each category.
+                auto names = session.tools_for_testing().tool_names();
 
         // Categorisation helpers.
         auto category_of = [](const std::string& name) -> const char* {
@@ -680,12 +685,15 @@ void render_config_tab(PrimaryAgent& tab) {
                 EndTooltip();
             }
         }
-    }
+            }
+            EndTabItem();
+        }
 
-    // ── MCP Servers section ──
-    if (!cfg.mcp_servers.empty()) {
-        Separator();
-        Text("MCP Servers:");
+        // ── MCP Servers sub-tab ──
+        if (BeginTabItem("  MCP Servers  ")) {
+            if (cfg.mcp_servers.empty()) {
+                TextDisabled("No MCP servers configured.");
+            } else {
         for (const auto& mcp : cfg.mcp_servers) {
             bool enabled = tab.mcp_enabled[mcp.name];
             bool changed = Checkbox(mcp.name.c_str(), &enabled);
@@ -734,12 +742,13 @@ void render_config_tab(PrimaryAgent& tab) {
                 EndTooltip();
             }
         }
-    }
+        }
+            EndTabItem();
+        }
 
-    // ── Custom cmd_tools checkboxes ──
-    if (!cfg.cmd_tools.empty()) {
-        Separator();
-        Text("Custom Commands:");
+        // ── Commands sub-tab ──
+        if (BeginTabItem("  Commands  ")) {
+            if (!cfg.cmd_tools.empty()) {
         for (const auto& ct : cfg.cmd_tools) {
             std::string tool_name = "cmd_" + ct.name;
             bool enabled = tab.cmd_tools_enabled[ct.name];
@@ -755,12 +764,9 @@ void render_config_tab(PrimaryAgent& tab) {
                 EndTooltip();
             }
         }
-    }
+            }
 
-    // ── Session Custom Commands CRUD ──
-    {
-        Separator();
-        Text("Session Custom Commands:");
+            // ── Session Custom Commands CRUD ──
 
         // Validation helper
         auto validate_cmd_name = [](const std::string& name) -> std::string {
@@ -900,13 +906,12 @@ void render_config_tab(PrimaryAgent& tab) {
             }
             ++it;
             PopID();
+            }
+            EndTabItem();
         }
-    }
 
-    // ── Session Snippets CRUD ──
-    {
-        Separator();
-        Text("Session Snippets:");
+        // ── Snippets sub-tab ──
+        if (BeginTabItem("  Snippets  ")) {
 
         // Validation helper
         auto validate_snippet_name = [](const std::string& name) -> std::string {
@@ -992,11 +997,12 @@ void render_config_tab(PrimaryAgent& tab) {
             }
             ++it;
             PopID();
+            }
+            EndTabItem();
         }
+
+        EndTabBar();
     }
-
-    Separator();
-
 }
 
 // ── Tag expansion for !snippet-name references ──
