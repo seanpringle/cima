@@ -110,7 +110,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
 
     json tools = reg.to_openai_tools();
     REQUIRE(tools.is_array());
-    REQUIRE(tools.size() == 22);
+    REQUIRE(tools.size() == 23);
 
     // Check structure of first tool
     CHECK(tools[0]["type"] == "function");
@@ -126,7 +126,8 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
         names.insert(t["function"]["name"].get<std::string>());
     }
     CHECK(names == std::set<std::string>{
-                       "list_directory", "read_file", "read_file_lines", "grep_files", "write_file",
+                       "list_directory", "read_file", "read_file_lines", "stat_file",
+                       "grep_files", "write_file",
                        "edit_file", "run_bash", "web_search", "web_fetch",
                        "project_tree", "git_status", "git_diff", "git_log",
                        "git_add", "git_commit",
@@ -141,9 +142,9 @@ TEST_CASE("ToolRegistry without write tools (Planner-style)", "[tools][registry]
 
     json tools = reg.to_openai_tools();
     REQUIRE(tools.is_array());
-    // 11 read-only tools: list_directory, read_file, read_file_lines, grep_files,
+    // 12 read-only tools: list_directory, read_file, read_file_lines, stat_file, grep_files,
     // project_tree, web_search, web_fetch, git_status, git_diff, git_log, git_show
-    REQUIRE(tools.size() == 11);
+    REQUIRE(tools.size() == 12);
 
     // No write tools should be present
     std::set<std::string> names;
@@ -205,6 +206,100 @@ TEST_CASE("list_directory path traversal rejected", "[tools][list_directory]") {
     auto result = reg.execute("list_directory", R"({"path": "../../etc"})");
     CHECK_FALSE(result);
     CHECK(result.error().find("path must be under") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+// ===================================================================
+// stat_file
+// ===================================================================
+
+TEST_CASE("stat_file regular file", "[tools][stat_file]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    // Create a file with known content
+    std::ofstream(sd + "/test.txt") << "hello world";
+    CHECK(std::filesystem::exists(sd + "/test.txt"));
+
+    auto result = reg.execute("stat_file", R"({"path": "test.txt"})");
+    REQUIRE(result);
+    json j = json::parse(*result);
+    CHECK(j["type"] == "regular_file");
+    CHECK(j["size"] == 11); // "hello world" is 11 bytes
+    CHECK(j["permissions"].is_string());
+    CHECK(j["permissions"].get<std::string>().size() == 9);
+    CHECK(j.contains("modified"));
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("stat_file directory", "[tools][stat_file]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    // Create a directory with an entry
+    std::filesystem::create_directories(sd + "/mydir");
+    std::ofstream(sd + "/mydir/a_file") << "x";
+    CHECK(std::filesystem::exists(sd + "/mydir"));
+
+    auto result = reg.execute("stat_file", R"({"path": "mydir"})");
+    REQUIRE(result);
+    json j = json::parse(*result);
+    CHECK(j["type"] == "directory");
+    CHECK(j["permissions"].is_string());
+    CHECK(j["permissions"].get<std::string>().size() == 9);
+    CHECK(j["entry_count"] == 1);
+    CHECK(!j.contains("size"));
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("stat_file symlink", "[tools][stat_file]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    std::ofstream(sd + "/target") << "content";
+    std::error_code ec;
+    std::filesystem::create_symlink(sd + "/target", sd + "/link", ec);
+    if (ec) {
+        // Symlinks not supported on this platform (e.g. Windows without
+        // developer mode) — skip the test
+        fs::remove_all(sd);
+        return;
+    }
+
+    auto result = reg.execute("stat_file", R"({"path": "link"})");
+    REQUIRE(result);
+    json j = json::parse(*result);
+    CHECK(j["type"] == "symlink");
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("stat_file path traversal rejected", "[tools][stat_file]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    auto result = reg.execute("stat_file", R"({"path": "../../etc/passwd"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("path must be under") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("stat_file not found", "[tools][stat_file]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    auto result = reg.execute("stat_file", R"({"path": "nonexistent"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("Cannot access") != std::string::npos);
 
     fs::remove_all(sd);
 }
