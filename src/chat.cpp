@@ -178,9 +178,6 @@ std::string ChatSession::build_effective_prompt() const {
     if (gates_->cmake_enabled && has_cmake_project()) {
         prompt += Config::CMAKE_PROMPT_SNIPPET;
     }
-    if (tools_.has("lua") && tool_enabled("lua")) {
-        prompt += Config::LUA_PROMPT_SNIPPET;
-    }
     if (mcp_registry_.has_running_servers()) {
         prompt += "\n## MCP tools\n\n"
                   "Tools from external MCP servers are available.\n"

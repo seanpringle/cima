@@ -42,12 +42,6 @@ std::string Config::CMAKE_PROMPT_SNIPPET =
     "`cmake_ctest()` runs the test suite.\n"
     "All return raw output with optional head/tail trimming.\n";
 
-std::string Config::LUA_PROMPT_SNIPPET =
-    "## Lua tool\n\n"
-    "`lua()` executes Lua code in a persistent Lua VM. The Lua state persists "
-    "across calls (global variables carry over). Returns a JSON array of scalars "
-    "(strings and numbers only). Tables cannot be returned.\n";
-
 // ---------------------------------------------------------------------------
 // Config file path
 // ---------------------------------------------------------------------------
@@ -118,7 +112,6 @@ json Config::to_json() const {
     j["grep_timeout"] = grep_timeout;
     j["web_search_timeout"] = web_search_timeout;
     j["web_fetch_timeout"] = web_fetch_timeout;
-    j["lua_timeout"] = lua_timeout;
     // ── Subagents ──
     json sa_arr = json::array();
     for (const auto& sa : subagents) {
@@ -323,7 +316,6 @@ Config Config::load() {
         load_timeout("grep_timeout", cfg.grep_timeout);
         load_timeout("web_search_timeout", cfg.web_search_timeout);
         load_timeout("web_fetch_timeout", cfg.web_fetch_timeout);
-        load_timeout("lua_timeout", cfg.lua_timeout);
 
         // Font settings
         if (j.contains("font_sans") && j["font_sans"].is_string()) {

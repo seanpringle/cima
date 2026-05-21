@@ -3,13 +3,6 @@
 #include "client.h"
 #include "config.h"
 #include "session_data.h"
-#include "tools/lua_engine.h"
-
-extern "C" {
-#include <lua.h>
-#include <lualib.h>
-#include <lauxlib.h>
-}
 
 #include <algorithm>
 #include <expected>
@@ -132,14 +125,6 @@ void PrimaryAgent::create_chat_session() {
         std::lock_guard<std::mutex> lock(cs->mutex);
         cs->pending.emplace_back(text, type);
     });
-
-    // ── Lua tool — owned by PrimaryAgent, registered only for primary session ──
-    lua_state_.reset(luaL_newstate(), lua_close);
-    lua_mutex_ = std::make_shared<std::mutex>();
-    if (lua_state_) {
-        luaL_openlibs(lua_state_.get());
-        session->tools_for_testing().add(make_lua_tool(lua_state_, lua_mutex_, cfg.lua_timeout));
-    }
 }
 
 void PrimaryAgent::restore_session_data() {

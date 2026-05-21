@@ -619,7 +619,7 @@ void render_config_tab(PrimaryAgent& tab) {
                 return "Web";
             if (name == "cmake_configure" || name == "cmake_build" || name == "cmake_ctest")
                 return "Cmake";
-            if (name == "run_bash" || name == "lua" || name == "call_subagent")
+            if (name == "run_bash" || name == "call_subagent")
                 return "Execution";
             return "Other";
         };
@@ -776,20 +776,20 @@ void render_config_tab(PrimaryAgent& tab) {
         if (tab.cmd_edit.active) {
             PushID("cmd-edit");
             InputText("Name", tab.cmd_edit.name_buf.data(),
-                tab.cmd_edit.name_buf.capacity());
+                tab.cmd_edit.name_buf.size());
             InputText("Description", tab.cmd_edit.desc_buf.data(),
-                tab.cmd_edit.desc_buf.capacity());
+                tab.cmd_edit.desc_buf.size());
             InputText("Command", tab.cmd_edit.command_buf.data(),
-                tab.cmd_edit.command_buf.capacity());
+                tab.cmd_edit.command_buf.size());
             if (!tab.cmd_edit.error.empty()) {
                 PushStyleColor(ImGuiCol_Text, IM_COL32(255, 0, 0, 255));
                 TextUnformatted(tab.cmd_edit.error.c_str());
                 PopStyleColor();
             }
             if (Button("Save")) {
-                std::string name(tab.cmd_edit.name_buf.c_str());
-                std::string desc(tab.cmd_edit.desc_buf.c_str());
-                std::string command(tab.cmd_edit.command_buf.c_str());
+                std::string name(tab.cmd_edit.name_buf.data());
+                std::string desc(tab.cmd_edit.desc_buf.data());
+                std::string command(tab.cmd_edit.command_buf.data());
                 std::string err = validate_cmd_name(name);
                 if (err.empty() && command.empty())
                     err = "Command must not be empty";
@@ -831,9 +831,9 @@ void render_config_tab(PrimaryAgent& tab) {
                 tab.cmd_edit = {};
                 tab.cmd_edit.active = true;
                 tab.cmd_edit.original_name.clear();
-                tab.cmd_edit.name_buf.clear();
-                tab.cmd_edit.desc_buf.clear();
-                tab.cmd_edit.command_buf.clear();
+                std::fill(tab.cmd_edit.name_buf.begin(), tab.cmd_edit.name_buf.end(), 0);
+                std::fill(tab.cmd_edit.desc_buf.begin(), tab.cmd_edit.desc_buf.end(), 0);
+                std::fill(tab.cmd_edit.command_buf.begin(), tab.cmd_edit.command_buf.end(), 0);
                 tab.cmd_edit.error.clear();
             }
         }
@@ -869,9 +869,12 @@ void render_config_tab(PrimaryAgent& tab) {
             if (Button("Edit")) {
                 tab.cmd_edit.active = true;
                 tab.cmd_edit.original_name = it->first;
-                tab.cmd_edit.name_buf = it->first;
-                tab.cmd_edit.desc_buf = it->second.description;
-                tab.cmd_edit.command_buf = it->second.command;
+                std::fill(tab.cmd_edit.name_buf.begin(), tab.cmd_edit.name_buf.end(), 0);
+                std::fill(tab.cmd_edit.desc_buf.begin(), tab.cmd_edit.desc_buf.end(), 0);
+                std::fill(tab.cmd_edit.command_buf.begin(), tab.cmd_edit.command_buf.end(), 0);
+                std::copy(it->first.begin(), it->first.end(), tab.cmd_edit.name_buf.begin());
+                std::copy(it->second.description.begin(), it->second.description.end(), tab.cmd_edit.desc_buf.begin());
+                std::copy(it->second.command.begin(), it->second.command.end(), tab.cmd_edit.command_buf.begin());
                 tab.cmd_edit.error.clear();
             }
             SameLine();
@@ -921,16 +924,16 @@ void render_config_tab(PrimaryAgent& tab) {
         if (tab.snippet_edit.active) {
             PushID("snippet-edit");
             InputText("Name", tab.snippet_edit.name_buf.data(),
-                tab.snippet_edit.name_buf.capacity());
+                tab.snippet_edit.name_buf.size());
             InputText("Content", tab.snippet_edit.content_buf.data(),
-                tab.snippet_edit.content_buf.capacity());
+                tab.snippet_edit.content_buf.size());
             if (!tab.snippet_edit.error.empty()) {
                 PushStyleColor(ImGuiCol_Text, IM_COL32(255, 0, 0, 255));
-                TextUnformatted(tab.snippet_edit.error.c_str());
+                TextUnformatted(tab.snippet_edit.error.data());
                 PopStyleColor();
             }
             if (Button("Save")) {
-                std::string name(tab.snippet_edit.name_buf.c_str());
+                std::string name(tab.snippet_edit.name_buf.data());
                 std::string err = validate_snippet_name(name);
                 if (!err.empty()) {
                     tab.snippet_edit.error = std::move(err);
@@ -939,7 +942,7 @@ void render_config_tab(PrimaryAgent& tab) {
                     if (!tab.snippet_edit.original_name.empty())
                         tab.session_data.snippets.erase(tab.snippet_edit.original_name);
                     tab.session_data.snippets[name] =
-                        std::string(tab.snippet_edit.content_buf.c_str());
+                        std::string(tab.snippet_edit.content_buf.data());
                     tab.snippet_edit.active = false;
                     tab.snippet_edit.error.clear();
                 }
@@ -955,8 +958,8 @@ void render_config_tab(PrimaryAgent& tab) {
                 tab.snippet_edit = {};
                 tab.snippet_edit.active = true;
                 tab.snippet_edit.original_name.clear();
-                tab.snippet_edit.name_buf.clear();
-                tab.snippet_edit.content_buf.clear();
+                std::fill(tab.snippet_edit.name_buf.begin(), tab.snippet_edit.name_buf.end(), 0);
+                std::fill(tab.snippet_edit.content_buf.begin(), tab.snippet_edit.content_buf.end(), 0);
                 tab.snippet_edit.error.clear();
             }
         }
@@ -980,8 +983,10 @@ void render_config_tab(PrimaryAgent& tab) {
             if (Button("Edit")) {
                 tab.snippet_edit.active = true;
                 tab.snippet_edit.original_name = it->first;
-                tab.snippet_edit.name_buf = it->first;
-                tab.snippet_edit.content_buf = it->second;
+                std::fill(tab.snippet_edit.name_buf.begin(), tab.snippet_edit.name_buf.end(), 0);
+                std::fill(tab.snippet_edit.content_buf.begin(), tab.snippet_edit.content_buf.end(), 0);
+                std::copy(it->first.begin(), it->first.end(), tab.snippet_edit.name_buf.begin());
+                std::copy(it->second.begin(), it->second.end(), tab.snippet_edit.content_buf.begin());
                 tab.snippet_edit.error.clear();
             }
             ++it;

@@ -238,13 +238,6 @@ Tool make_cmake_ctest_tool(std::shared_ptr<std::string> safe_dir_ptr,
     std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
 
 struct PrimaryAgent;
-struct lua_State; // forward decl from Lua C API
-
-// ── Lua tool ──
-Tool make_lua_tool(
-    std::shared_ptr<lua_State> lua,
-    std::shared_ptr<std::mutex> mutex,
-    int timeout_sec);
 
 // ── Subagent tool ──
 Tool make_call_subagent_tool(

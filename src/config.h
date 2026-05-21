@@ -91,7 +91,7 @@ struct Config {
     int grep_timeout = 10;
     int web_search_timeout = 15;
     int web_fetch_timeout = 15;
-    int lua_timeout = 30;      // Lua eval execution timeout
+
 
     // ── CMake tools ──
     bool cmake_enabled = false; // user-facing toggle (like bash_enabled)
@@ -107,7 +107,6 @@ struct Config {
     static std::string SYSTEM_PROMPT;
     static std::string SUBAGENT_SYSTEM_PROMPT;
     static std::string CMAKE_PROMPT_SNIPPET;
-    static std::string LUA_PROMPT_SNIPPET;
 
     /// Load config from ~/.config/cima/cima.json, applying defaults for
     /// any missing fields.  Creates the file with defaults if it doesn't exist.

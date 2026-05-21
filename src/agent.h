@@ -5,8 +5,6 @@
 
 #include <memory>
 
-struct lua_State;
-
 struct Agent {
     std::unique_ptr<ChatSession> session;
     std::unique_ptr<AsyncChatState> chat_state;
@@ -51,8 +49,8 @@ struct SubAgent : Agent {
 struct SnippetEditState {
     bool active = false;                  // true when editing/add is open
     std::string original_name;            // empty = new snippet, non-empty = editing existing
-    std::string name_buf;                 // name input buffer
-    std::string content_buf;              // content input buffer
+    std::array<char,100> name_buf;                 // name input buffer
+    std::array<char,1000> content_buf;              // content input buffer
     std::string error;                    // validation error to display
 };
 
@@ -60,9 +58,9 @@ struct SnippetEditState {
 struct CmdEditState {
     bool active = false;           // true when editing/add is open
     std::string original_name;     // empty = new, non-empty = editing existing
-    std::string name_buf;          // name input buffer
-    std::string desc_buf;          // description input buffer
-    std::string command_buf;       // command input buffer
+    std::array<char,100> name_buf;          // name input buffer
+    std::array<char,1000> desc_buf;          // description input buffer
+    std::array<char,1000> command_buf;       // command input buffer
     std::string error;             // validation error to display
 };
 
@@ -83,9 +81,6 @@ struct PrimaryAgent : Agent {
 
     // MCP: per-server error message (transient, not persisted)
     std::map<std::string, std::string> mcp_error;
-
-    std::shared_ptr<lua_State> lua_state_;   // persistent Lua VM (nullptr = disabled)
-    std::shared_ptr<std::mutex> lua_mutex_;  // mutex for thread-safe Lua access
 
     std::vector<SubAgent> subagents;
 
