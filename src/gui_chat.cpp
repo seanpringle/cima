@@ -708,6 +708,7 @@ void render_config_tab(PrimaryAgent& tab) {
                         }
 
                         // ── Read-write Subagent ──
+                        // Missing from the map = allowed (same as primary behaviour).
                         TableNextColumn();
                         {
                             if (name == "call_subagent") {
@@ -718,7 +719,8 @@ void render_config_tab(PrimaryAgent& tab) {
                                 PopID();
                                 EndDisabled();
                             } else {
-                                bool enabled = tab.rw_subagent_tool_gates[name];
+                                auto it = tab.rw_subagent_tool_gates.find(name);
+                                bool enabled = (it == tab.rw_subagent_tool_gates.end()) || it->second;
                                 PushID((name + "_rw").c_str());
                                 if (Checkbox("", &enabled)) {
                                     tab.rw_subagent_tool_gates[name] = enabled;
