@@ -603,81 +603,161 @@ void render_config_tab(PrimaryAgent& tab) {
 
             // ── Tool Calls sub-tab ──
             if (BeginTabItem("  Tool Calls  ")) {
-                Text("Tool Gates:");
+                if (BeginTable("ToolGateTable", 4,
+                        ImGuiTableFlags_BordersV | ImGuiTableFlags_BordersOuterH |
+                        ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp |
+                        ImGuiTableFlags_ScrollY)) {
+                    // Column setup
+                    TableSetupColumn("Tool", ImGuiTableColumnFlags_WidthStretch);
+                    TableSetupColumn("Primary", ImGuiTableColumnFlags_WidthFixed);
+                    TableSetupColumn("R/W Sub", ImGuiTableColumnFlags_WidthFixed);
+                    TableSetupColumn("R/O Sub", ImGuiTableColumnFlags_WidthFixed);
+                    TableHeadersRow();
 
-                auto names = session.tools_for_testing().tool_names();
+                    auto names = session.tools_for_testing().tool_names();
 
-                // Categorisation helpers.
-                auto category_of = [](const std::string& name) -> const char* {
-                    if (name == "list_directory" || name == "read_file" || name == "read_file_lines" ||
-                        name == "stat_file" || name == "grep_files" || name == "project_tree" ||
-                        name == "write_file" || name == "edit_file" || name == "delete_file" ||
-                        name == "move_file" || name == "rename_file" || name == "create_directory" ||
-                        name == "delete_directory")
-                        return "File";
-                    if (name == "git_status" || name == "git_diff" || name == "git_log" ||
-                        name == "git_show" || name == "git_add" || name == "git_commit" ||
-                        name == "git_restore")
-                        return "Git";
-                    if (name == "web_search" || name == "web_fetch")
-                        return "Web";
-                    if (name == "cmake_configure" || name == "cmake_build" || name == "cmake_ctest")
-                        return "Cmake";
-                    if (name == "run_bash" || name == "call_subagent")
-                        return "Execution";
-                    return "Other";
-                };
+                    // Categorisation helpers.
+                    auto category_of = [](const std::string& name) -> const char* {
+                        if (name == "list_directory" || name == "read_file" || name == "read_file_lines" ||
+                            name == "stat_file" || name == "grep_files" || name == "project_tree" ||
+                            name == "write_file" || name == "edit_file" || name == "delete_file" ||
+                            name == "move_file" || name == "rename_file" || name == "create_directory" ||
+                            name == "delete_directory")
+                            return "File";
+                        if (name == "git_status" || name == "git_diff" || name == "git_log" ||
+                            name == "git_show" || name == "git_add" || name == "git_commit" ||
+                            name == "git_restore")
+                            return "Git";
+                        if (name == "web_search" || name == "web_fetch")
+                            return "Web";
+                        if (name == "cmake_configure" || name == "cmake_build" || name == "cmake_ctest")
+                            return "Cmake";
+                        if (name == "run_bash" || name == "call_subagent")
+                            return "Execution";
+                        return "Other";
+                    };
 
-                // Category display order.
-                auto cat_order = [](const char* cat) -> int {
-                    if (!strcmp(cat, "Execution")) return 0;
-                    if (!strcmp(cat, "Cmake"))     return 1;
-                    if (!strcmp(cat, "File"))      return 2;
-                    if (!strcmp(cat, "Git"))       return 3;
-                    if (!strcmp(cat, "Web"))       return 4;
-                    return 5; // Other
-                };
+                    // Category display order.
+                    auto cat_order = [](const char* cat) -> int {
+                        if (!strcmp(cat, "Execution")) return 0;
+                        if (!strcmp(cat, "Cmake"))     return 1;
+                        if (!strcmp(cat, "File"))      return 2;
+                        if (!strcmp(cat, "Git"))       return 3;
+                        if (!strcmp(cat, "Web"))       return 4;
+                        return 5;
+                    };
 
-                // Filter and sort.
-                names.erase(std::remove_if(names.begin(), names.end(),
-                    [](const std::string& name) {
-                        return name.rfind("mcp_", 0) == 0 || name == "read_plan" ||
-                               name == "write_plan" || name == "view_tool_output" ||
-                               name.rfind("cmd_", 0) == 0;
-                    }),
-                    names.end());
-                std::sort(names.begin(), names.end(),
-                    [&](const std::string& a, const std::string& b) {
-                        int ca = cat_order(category_of(a));
-                        int cb = cat_order(category_of(b));
-                        if (ca != cb) return ca < cb;
-                        return a < b;
-                    });
+                    // Filter and sort.
+                    names.erase(std::remove_if(names.begin(), names.end(),
+                        [](const std::string& name) {
+                            return name.rfind("mcp_", 0) == 0 || name == "read_plan" ||
+                                   name == "write_plan" || name == "view_tool_output" ||
+                                   name.rfind("cmd_", 0) == 0;
+                        }),
+                        names.end());
+                    std::sort(names.begin(), names.end(),
+                        [&](const std::string& a, const std::string& b) {
+                            int ca = cat_order(category_of(a));
+                            int cb = cat_order(category_of(b));
+                            if (ca != cb) return ca < cb;
+                            return a < b;
+                        });
 
-                const char* last_cat = nullptr;
-                for (const auto& name : names) {
-                    const char* cat = category_of(name);
-                    if (cat != last_cat) {
-                        Text("── %s ──", cat);
-                        last_cat = cat;
-                    }
-                    bool enabled = session.tool_enabled(name);
-                    if (Checkbox(name.c_str(), &enabled)) {
-                        tab.tool_gates[name] = enabled;
-                        session.set_tool_enabled(name, enabled);
-                        if (name == "run_bash") {
-                            tab.bash_enabled = enabled;
-                            session.set_bash_enabled(enabled);
-                        } else if (name == "cmake_configure" || name == "cmake_build" || name == "cmake_ctest") {
-                            tab.cmake_enabled = enabled;
-                            session.set_cmake_enabled(enabled);
+                    const char* last_cat = nullptr;
+                    for (const auto& name : names) {
+                        const char* cat = category_of(name);
+                        if (cat != last_cat) {
+                            TableNextRow();
+                            TableSetBgColor(ImGuiTableBgTarget_RowBg0, GetColorU32(ImGuiCol_TableHeaderBg));
+                            TableNextColumn();
+                            TextUnformatted(cat);
+                            TableNextColumn();
+                            TableNextColumn();
+                            TableNextColumn();
+                            last_cat = cat;
+                        }
+
+                        TableNextRow();
+
+                        // Tool name
+                        TableNextColumn();
+                        TextUnformatted(name.c_str());
+                        if (IsItemHovered()) {
+                            BeginTooltip();
+                            TextUnformatted(name.c_str());
+                            EndTooltip();
+                        }
+
+                        // ── Primary Agent ──
+                        TableNextColumn();
+                        {
+                            bool enabled = session.tool_enabled(name);
+                            PushID((name + "_primary").c_str());
+                            if (Checkbox("", &enabled)) {
+                                tab.tool_gates[name] = enabled;
+                                session.set_tool_enabled(name, enabled);
+                                if (name == "run_bash") {
+                                    tab.bash_enabled = enabled;
+                                    session.set_bash_enabled(enabled);
+                                } else if (name == "cmake_configure" || name == "cmake_build" || name == "cmake_ctest") {
+                                    tab.cmake_enabled = enabled;
+                                    session.set_cmake_enabled(enabled);
+                                }
+                            }
+                            PopID();
+                        }
+
+                        // ── Read-write Subagent ──
+                        TableNextColumn();
+                        {
+                            if (name == "call_subagent") {
+                                bool off = false;
+                                BeginDisabled(true);
+                                PushID((name + "_rw").c_str());
+                                Checkbox("", &off);
+                                PopID();
+                                EndDisabled();
+                            } else {
+                                bool enabled = tab.rw_subagent_tool_gates[name];
+                                PushID((name + "_rw").c_str());
+                                if (Checkbox("", &enabled)) {
+                                    tab.rw_subagent_tool_gates[name] = enabled;
+                                    for (auto& sa : tab.subagents) {
+                                        if (!sa.read_only_tools) {
+                                            sa.session->set_tool_enabled(name, enabled);
+                                        }
+                                    }
+                                }
+                                PopID();
+                            }
+                        }
+
+                        // ── Read-only Subagent ──
+                        TableNextColumn();
+                        {
+                            if (name == "call_subagent") {
+                                bool off = false;
+                                BeginDisabled(true);
+                                PushID((name + "_ro").c_str());
+                                Checkbox("", &off);
+                                PopID();
+                                EndDisabled();
+                            } else {
+                                bool enabled = tab.ro_subagent_tool_gates[name];
+                                PushID((name + "_ro").c_str());
+                                if (Checkbox("", &enabled)) {
+                                    tab.ro_subagent_tool_gates[name] = enabled;
+                                    for (auto& sa : tab.subagents) {
+                                        if (sa.read_only_tools) {
+                                            sa.session->set_tool_enabled(name, enabled);
+                                        }
+                                    }
+                                }
+                                PopID();
+                            }
                         }
                     }
-                    if (IsItemHovered()) {
-                        BeginTooltip();
-                        TextUnformatted(name.c_str());
-                        EndTooltip();
-                    }
+                    EndTable();
                 }
                 EndTabItem();
             }

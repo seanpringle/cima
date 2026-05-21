@@ -76,7 +76,7 @@ std::unique_ptr<ChatSession> ChatSession::create_subagent(
     // NOTE: CMAKE_PROMPT_SNIPPET is NOT baked here — it's added dynamically
     // in build_effective_prompt() based on gates_->cmake_enabled.
 
-    // Create the session, sharing gates with the primary if provided.
+    // Create the session with the given gates (nullptr = fresh default).
     auto session = std::make_unique<ChatSession>(
         config, provider, std::move(cancelled), std::move(gates));
     session->system_prompt_ = std::move(sp);

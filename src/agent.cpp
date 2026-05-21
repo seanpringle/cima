@@ -93,6 +93,8 @@ PrimaryAgent::~PrimaryAgent() {
     session_data.mcp_enabled = mcp_enabled;
     session_data.cmd_tools_enabled = cmd_tools_enabled;
     session_data.tool_gates = tool_gates;
+    session_data.rw_subagent_tool_gates = rw_subagent_tool_gates;
+    session_data.ro_subagent_tool_gates = ro_subagent_tool_gates;
 
     std::error_code ec;
     auto cwd = std::filesystem::current_path(ec);
@@ -201,6 +203,37 @@ void PrimaryAgent::restore_session_data() {
         session->set_tool_enabled(name, enabled);
     }
 
+    // ── Read-write subagent gates: same defaults as primary ──
+    rw_subagent_tool_gates.clear();
+    rw_subagent_tool_gates["run_bash"] = bash_enabled;
+    rw_subagent_tool_gates["cmake_configure"] = cmake_enabled;
+    rw_subagent_tool_gates["cmake_build"] = cmake_enabled;
+    rw_subagent_tool_gates["cmake_ctest"] = cmake_enabled;
+    // Override with persisted values.
+    for (const auto& [name, enabled] : session_data.rw_subagent_tool_gates) {
+        rw_subagent_tool_gates[name] = enabled;
+    }
+
+    // ── Read-only subagent gates: only read-only tools start ON ──
+    ro_subagent_tool_gates.clear();
+    ro_subagent_tool_gates["list_directory"] = true;
+    ro_subagent_tool_gates["read_file"] = true;
+    ro_subagent_tool_gates["read_file_lines"] = true;
+    ro_subagent_tool_gates["stat_file"] = true;
+    ro_subagent_tool_gates["grep_files"] = true;
+    ro_subagent_tool_gates["project_tree"] = true;
+    ro_subagent_tool_gates["web_search"] = true;
+    ro_subagent_tool_gates["web_fetch"] = true;
+    ro_subagent_tool_gates["git_status"] = true;
+    ro_subagent_tool_gates["git_diff"] = true;
+    ro_subagent_tool_gates["git_log"] = true;
+    ro_subagent_tool_gates["git_show"] = true;
+    // All write tools, bash, cmake, call_subagent default to false (missing = false)
+    // Override with persisted values.
+    for (const auto& [name, enabled] : session_data.ro_subagent_tool_gates) {
+        ro_subagent_tool_gates[name] = enabled;
+    }
+
     // Sync legacy gates from tool_gates overrides (in case they differ
     // from the legacy fields — e.g. from a previous session toggle).
     bash_enabled = session->tool_enabled("run_bash");
@@ -256,18 +289,22 @@ void PrimaryAgent::create_subagents() {
         sub_agent.reasoning_effort = provider.reasoning_effort;
 
         sub_agent.chat_state = std::make_unique<AsyncChatState>();
-        // Read-write subagents share the primary's GatingState so gate
-        // changes propagate automatically. Read-only subagents get a
-        // fresh default (both gates false, cmake tools removed).
-        auto gates = sa.read_only ? nullptr : session->gates();
+        // Each subagent gets its own GatingState (independent from primary)
+        // so gate toggles in the Tool Calls table affect each mode separately.
         sub_agent.session = ChatSession::create_subagent(
-            cfg, provider, sa.read_only, sub_agent.chat_state->cancelled, std::move(gates));
+            cfg, provider, sa.read_only, sub_agent.chat_state->cancelled, nullptr);
         sub_agent.session->set_agent_name(sa.name);
         sub_agent.session->set_output_callback(
             [cs = sub_agent.chat_state.get()](const std::string& text, OutputType type) {
                 std::lock_guard<std::mutex> lock(cs->mutex);
                 cs->pending.emplace_back(text, type);
             });
+
+        // Apply the appropriate gate map to this subagent.
+        const auto& gates = sa.read_only ? ro_subagent_tool_gates : rw_subagent_tool_gates;
+        for (const auto& [name, enabled] : gates) {
+            sub_agent.session->set_tool_enabled(name, enabled);
+        }
     }
 }
 

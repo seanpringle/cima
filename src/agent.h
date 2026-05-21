@@ -79,6 +79,10 @@ struct PrimaryAgent : Agent {
     // Per-tool gate overrides (persisted): tool name -> enabled
     std::map<std::string, bool> tool_gates;
 
+    // Subagent tool gates (persisted) — independent from primary gates
+    std::map<std::string, bool> rw_subagent_tool_gates; // read-write subagent gates
+    std::map<std::string, bool> ro_subagent_tool_gates; // read-only subagent gates
+
     // MCP: per-server error message (transient, not persisted)
     std::map<std::string, std::string> mcp_error;
 
