@@ -204,8 +204,11 @@ void PrimaryAgent::restore_session_data() {
     }
 
     // ── Read-write subagent gates: same defaults as primary ──
+    // All tools enabled by default, except run_bash and call_subagent
+    // (subagents must not recurse into other subagents).
     rw_subagent_tool_gates.clear();
     rw_subagent_tool_gates["run_bash"] = bash_enabled;
+    rw_subagent_tool_gates["call_subagent"] = false;
     rw_subagent_tool_gates["cmake_configure"] = cmake_enabled;
     rw_subagent_tool_gates["cmake_build"] = cmake_enabled;
     rw_subagent_tool_gates["cmake_ctest"] = cmake_enabled;
