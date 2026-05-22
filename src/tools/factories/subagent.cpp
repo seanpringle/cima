@@ -15,8 +15,7 @@ Tool make_call_subagent_tool(PrimaryAgent& primary,
     // Build a description that includes available subagent names
     std::string desc = "Call a subagent by name with a request. The subagent will "
                        "execute the request using its own configured model and tools, "
-                       "and return the response. The subagent's conversation appears "
-                       "in its own tab in the UI.\n\n"
+                       "and return the response.\n\n"
                        "Available subagents:\n";
     if (subagent_configs.empty()) {
         desc += "  (none configured — add a \"subagents\" array to cima.json)\n";

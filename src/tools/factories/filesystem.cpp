@@ -81,10 +81,7 @@ Tool make_project_tree_tool(std::shared_ptr<std::string> safe_dir_ptr,
                     {{"type", "integer"},
                         {"description",
                             "Maximum recursion depth (default 5)"}}},
-                {"max_lines",
-                    {{"type", "integer"},
-                        {"description",
-                            "Maximum output lines (default 500)"}}}}}};
+        }}};
     t.execute = [safe_dir_ptr, read_only_paths, cancelled, tool_logs](const json& args) -> Result<std::string> {
         auto raw = args.value("path", std::string("."));
         auto resolved = resolve_path(raw, *safe_dir_ptr, read_only_paths);
@@ -94,9 +91,6 @@ Tool make_project_tree_tool(std::shared_ptr<std::string> safe_dir_ptr,
 
         int max_depth = args.value("max_depth", 5);
         if (max_depth < 1) max_depth = 1;
-
-        int max_lines = args.value("max_lines", 500);
-        if (max_lines < 1) max_lines = 1;
 
         std::error_code ec;
         auto status = std::filesystem::status(*resolved, ec);
@@ -118,10 +112,6 @@ Tool make_project_tree_tool(std::shared_ptr<std::string> safe_dir_ptr,
         std::function<void(const std::filesystem::path&, int, const std::string&)> walk;
         walk = [&](const std::filesystem::path& dir, int depth, const std::string& prefix) {
             if (depth > max_depth) return;
-            if (line_count >= max_lines) {
-                truncated = true;
-                return;
-            }
             if (cancelled && *cancelled) {
                 interrupted = true;
                 return;
@@ -169,10 +159,6 @@ Tool make_project_tree_tool(std::shared_ptr<std::string> safe_dir_ptr,
                     interrupted = true;
                     return;
                 }
-                if (line_count >= max_lines) {
-                    truncated = true;
-                    return;
-                }
 
                 const auto& entry = entries[i];
                 bool is_last = (i == entries.size() - 1);
@@ -202,37 +188,15 @@ Tool make_project_tree_tool(std::shared_ptr<std::string> safe_dir_ptr,
         // Walk
         walk(*resolved, 1, "");
 
-        result = spill_long_output(std::move(result), tool_logs);
-        if (result.rfind("(long tool output:", 0) == 0)
-            return result;
-
         if (interrupted) {
-            result += "(interrupted)\n";
-        } else if (truncated) {
-            result += "...(truncated, >" + std::to_string(max_lines) + " lines)\n";
-        } else if (line_count <= 1) {
-            // Only the root line — directory is empty (or all entries were skipped)
-            // Try to detect if the directory actually has no visible entries
-            // by counting non-.git items.
-            std::error_code ec3;
-            int count = 0;
-            auto it2 = std::filesystem::directory_iterator(
-                *resolved, std::filesystem::directory_options::skip_permission_denied, ec3);
-            for (; it2 != std::filesystem::directory_iterator{}; it2.increment(ec3)) {
-                if (it2->path().filename() != ".git") {
-                    count++;
-                    if (count > 0) break;
-                }
-            }
-            if (count == 0) {
-                result += "(empty directory)\n";
-            } else {
-                // Some entries exist but were skipped (e.g. permissions)
-                // The tree output is already complete with what we could read.
-            }
+            return "(interrupted)\n";
         }
 
-        return result;
+        if (line_count <= 1) {
+            return "(empty project)\n";
+        }
+
+        return spill_long_output(std::move(result), tool_logs);
     };
     return t;
 }

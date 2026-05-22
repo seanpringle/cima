@@ -277,23 +277,24 @@ TEST_CASE("project_tree max_depth", "[tools][project_tree]") {
     fs::remove_all(sd);
 }
 
-TEST_CASE("project_tree max_lines", "[tools][project_tree]") {
+TEST_CASE("project_tree many files does not crash", "[tools][project_tree]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
     reg.add_defaults(sd, Config{});
 
-    // Create many files to exceed max_lines
-    // Use a flat directory with max_depth=2 so we recurse one level
+    // Create many files — max_lines was removed, so just verify it doesn't
+    // crash and returns reasonable output for a large directory.
     fs::create_directories(sd + "/dir");
     for (int i = 0; i < 100; i++) {
         std::ofstream(sd + "/dir/file_" + std::to_string(i) + ".txt") << "x\n";
     }
 
-    // max_depth=2 so we can see into dir/; max_lines=50 will truncate
     auto result = reg.execute("project_tree",
-                              R"({"path": ".", "max_lines": 50, "max_depth": 2})");
+                              R"({"path": ".", "max_depth": 2})");
     REQUIRE(result);
-    CHECK(result->find("truncated") != std::string::npos);
+    // Should contain at least some of the files
+    CHECK(result->find("file_0") != std::string::npos);
+    CHECK(result->find("dir/") != std::string::npos);
 
     fs::remove_all(sd);
 }
@@ -319,7 +320,7 @@ TEST_CASE("project_tree empty directory", "[tools][project_tree]") {
 
     auto result = reg.execute("project_tree", R"({"path": "."})");
     REQUIRE(result);
-    CHECK(result->find("empty directory") != std::string::npos);
+    CHECK(result->find("(empty project)") != std::string::npos);
 
     fs::remove_all(sd);
 }
@@ -361,7 +362,7 @@ TEST_CASE("project_tree default parameters", "[tools][project_tree]") {
     fs::create_directories(sd + "/sub");
     std::ofstream(sd + "/sub/note.txt") << "note\n";
 
-    // No arguments — should default to path=".", max_depth=5, max_lines=500
+    // No arguments — should default to path=".", max_depth=5
     auto result = reg.execute("project_tree", R"({})");
     REQUIRE(result);
     CHECK(result->find("sub/") != std::string::npos);

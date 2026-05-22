@@ -41,7 +41,6 @@ struct ImFont;
 
 struct ChatUIState {
     std::vector<DisplayEntry> entries;
-    bool auto_scroll = true;
     bool request_cancel = false;
     int next_seq = 1;
 
