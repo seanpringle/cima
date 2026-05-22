@@ -1,5 +1,7 @@
 #include "tools.h"
 
+#include <git2.h>
+
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -188,6 +190,9 @@ Tool make_edit_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
         // Locate the unique occurrence
         pos = content.find(search);
 
+        // Save old content for diff generation before modifying
+        std::string old_content = content;
+
         // Replace the search string with the replacement
         content.replace(pos, search.size(), replace);
 
@@ -211,9 +216,40 @@ Tool make_edit_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
                 line_num++;
         }
 
-        return "ok (replaced 1 occurrence at line " + std::to_string(line_num) + ", " +
-            std::to_string(search.size()) + " bytes -> " + std::to_string(replace.size()) +
-            " bytes)";
+        // Generate a unified diff of the change using libgit2
+        std::string diff_text;
+        {
+            git_diff_options diff_opts = GIT_DIFF_OPTIONS_INIT;
+            auto print_cb = [](const git_diff_delta* /*delta*/,
+                               const git_diff_hunk* /*hunk*/,
+                               const git_diff_line* line,
+                               void* payload) -> int {
+                auto* output = static_cast<std::string*>(payload);
+                // Prepend origin character for +/-/context lines
+                if (line->origin == '+' || line->origin == '-' || line->origin == ' ') {
+                    output->push_back(line->origin);
+                }
+                output->append(line->content, line->content_len);
+                return 0;
+            };
+            int err = git_diff_buffers(
+                old_content.data(), old_content.size(), resolved->c_str(),
+                content.data(), content.size(), resolved->c_str(),
+                &diff_opts,
+                nullptr, nullptr, nullptr,
+                print_cb, &diff_text);
+            if (err) {
+                diff_text.clear(); // fall back to no diff
+            }
+        }
+
+        std::string result = "ok (replaced 1 occurrence at line " + std::to_string(line_num) +
+            ", " + std::to_string(search.size()) + " bytes -> " +
+            std::to_string(replace.size()) + " bytes)";
+        if (!diff_text.empty()) {
+            result += " diff follows:\n" + diff_text;
+        }
+        return result;
     };
     return t;
 }
