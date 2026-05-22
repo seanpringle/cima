@@ -132,8 +132,7 @@ Tool make_read_file_lines_tool(std::shared_ptr<std::string> safe_dir_ptr,
     t.description =
         "Read specific line ranges from a file. Returns lines prefixed with line "
         "numbers. Use this when you know the line numbers you want (e.g. after a "
-        "grep match at line 52, read lines 45-78). "
-        "For reading from an offset, use read_file instead.";
+        "grep match at line 52, read lines 45-78).";
     t.parameters = {{"type", "object"},
         {"properties",
             {{"path", {{"type", "string"}, {"description", "Path to the file"}}},
@@ -358,8 +357,7 @@ Tool make_edit_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
     t.description = "Edit a file by searching for an exact string and replacing it. "
                     "The search string must match exactly once in the file — this ensures edits "
                     "are safe and unambiguous. "
-                    "Use this to make targeted surgical edits instead of rewriting entire files "
-                    "with write_file.";
+                    "Use this to make targeted surgical edits instead of rewriting entire files.";
     t.parameters = {{"type", "object"},
         {"properties",
             {{"path", {{"type", "string"}, {"description", "File path to edit"}}},
@@ -411,8 +409,7 @@ Tool make_edit_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
         }
 
         if (count == 0) {
-            return std::unexpected("Search string not found in file (0 matches). "
-                                   "Use read_file or grep_files to verify the file contents.");
+            return std::unexpected("Search string not found in file (0 matches).");
         }
         if (count > 1) {
             return std::unexpected("Search string found " + std::to_string(count) +
