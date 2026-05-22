@@ -30,7 +30,7 @@ void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
 
     // ── Read-only tools (receive whitelist for extra path access) ──
     {
-        auto t = make_list_directory_tool(safe_dir_ptr, read_only_paths, tool_logs);
+        auto t = make_list_directory_tool(safe_dir_ptr, read_only_paths, config.grep_timeout, cancelled_, tool_logs);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
@@ -41,11 +41,6 @@ void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
     }
     {
         auto t = make_grep_files_tool(safe_dir_ptr, read_only_paths, config.grep_timeout, cancelled_, tool_logs);
-        t.permission = ToolPermission::ReadOnly;
-        add(std::move(t));
-    }
-    {
-        auto t = make_project_tree_tool(safe_dir_ptr, read_only_paths, config.project_tree_timeout, cancelled_, tool_logs);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }

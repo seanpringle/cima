@@ -103,7 +103,6 @@ json Config::to_json() const {
     j["cmake_configure_timeout"] = cmake_configure_timeout;
     j["cmake_build_timeout"] = cmake_build_timeout;
     j["cmake_ctest_timeout"] = cmake_ctest_timeout;
-    j["project_tree_timeout"] = project_tree_timeout;
     j["git_status_timeout"] = git_status_timeout;
     j["git_diff_timeout"] = git_diff_timeout;
     j["git_log_timeout"] = git_log_timeout;
@@ -307,7 +306,6 @@ Config Config::load() {
         load_timeout("cmake_configure_timeout", cfg.cmake_configure_timeout);
         load_timeout("cmake_build_timeout", cfg.cmake_build_timeout);
         load_timeout("cmake_ctest_timeout", cfg.cmake_ctest_timeout);
-        load_timeout("project_tree_timeout", cfg.project_tree_timeout);
         load_timeout("git_status_timeout", cfg.git_status_timeout);
         load_timeout("git_diff_timeout", cfg.git_diff_timeout);
         load_timeout("git_log_timeout", cfg.git_log_timeout);

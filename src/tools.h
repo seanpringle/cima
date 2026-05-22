@@ -170,6 +170,8 @@ std::string extract_uddg_url(const std::string& ddg_url);
 // ---------------------------------------------------------------------------
 Tool make_list_directory_tool(std::shared_ptr<std::string> safe_dir_ptr,
     const std::vector<std::string>& read_only_paths,
+    int timeout,
+    CancellationToken cancelled = nullptr,
     std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
 Tool make_delete_path_tool(std::shared_ptr<std::string> safe_dir_ptr);
 
@@ -205,11 +207,6 @@ Tool make_git_commit_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout
 Tool make_git_restore_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout);
 Tool make_git_show_tool(std::shared_ptr<std::string> safe_dir_ptr,
     int timeout,
-    std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
-Tool make_project_tree_tool(std::shared_ptr<std::string> safe_dir_ptr,
-    const std::vector<std::string>& read_only_paths,
-    int timeout,
-    CancellationToken cancelled = nullptr,
     std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
 Tool make_move_file_tool(std::shared_ptr<std::string> safe_dir_ptr);
 

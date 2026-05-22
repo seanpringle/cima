@@ -83,7 +83,6 @@ struct Config {
     // Tool timeouts (seconds, 0 = no timeout)
     int subagent_timeout = 600;
     int bash_timeout = 30;
-    int project_tree_timeout = 5;
     int git_status_timeout = 10;
     int git_diff_timeout = 10;
     int git_log_timeout = 10;

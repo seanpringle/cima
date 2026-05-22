@@ -2,100 +2,44 @@
 
 #include <filesystem>
 #include <functional>
+#include <git2.h>
+#include <memory>
 #include <string>
 #include <vector>
 
+// ── list_directory ────────────────────────────────────────────────
+
 Tool make_list_directory_tool(std::shared_ptr<std::string> safe_dir_ptr,
     const std::vector<std::string>& read_only_paths,
+    int timeout,
+    CancellationToken cancelled,
     std::shared_ptr<std::vector<std::string>> tool_logs) {
     Tool t;
     t.name = "list_directory";
-    t.description = "List files and directories in a given path";
-    t.parameters = {{"type", "object"},
-        {"properties", {{"path", {{"type", "string"}, {"description", "Directory path to list"}}}}},
+    t.description =
+        "List files and directories in a given path, "
+        "recursing up to max_depth (default 1). "
+        "Use max_depth > 1 to see nested contents "
+        "instead of calling list_directory repeatedly.";
+    t.timeout_sec = timeout;
+    t.parameters = {
+        {"type", "object"},
+        {"properties",
+            {{"path", {{"type", "string"}, {"description", "Directory path to list"}}},
+             {"max_depth",
+                 {{"type", "integer"},
+                     {"description",
+                         "Maximum recursion depth (default 1)"}}}}},
         {"required", {"path"}}};
-    t.execute = [safe_dir_ptr, read_only_paths, tool_logs](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr, read_only_paths, cancelled,
+                 tool_logs](const json& args) -> Result<std::string> {
         auto raw = args.value("path", std::string());
         auto resolved = resolve_path(raw, *safe_dir_ptr, read_only_paths);
         if (!resolved) {
             return std::unexpected(resolved.error());
         }
 
-        std::error_code ec;
-        auto status = std::filesystem::status(*resolved, ec);
-        if (ec) {
-            return std::unexpected("Cannot access path: " + *resolved);
-        }
-        if (!std::filesystem::is_directory(status)) {
-            return std::unexpected("Not a directory: " + *resolved);
-        }
-
-        std::string result;
-        auto it = std::filesystem::directory_iterator(
-            *resolved,
-            std::filesystem::directory_options::skip_permission_denied,
-            ec);
-        if (ec) {
-            return std::unexpected("Cannot list directory: " + *resolved);
-        }
-        for (const auto& entry : it) {
-            char type = '-';
-            if (entry.is_directory())
-                type = 'd';
-            else if (entry.is_symlink())
-                type = 'l';
-            result += type;
-            result += ' ';
-            result += entry.path().filename().string();
-            result += '\n';
-        }
-        if (result.empty()) {
-            result = "(empty directory)";
-        }
-
-        return spill_long_output(std::move(result), tool_logs);
-    };
-    return t;
-}
-
-Tool make_project_tree_tool(std::shared_ptr<std::string> safe_dir_ptr,
-    const std::vector<std::string>& read_only_paths,
-    int timeout,
-    CancellationToken cancelled,
-    std::shared_ptr<std::vector<std::string>> tool_logs) {
-    Tool t;
-    t.name = "project_tree";
-    t.description =
-        "Recursively list files/directories in a tree-like format.\n"
-        "Maximum depth of 5 by default. "
-        "Use this to understand project structure in a single call "
-        "instead of calling list_directory repeatedly.";
-
-    t.timeout_sec = timeout;
-
-    t.parameters = {
-        {"type", "object"},
-        {"properties", {
-            {"path", {
-                {"type", "string"},
-                {"description",
-                    "Starting directory path (default '.')"}}},
-            {"max_depth",
-                {{"type", "integer"},
-                    {"description",
-                        "Maximum recursion depth (default 5)"}}},
-            }
-        }
-    };
-
-    t.execute = [safe_dir_ptr, read_only_paths, cancelled, tool_logs](const json& args) -> Result<std::string> {
-        auto raw = args.value("path", std::string("."));
-        auto resolved = resolve_path(raw, *safe_dir_ptr, read_only_paths);
-        if (!resolved) {
-            return std::unexpected(resolved.error());
-        }
-
-        int max_depth = args.value("max_depth", 5);
+        int max_depth = args.value("max_depth", 1);
         if (max_depth < 1) max_depth = 1;
 
         std::error_code ec;
@@ -104,34 +48,68 @@ Tool make_project_tree_tool(std::shared_ptr<std::string> safe_dir_ptr,
             return std::unexpected("Cannot access path: " + *resolved);
         }
 
-        // If the path is not a directory, just show it as a single line
+        // If the path is a file, show it as a single entry
         if (!std::filesystem::is_directory(status)) {
-            return *resolved + "\n";
+            std::string result;
+            char type = '-';
+            if (std::filesystem::is_symlink(*resolved)) type = 'l';
+            result += type;
+            result += ' ';
+            result += std::filesystem::path(*resolved).filename().string();
+            result += '\n';
+            return result;
         }
 
-        std::string result;
-        int line_count = 0;
-        bool truncated = false;
-        bool interrupted = false;
+        // Open git repo for .gitignore checking
+        git_repository* repo = nullptr;
+        std::filesystem::path repo_workdir;
+        {
+            auto repo_res = open_git_repo(*resolved);
+            if (repo_res) {
+                repo = *repo_res;
+                const char* wd = git_repository_workdir(repo);
+                if (wd) repo_workdir = std::filesystem::path(wd);
+            }
+        }
+        auto repo_cleanup = std::unique_ptr<git_repository,
+            decltype(&git_repository_free)>(repo, git_repository_free);
 
-        // Recursive walk — uses std::function for capture in lambda
-        std::function<void(const std::filesystem::path&, int, const std::string&)> walk;
-        walk = [&](const std::filesystem::path& dir, int depth, const std::string& prefix) {
+        std::string result;
+        bool interrupted = false;
+        auto base_path = std::filesystem::path(*resolved);
+
+        auto append_entry = [&](const std::filesystem::path& rel_path,
+                                bool is_dir, bool is_sym) {
+            char type = '-';
+            if (is_dir)
+                type = 'd';
+            else if (is_sym)
+                type = 'l';
+            result += type;
+            result += ' ';
+            result += rel_path.string();
+            result += '\n';
+        };
+
+        // Recursive walk using std::function
+        std::function<void(const std::filesystem::path&, int)> walk;
+        walk = [&](const std::filesystem::path& dir, int depth) {
             if (depth > max_depth) return;
             if (cancelled && *cancelled) {
                 interrupted = true;
                 return;
             }
 
-            // Collect directory entries
-            std::vector<std::filesystem::directory_entry> entries;
             std::error_code ec2;
             auto it = std::filesystem::directory_iterator(
-                dir, std::filesystem::directory_options::skip_permission_denied, ec2);
+                dir,
+                std::filesystem::directory_options::skip_permission_denied,
+                ec2);
             if (ec2) {
                 // Cannot read this directory — skip silently
                 return;
             }
+
             auto end = std::filesystem::directory_iterator{};
             for (; it != end; it.increment(ec2)) {
                 if (cancelled && *cancelled) {
@@ -139,69 +117,46 @@ Tool make_project_tree_tool(std::shared_ptr<std::string> safe_dir_ptr,
                     return;
                 }
                 if (ec2) {
-                    // Permission error on one entry — skip it and continue
                     ec2.clear();
                     continue;
                 }
-                // Skip .git directory (don't traverse into it)
-                if (it->path().filename() == ".git" && it->is_directory()) {
+
+                // Compute relative path from base
+                auto rel = it->path().lexically_relative(base_path);
+                std::string rel_str = rel.generic_string();
+
+                // When at the base level (depth == 1), use just the filename
+                // for backward compatibility
+                bool is_dir = it->is_directory();
+
+                // Skip .git directory entirely
+                if (it->path().filename() == ".git" && is_dir) {
                     continue;
                 }
-                entries.push_back(*it);
-            }
 
-            // Sort: directories first, then files; alphabetically within each group
-            std::sort(entries.begin(), entries.end(),
-                [](const auto& a, const auto& b) {
-                    bool a_dir = a.is_directory();
-                    bool b_dir = b.is_directory();
-                    if (a_dir != b_dir) return a_dir > b_dir; // dirs first
-                    // Compare filenames case-insensitively on the stored path
-                    return a.path().filename().string() < b.path().filename().string();
-                });
-
-            for (size_t i = 0; i < entries.size(); i++) {
-                if (cancelled && *cancelled) {
-                    interrupted = true;
-                    return;
+                // Respect .gitignore
+                if (repo && is_gitignored(repo, it->path(), repo_workdir)) {
+                    continue;
                 }
 
-                const auto& entry = entries[i];
-                bool is_last = (i == entries.size() - 1);
-
-                // Build tree line
-                result += prefix;
-                result += is_last ? "└── " : "├── ";
-                result += entry.path().filename().string();
-                if (entry.is_directory()) {
-                    result += "/";
-                }
-                result += "\n";
-                line_count++;
+                append_entry(std::filesystem::path(rel_str),
+                    is_dir, it->is_symlink());
 
                 // Recurse into directories
-                if (entry.is_directory() && depth < max_depth) {
-                    std::string child_prefix = prefix + (is_last ? "    " : "│   ");
-                    walk(entry.path(), depth + 1, child_prefix);
+                if (is_dir && depth < max_depth) {
+                    walk(it->path(), depth + 1);
                 }
             }
         };
 
-        // Root line
-        result += *resolved + "/\n";
-        line_count++;
-
-        // Walk
-        walk(*resolved, 1, "");
+        walk(*resolved, 1);
 
         if (interrupted) {
             return "(interrupted)\n";
         }
-
-        if (line_count <= 1) {
-            return "(empty project)\n";
+        if (result.empty()) {
+            result = "(empty directory)";
         }
-
         return spill_long_output(std::move(result), tool_logs);
     };
     return t;

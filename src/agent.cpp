@@ -231,7 +231,6 @@ void PrimaryAgent::restore_session_data() {
     ro_subagent_tool_gates["read_file_lines"] = true;
 
     ro_subagent_tool_gates["grep_files"] = true;
-    ro_subagent_tool_gates["project_tree"] = true;
     ro_subagent_tool_gates["web_search"] = true;
     ro_subagent_tool_gates["web_fetch"] = true;
     ro_subagent_tool_gates["git_status"] = true;
