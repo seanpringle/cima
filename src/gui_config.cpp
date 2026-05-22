@@ -1,4 +1,5 @@
-#include "gui_chat.h"
+#include "gui_config.h"
+#include "gui_markdown.h"
 #include "plan.h"
 #include "tools.h"
 #include <cassert>
@@ -12,7 +13,6 @@
 #include <cstring>
 #include <ctime>
 #include <map>
-#include <md4c.h>
 #include <string>
 
 using namespace ImGui;
@@ -26,7 +26,6 @@ void render_config_tab(PrimaryAgent& tab) {
     auto& session = *tab.session;
 
     // ── Provider combo ──
-    PushFont(mono_font);
     {
         string label = tab.provider_name.empty() ? cfg.providers[0].name : tab.provider_name;
         if (BeginCombo("Provider", label.c_str())) {
@@ -48,10 +47,8 @@ void render_config_tab(PrimaryAgent& tab) {
             EndCombo();
         }
     }
-    PopFont();
 
     // ── Model combo (or manual text input if fetch failed) ──
-    PushFont(mono_font);
 
     auto& cache_entry = g_provider_models[tab.provider_name];
 
@@ -98,14 +95,10 @@ void render_config_tab(PrimaryAgent& tab) {
             EndCombo();
         }
     }
-    PopFont();
 
     tab.validate_current_model();
 
-    Separator();
-
     // ── Reasoning effort combo ──
-    PushFont(mono_font);
     {
         std::string re =
             tab.reasoning_effort.empty() ? session.reasoning_effort() : tab.reasoning_effort;
@@ -136,9 +129,6 @@ void render_config_tab(PrimaryAgent& tab) {
             EndCombo();
         }
     }
-    PopFont();
-
-    Separator();
 
     // Workspace path editing removed — safe_dir locked to cwd at startup
 
@@ -192,7 +182,6 @@ void render_config_tab(PrimaryAgent& tab) {
     }
 
     // ── Sub-tab bar ──
-    // ── Sub-tab bar ──
     {
         Separator();
 
@@ -216,9 +205,9 @@ void render_config_tab(PrimaryAgent& tab) {
                     // Categorisation helpers.
                     auto category_of = [](const std::string& name) -> const char* {
                         if (name == "list_path" || name == "read_file" ||
-                            name == "read_file_lines" || name == "grep_files" ||
-                            name == "write_file" || name == "edit_file" ||
-                            name == "delete_path" || name == "move_file")
+                            name == "grep_files" ||
+                            name == "write_file" || name == "edit_file" || name == "delete_path" ||
+                            name == "move_file")
                             return "File";
                         if (name == "git_status" || name == "git_diff" || name == "git_log" ||
                             name == "git_show" || name == "git_add" || name == "git_commit" ||
@@ -990,7 +979,7 @@ void render_config_tab(PrimaryAgent& tab) {
                             tab.snippet_edit.name_buf.begin(), tab.snippet_edit.name_buf.end(), 0);
                         std::fill(tab.snippet_edit.content_buf.begin(),
                             tab.snippet_edit.content_buf.end(),
-                            0);
+                             0);
                         std::copy(
                             it->first.begin(), it->first.end(), tab.snippet_edit.name_buf.begin());
                         std::copy(it->second.begin(),
@@ -1007,6 +996,4 @@ void render_config_tab(PrimaryAgent& tab) {
             EndTabBar();
         }
     }
-
-    Separator();
 }

@@ -151,6 +151,8 @@ add_executable(cima
     src/main.cpp
     src/gui_app.cpp
     src/gui_chat.cpp
+    src/gui_config.cpp
+    src/gui_markdown.cpp
     ${imgui_SOURCE_DIR}/imgui.cpp
     ${imgui_SOURCE_DIR}/imgui_draw.cpp
     ${imgui_SOURCE_DIR}/imgui_tables.cpp

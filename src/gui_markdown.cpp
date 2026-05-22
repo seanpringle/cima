@@ -1,5 +1,5 @@
-#include "gui_chat.h"
-#include ""
+#include "gui_markdown.h"
+#include "plan.h"
 #include "tools.h"
 #include <cassert>
 
@@ -22,6 +22,20 @@ using std::stringstream;
 using std::vector;
 
 namespace {
+
+void text_unformatted_ellipsis(const string& text) {
+    auto canvas = GetContentRegionAvail();
+    auto size = CalcTextSize(text.c_str());
+    if (size.x < canvas.x) {
+        TextUnformatted(text.c_str());
+        return;
+    }
+    auto glyph = CalcTextSize("_");
+    int cols = std::max(0, std::min(int(text.size()), int(canvas.x / glyph.x) - 4));
+    stringstream ss;
+    ss << string_view(text.data(), cols) << "...";
+    TextUnformatted(ss.str().c_str());
+}
 
 void text_unformatted_inline_wrap(const string& text) {
     auto blit = [&](string_view chunk) {
@@ -55,9 +69,8 @@ struct RenderCtx {
     // code block rendering
     bool in_code_block = false;
     string code_buf;
-    ImVec2 code_start;
-    ImDrawListSplitter code_splitter;
     int list_levels = 0;
+    int next_id = 0;
 
     vector<float> indents;
 
@@ -88,26 +101,46 @@ static int enter_block_cb(MD_BLOCKTYPE type, void* detail, void* userdata) {
         break;
     case MD_BLOCK_H: {
         auto* h = static_cast<MD_BLOCK_H_DETAIL*>(detail);
-        PushTextWrapPos(0);
-        PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
-        ctx.style_depth++;
-        for (auto i = 0; i < h->level; i++) {
-            text_unformatted_inline_wrap("#");
+
+        float width = GetContentRegionAvail().x - GetStyle().ItemSpacing.x;
+
+        GetWindowDrawList()->AddRectFilled(
+            GetCursorScreenPos(),
+            GetCursorScreenPos() + ImVec2(width, GetFrameHeight()),
+            GetColorU32(ImGuiCol_TableHeaderBg)
+        );
+
+        auto header_color = [&]() {
+            if (h->level == 1) return IM_COL32(255, 255, 255, 255);
+            if (h->level == 2) return IM_COL32(100, 100, 255, 255);
+            if (h->level == 3) return IM_COL32(100, 200, 100, 255);
+            if (h->level == 4) return IM_COL32(255, 100, 100, 255);
+            return IM_COL32(100, 100, 100, 255);
+        };
+
+        float bar = GetStyle().ItemSpacing.x/4;
+
+        for (int i = 0; i < h->level; i++) {
+            GetWindowDrawList()->AddRectFilled(
+                GetCursorScreenPos() + ImVec2(bar*i + bar*i, 0),
+                GetCursorScreenPos() + ImVec2(bar*i + bar*i + bar, GetFrameHeight()),
+                header_color()
+            );
         }
-        text_unformatted_inline_wrap(" ");
+
+        SetCursorPos(ImVec2(
+            GetCursorPosX() + bar*h->level*2 - bar - bar + GetStyle().ItemSpacing.x,
+            GetCursorPosY() + (GetFrameHeight()-GetTextLineHeight())/2)
+        );
+
+        PushTextWrapPos(0);
+        ctx.style_depth++;
+        PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
         break;
     }
     case MD_BLOCK_CODE: {
         ctx.in_code_block = true;
         ctx.code_buf.clear();
-        ctx.code_start = GetCursorScreenPos();
-        auto* dl = GetWindowDrawList();
-        ctx.code_splitter.Split(dl, 2);
-        ctx.code_splitter.SetCurrentChannel(dl, 1);
-        if (ctx.mono_font)
-            PushFont(ctx.mono_font);
-        ctx.indent(GetStyle().IndentSpacing);
-        ctx.newline(type);
         break;
     }
     case MD_BLOCK_HR:
@@ -142,7 +175,8 @@ static int enter_block_cb(MD_BLOCKTYPE type, void* detail, void* userdata) {
     case MD_BLOCK_TABLE: {
         auto* table = static_cast<MD_BLOCK_TABLE_DETAIL*>(detail);
         string tid = "##tbl" + std::to_string(++ctx.tables);
-        BeginTable(tid.c_str(), table->col_count, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg);
+        ImVec2 size(GetContentRegionAvail().x - GetStyle().ItemSpacing.x, 0);
+        BeginTable(tid.c_str(), table->col_count, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg, size);
         for (unsigned i = 0; i < table->col_count; i++) {
             string cid = "##c" + std::to_string(i);
             ImGuiTableColumnFlags flags = (i == table->col_count - 1)
@@ -199,32 +233,30 @@ static int leave_block_cb(MD_BLOCKTYPE type, void* detail, void* userdata) {
         ctx.newline(type);
         break;
     case MD_BLOCK_CODE: {
-        // render buffered code text
-        if (!ctx.code_buf.empty()) {
-            size_t pos = 0;
-            while (pos < ctx.code_buf.size()) {
-                size_t nl = ctx.code_buf.find('\n', pos);
-                string line = (nl == string::npos) ? ctx.code_buf.substr(pos)
-                                                   : ctx.code_buf.substr(pos, nl - pos);
-                TextUnformatted(line.c_str());
-                if (nl == string::npos)
-                    break;
-                pos = nl + 1;
-                SetCursorScreenPos(
-                    ImVec2(ctx.code_start.x + GetStyle().IndentSpacing, GetCursorScreenPos().y));
-            }
-        }
-        if (ctx.mono_font)
-            PopFont();
+        PushFont(ctx.mono_font);
+
+        auto extents = CalcTextSize(ctx.code_buf.c_str());
+        float height = std::min(GetTextLineHeightWithSpacing() * 15, extents.y);
+        height += GetStyle().WindowPadding.y * 2;
+        float width = GetContentRegionAvail().x-GetStyle().ItemSpacing.x;
+        if (extents.x > width) height += GetStyle().ScrollbarSize;
+
+        string id = std::to_string(++ctx.next_id);
+
+        PushStyleColor(ImGuiCol_ChildBg, GetColorU32(ImGuiCol_TableRowBgAlt));
+        BeginChild(id.c_str(),
+            ImVec2(width, height),
+            ImGuiChildFlags_AlwaysUseWindowPadding,
+            ImGuiWindowFlags_HorizontalScrollbar|ImGuiWindowFlags_NoScrollWithMouse);
+        PopStyleColor();
+
+        TextUnformatted(ctx.code_buf.c_str());
+
+        EndChild();
+        PopFont();
+
         ctx.newline(type);
-        ImVec2 br(GetCursorScreenPos().x + GetContentRegionAvail().x, GetCursorScreenPos().y);
-        auto* dl = GetWindowDrawList();
-        ctx.code_splitter.SetCurrentChannel(dl, 0);
-        dl->AddRectFilled(ctx.code_start, br, GetColorU32(ImGuiCol_TableRowBgAlt));
-        ctx.code_splitter.Merge(dl);
         ctx.in_code_block = false;
-        ctx.unindent();
-        ctx.newline(type);
         break;
     }
     case MD_BLOCK_HR:
@@ -278,13 +310,12 @@ static int enter_span_cb(MD_SPANTYPE type, void* detail, void* userdata) {
     auto& ctx = *static_cast<RenderCtx*>(userdata);
     switch (type) {
     case MD_SPAN_STRONG:
-        PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 200, 255));
+        PushStyleColor(ImGuiCol_Text, IM_COL32(255, 255, 255, 255));
         ctx.style_depth++;
         break;
     case MD_SPAN_CODE:
         PushStyleColor(ImGuiCol_Text, IM_COL32(200, 200, 255, 255));
-        if (ctx.mono_font)
-            PushFont(ctx.mono_font);
+        PushFont(ctx.mono_font);
         ctx.style_depth++;
         break;
     case MD_SPAN_A:
@@ -313,8 +344,7 @@ static int leave_span_cb(MD_SPANTYPE type, void* detail, void* userdata) {
     auto& ctx = *static_cast<RenderCtx*>(userdata);
     switch (type) {
     case MD_SPAN_CODE:
-        if (ctx.mono_font)
-            PopFont();
+        PopFont();
         PopStyleColor();
         ctx.style_depth--;
         break;
@@ -330,7 +360,6 @@ static int leave_span_cb(MD_SPANTYPE type, void* detail, void* userdata) {
     default:
         break;
     }
-    (void)detail;
     return 0;
 }
 
@@ -368,6 +397,113 @@ static int text_cb(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* us
 
 } // anonymous namespace
 
+// ── Render tool result inline (compact child window) ──
+static void render_tool_result(size_t seq, const std::string& result, RenderToolResult mode) {
+    int line_count = 1;
+    for (char c : result) {
+        if (c == '\n') line_count++;
+    }
+
+    float line_height = GetTextLineHeightWithSpacing();
+    string id = "##toolresult-" + std::to_string(seq);
+
+    switch (mode) {
+        case RenderToolResult::Plain: {
+            auto extents = CalcTextSize(result.c_str());
+            float height = std::min(GetTextLineHeightWithSpacing() * 15, extents.y);
+            height += GetStyle().WindowPadding.y * 2;
+            float width = GetContentRegionAvail().x-GetStyle().ItemSpacing.x;
+            if (extents.x > width) height += GetStyle().ScrollbarSize;
+
+            PushStyleColor(ImGuiCol_ChildBg, GetColorU32(ImGuiCol_TableRowBgAlt));
+            BeginChild(id.c_str(),
+                ImVec2(width, height),
+                ImGuiChildFlags_AlwaysUseWindowPadding,
+                ImGuiWindowFlags_HorizontalScrollbar|ImGuiWindowFlags_NoScrollWithMouse);
+            PopStyleColor();
+            PushFont(mono_font);
+            PushStyleColor(ImGuiCol_Text, IM_COL32(160, 160, 160, 255));
+            TextUnformatted(result.c_str());
+            PopStyleColor();
+            PopFont();
+            EndChild();
+            break;
+        }
+        case RenderToolResult::Diff: {
+            float height = GetTextLineHeightWithSpacing() * std::min(line_count, 15);
+            height += GetStyle().WindowPadding.y * 2;
+
+            PushStyleColor(ImGuiCol_ChildBg, GetColorU32(ImGuiCol_TableRowBgAlt));
+            BeginChild(id.c_str(),
+                ImVec2(GetContentRegionAvail().x-GetStyle().ItemSpacing.x, height),
+                ImGuiChildFlags_AlwaysUseWindowPadding,
+                ImGuiWindowFlags_HorizontalScrollbar|ImGuiWindowFlags_NoScrollWithMouse);
+            PopStyleColor();
+            PushFont(mono_font);
+
+            string_view cur(result);
+            while (cur.size()) {
+                auto sol = cur;
+                while (cur.size() && cur.front() != '\n') {
+                    cur.remove_prefix(1);
+                }
+                auto color = IM_COL32(160, 160, 160, 255);
+                if (sol.starts_with("+")) {
+                    color = IM_COL32(80, 200, 80, 255);
+                }
+                if (sol.starts_with("-")) {
+                    color = IM_COL32(200, 60, 60, 255);
+                }
+                PushStyleColor(ImGuiCol_Text, color);
+                TextUnformatted(sol.data(), cur.data());
+                PopStyleColor();
+                if (cur.size() && cur.front() == '\n') {
+                    cur.remove_prefix(1);
+                }
+            }
+            PopFont();
+            EndChild();
+            break;
+        }
+    }
+}
+
+static void render_tool_call_group(const ChatUIState& ui, size_t& i) {
+    PushStyleColor(ImGuiCol_Text, IM_COL32(255, 165, 0, 255));
+    PushTextWrapPos(0);
+    PushFont(mono_font);
+    size_t group_start = i;
+
+    auto render_pair = [&]() {
+        text_unformatted_ellipsis(ui.entries[i].text);
+        if (ui.entries[i].tool_result.size()) {
+            render_tool_result(i, ui.entries[i].tool_result, [&]() {
+                if (string_view(ui.entries[i].text).contains("edit_file(")) {
+                    return RenderToolResult::Diff;
+                }
+                return RenderToolResult::Plain;
+            }());
+        }
+    };
+
+    render_pair();
+
+    auto next_is_toolcall = [&]() {
+        return i + 1 < ui.entries.size() && ui.entries[i + 1].type == EntryType::ToolCall;
+    };
+
+    while (next_is_toolcall()) {
+        i++;
+        NewLine();
+        render_pair();
+    }
+
+    PopFont();
+    NewLine();
+    PopTextWrapPos();
+    PopStyleColor();
+}
+
 void render_content(const string& text) {
     string_view trim(text);
     while (trim.size() && std::isspace(trim.back()))
@@ -393,10 +529,50 @@ void render_content(const string& text) {
     parser.leave_span = leave_span_cb;
     parser.text = text_cb;
 
+    PushStyleColor(ImGuiCol_Text, IM_COL32(200,200,200,255));
     md_parse(clean.data(), (MD_SIZE)clean.size(), &parser, &ctx);
+    PopStyleColor();
 
     while (ctx.style_depth > 0) {
         PopStyleColor();
         ctx.style_depth--;
+    }
+}
+
+void render_display_entry(const ChatUIState& ui, const DisplayEntry& entry, size_t& i, const string& you) {
+    switch (entry.type) {
+        case EntryType::UserText: {
+            PushStyleColor(ImGuiCol_Text, IM_COL32(100, 180, 255, 255));
+            stringstream ss;
+            ss << you << ": ";
+            TextUnformatted(ss.str().c_str());
+            PopStyleColor();
+            SameLine(0,0);
+            render_content(entry.text);
+            break;
+        }
+        case EntryType::Reasoning: {
+            PushStyleColor(ImGuiCol_Text, IM_COL32(50, 160, 50, 255));
+            TextUnformatted("Thinking: ");
+            if (entry.text.size()) SameLine(0,0);
+            PopStyleColor();
+            PushStyleColor(ImGuiCol_Text, IM_COL32(160, 160, 160, 255));
+            render_content(entry.text);
+            PopStyleColor();
+            if (!entry.text.size()) NewLine();
+            break;
+        }
+        case EntryType::Content: {
+            PushStyleColor(ImGuiCol_Text, IM_COL32(200, 80, 80, 255));
+            TextUnformatted("Agent: ");
+            if (entry.text.size()) SameLine(0,0);
+            PopStyleColor();
+            render_content(entry.text);
+            break;
+        }
+        case EntryType::ToolCall: {
+            render_tool_call_group(ui, i);
+            break;
+        }
     }
 }
