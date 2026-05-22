@@ -41,10 +41,8 @@ struct ImFont;
 struct ChatUIState {
     std::vector<DisplayEntry> entries;
     bool request_cancel = false;
-    int next_seq = 1;
-
-    /// Create a DisplayEntry with the given type/text/streaming flag, assign
-    /// next_seq, push to entries, and log non-streaming entries immediately.
+    /// Create a DisplayEntry with the given type/text/streaming flag, push to
+    /// entries, and log non-streaming entries immediately.
     void push_entry(EntryType type, const std::string& text, bool streaming);
 
     /// Finalise the last streaming entry (mark non-streaming, log it).

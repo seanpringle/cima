@@ -73,7 +73,6 @@ PrimaryAgent::~PrimaryAgent() {
     json log_arr = json::array();
     for (const auto& e : ui_state.entries) {
         json entry;
-        entry["seq"] = e.seq;
         switch (e.type) {
         case EntryType::UserText:
             entry["type"] = "UserText";
@@ -160,11 +159,9 @@ void PrimaryAgent::restore_session_data() {
     session->conversation().from_json(session_data.conversation);
 
     ui_state.entries.clear();
-    int max_seq = 0;
     if (session_data.chat_log.is_array()) {
         for (const auto& entry : session_data.chat_log) {
             DisplayEntry e;
-            e.seq = entry.value("seq", 0);
             std::string t = entry.value("type", "Content");
             if (t == "UserText")
                 e.type = EntryType::UserText;
@@ -179,11 +176,8 @@ void PrimaryAgent::restore_session_data() {
             e.text = entry.value("text", "");
             e.is_streaming = entry.value("streaming", false);
             ui_state.entries.push_back(std::move(e));
-            if (e.seq > max_seq)
-                max_seq = e.seq;
         }
     }
-    ui_state.next_seq = max_seq + 1;
 
     if (session_data.plan.is_object()) {
         session->plan().from_json(session_data.plan);
@@ -342,7 +336,7 @@ void PrimaryAgent::register_subagent_tools() {
 // ── ChatUIState methods ─────────────────────────────────────────────────────
 
 void ChatUIState::push_entry(EntryType type, const std::string& text, bool streaming) {
-    DisplayEntry entry{type, text, streaming, next_seq++};
+    DisplayEntry entry{type, text, streaming};
     entries.push_back(entry);
 }
 

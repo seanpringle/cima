@@ -68,11 +68,10 @@ Tool make_call_subagent_tool(PrimaryAgent& primary,
         // Reset subagent state: clear conversation and UI entries
         subagent.session->conversation().clear();
         subagent.ui_state.entries.clear();
-        subagent.ui_state.next_seq = 1;
 
         // Push the primary agent's request as a UserText entry in the subagent chat
         subagent.ui_state.entries.push_back(
-            {EntryType::UserText, request, false, subagent.ui_state.next_seq++});
+            {EntryType::UserText, request, false});
 
         // Run the request
         auto result = subagent.session->run_once(request);
