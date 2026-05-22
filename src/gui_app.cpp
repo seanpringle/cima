@@ -211,7 +211,7 @@ static void render_frame(PrimaryAgent& primary, bool& done) {
     {
         auto space = GetContentRegionAvail();
         auto tl = GetCursorPos();
-        float gap = GetStyle().ItemSpacing.x * 2.0f;
+        float gap = GetStyle().ItemSpacing.x;
         float planWidth = space.x * 0.4f - gap;
         auto planPos = tl;
         auto planSize = ImVec2(planWidth, space.y);
@@ -260,9 +260,6 @@ static void render_frame(PrimaryAgent& primary, bool& done) {
             EndTabBar();
         }
         EndChild();
-
-        GetWindowDrawList()->AddLine(
-            sepPosA, sepPosB, GetColorU32(ImGuiCol_Separator), GetStyle().ChildBorderSize);
 
         // Right panel: Chat UI
         PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
@@ -321,7 +318,9 @@ int gui_main(const std::string& session_name) {
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
 
+        PushStyleColor(ImGuiCol_ScrollbarBg, IM_COL32(40,40,40,255));
         render_frame(primary, done);
+        PopStyleColor();
 
         ImGui::Render();
         SDL_SetRenderDrawColor(gfx.renderer, 0, 0, 0, 255);
