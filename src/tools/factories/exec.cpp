@@ -12,6 +12,15 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+// ── Trim leading/trailing whitespace (prevents trivial bypass of
+//    exact-match checks like "-exec" → " -exec").
+static std::string trim(std::string s) {
+    auto ws = [](unsigned char c) { return std::isspace(c); };
+    s.erase(s.begin(), std::find_if_not(s.begin(), s.end(), ws));
+    s.erase(std::find_if_not(s.rbegin(), s.rend(), ws).base(), s.end());
+    return s;
+}
+
 // ===================================================================
 // Shared helper: validate command + args
 // ===================================================================
@@ -20,7 +29,7 @@ static Result<std::pair<std::string, std::vector<std::string>>>
 validate_exec_args(const json& args,
     const std::set<std::string>& whitelist,
     std::shared_ptr<std::string> safe_dir_ptr) {
-    auto cmd = args.value("cmd", std::string());
+    auto cmd = trim(args.value("cmd", std::string()));
     if (cmd.empty()) {
         return std::unexpected(std::string("cmd is required"));
     }
@@ -45,7 +54,7 @@ validate_exec_args(const json& args,
         if (!arg.is_string()) {
             return std::unexpected("args must be strings");
         }
-        std::string a = arg.get<std::string>();
+        std::string a = trim(arg.get<std::string>());
         if (a.empty()) {
             validated_args.push_back(a);
             continue;
