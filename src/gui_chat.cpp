@@ -421,10 +421,6 @@ static void render_tool_call_group(const auto& ui, size_t& i) {
     PushFont(mono_font);
     size_t group_start = i;
 
-    auto next_is_toolcall = [&]() {
-        return i + 1 < ui.entries.size() && ui.entries[i + 1].type == EntryType::ToolCall;
-    };
-
     auto render_pair = [&]() {
         text_unformatted_ellipsis(ui.entries[i].text);
         if (ui.entries[i].tool_result.size()) {
@@ -433,6 +429,10 @@ static void render_tool_call_group(const auto& ui, size_t& i) {
     };
 
     render_pair();
+
+    auto next_is_toolcall = [&]() {
+        return i + 1 < ui.entries.size() && ui.entries[i + 1].type == EntryType::ToolCall;
+    };
 
     while (next_is_toolcall()) {
         i++;

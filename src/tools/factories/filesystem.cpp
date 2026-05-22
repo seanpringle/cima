@@ -129,21 +129,30 @@ Tool make_list_directory_tool(std::shared_ptr<std::string> safe_dir_ptr,
                 // for backward compatibility
                 bool is_dir = it->is_directory();
 
-                // Skip .git directory entirely
-                if (it->path().filename() == ".git" && is_dir) {
-                    continue;
-                }
+                char type = 'f';
+                if (is_dir)
+                    type = 'd';
+                else if (it->is_symlink())
+                    type = 'l';
+                result += type;
+                result += ' ';
+                result += std::filesystem::path(rel_str).string();
 
-                // Respect .gitignore
+                bool recurse = is_dir;
+
                 if (repo && is_gitignored(repo, it->path(), repo_workdir)) {
-                    continue;
+                    if (is_dir) {
+                        result += " (git ignored, skip auto recurse)";
+                    } else {
+                        result += " (git ignored)";
+                    }
+                    recurse = false;
                 }
 
-                append_entry(std::filesystem::path(rel_str),
-                    is_dir, it->is_symlink());
+                result += '\n';
 
                 // Recurse into directories
-                if (is_dir && depth < max_depth) {
+                if (recurse && depth < max_depth) {
                     walk(it->path(), depth + 1);
                 }
             }
