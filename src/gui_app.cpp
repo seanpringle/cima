@@ -241,6 +241,11 @@ static void render_frame(PrimaryAgent& primary, bool& done) {
                 EndTabItem();
             }
 
+            if (BeginTabItem("   History   ")) {
+                render_history_tab(primary);
+                EndTabItem();
+            }
+
             for (auto& sa_tab : primary.subagents) {
                 PushID(sa_tab.id);
                 if (BeginTabItem(

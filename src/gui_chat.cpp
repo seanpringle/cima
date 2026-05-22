@@ -1516,6 +1516,25 @@ void render_config_tab(PrimaryAgent& tab) {
     Separator();
 }
 
+// ── History tab (left panel): selectable list of past inputs ──
+void render_history_tab(PrimaryAgent& tab) {
+    auto& ui = tab.ui_state;
+    auto& history = ui.input_history;
+
+    if (history.empty()) {
+        TextDisabled("No history yet");
+        return;
+    }
+
+    // Most recent first
+    for (auto it = history.rbegin(); it != history.rend(); ++it) {
+        if (Selectable(it->c_str())) {
+            ui.input_buffer.assign(it->begin(), it->end());
+            ui.cursor_pos = static_cast<int>(it->size());
+        }
+    }
+}
+
 // ── Tag expansion for !snippet-name references ──
 // Expands !snippetname to the full snippet content.  Non-matching tags are left as-is.
 // Session snippets take precedence over config snippets when names collide.
@@ -1857,46 +1876,6 @@ void render_chat_ui(PrimaryAgent& tab, bool& done) {
         memcpy(buf.data() + pos, text.data(), insert_len);
         ui.cursor_pos = pos + (int)insert_len;
     };
-
-    float combo_width = (GetContentRegionAvail().x - GetStyle().ItemSpacing.x) / 2;
-
-    // ── History combo (replaces input buf with history item) ──
-    {
-        auto& history = ui.input_history;
-        SetNextItemWidth(combo_width);
-        if (BeginCombo("##history-list", "history")) {
-            for (const auto& entry : history) {
-                if (Selectable(entry.c_str())) {
-                    ui.input_buffer.assign(entry.begin(), entry.end());
-                    ui.cursor_pos = entry.size();
-                }
-            }
-            EndCombo();
-        }
-    }
-
-    // ── Snippet reference combo (inserts !snippetname tag at cursor) ──
-    // Merges config snippets and session snippets; session names override config.
-    {
-        // Build combined map: session snippets override config snippets
-        auto all_snippets = cfg.snippets;
-        for (const auto& [name, content] : tab.session_data.snippets) {
-            all_snippets[name] = content; // session wins
-        }
-        if (!all_snippets.empty()) {
-            SameLine(0, GetStyle().ItemSpacing.y);
-            SetNextItemWidth(GetContentRegionAvail().x); // ~combo_width
-            if (BeginCombo("##snippet-ref", "snippets")) {
-                for (const auto& [name, content] : all_snippets) {
-                    if (Selectable(name.c_str())) {
-                        std::string tag = "!" + name;
-                        insert_text_at_cursor(tag);
-                    }
-                }
-                EndCombo();
-            }
-        }
-    }
 
     SetNextItemWidth(GetContentRegionAvail().x);
 
