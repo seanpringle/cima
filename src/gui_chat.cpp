@@ -1713,12 +1713,10 @@ void render_subagent_chat(SubAgent& tab) {
         switch (entry.type) {
         case EntryType::UserText:
             PushStyleColor(ImGuiCol_Text, IM_COL32(100, 180, 255, 255));
-            PushTextWrapPos(0);
             TextUnformatted("Primary: ");
             PopStyleColor();
             SameLine(0,0);
             TextUnformatted(entry.text.c_str());
-            PopTextWrapPos();
             NewLine();
             break;
         case EntryType::Reasoning:
@@ -1819,12 +1817,10 @@ void render_chat_ui(PrimaryAgent& tab, bool& done) {
         switch (entry.type) {
         case EntryType::UserText:
             PushStyleColor(ImGuiCol_Text, IM_COL32(100, 180, 255, 255));
-            PushTextWrapPos(0);
             TextUnformatted("You: ");
             PopStyleColor();
             SameLine(0,0);
             TextUnformatted(entry.text.c_str());
-            PopTextWrapPos();
             NewLine();
             break;
         case EntryType::Reasoning:
