@@ -215,7 +215,7 @@ void render_config_tab(PrimaryAgent& tab) {
 
                     // Categorisation helpers.
                     auto category_of = [](const std::string& name) -> const char* {
-                        if (name == "list_directory" || name == "read_file" ||
+                        if (name == "list_path" || name == "read_file" ||
                             name == "read_file_lines" || name == "grep_files" ||
                             name == "write_file" || name == "edit_file" ||
                             name == "delete_path" || name == "move_file")

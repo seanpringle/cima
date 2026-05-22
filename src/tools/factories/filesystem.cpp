@@ -7,20 +7,20 @@
 #include <string>
 #include <vector>
 
-// ── list_directory ────────────────────────────────────────────────
+// ── list_path ─────────────────────────────────────────────────────
 
-Tool make_list_directory_tool(std::shared_ptr<std::string> safe_dir_ptr,
+Tool make_list_path_tool(std::shared_ptr<std::string> safe_dir_ptr,
     const std::vector<std::string>& read_only_paths,
     int timeout,
     CancellationToken cancelled,
     std::shared_ptr<std::vector<std::string>> tool_logs) {
     Tool t;
-    t.name = "list_directory";
+    t.name = "list_path";
     t.description =
         "List files and directories in a given path, "
         "recursing up to max_depth (default 1). "
         "Use max_depth > 1 to see nested contents "
-        "instead of calling list_directory repeatedly.";
+        "instead of calling list_path repeatedly.";
     t.timeout_sec = timeout;
     t.parameters = {
         {"type", "object"},
@@ -77,19 +77,6 @@ Tool make_list_directory_tool(std::shared_ptr<std::string> safe_dir_ptr,
         std::string result;
         bool interrupted = false;
         auto base_path = std::filesystem::path(*resolved);
-
-        auto append_entry = [&](const std::filesystem::path& rel_path,
-                                bool is_dir, bool is_sym) {
-            char type = '-';
-            if (is_dir)
-                type = 'd';
-            else if (is_sym)
-                type = 'l';
-            result += type;
-            result += ' ';
-            result += rel_path.string();
-            result += '\n';
-        };
 
         // Recursive walk using std::function
         std::function<void(const std::filesystem::path&, int)> walk;

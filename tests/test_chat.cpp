@@ -169,7 +169,7 @@ TEST_CASE("ChatSession tool call then content", "[chat]") {
             call_count++;
             if (call_count == 1) {
                 // First request: return a tool call
-                return make_tool_call_sse("list_directory", R"({"path": "."})");
+                return make_tool_call_sse("list_path", R"({"path": "."})");
             }
             // Second request: return content
             return make_content_sse("I found some files.");
@@ -193,7 +193,7 @@ TEST_CASE("ChatSession max tool iterations", "[chat]") {
     MockServer server(
         [&](const std::string&) -> std::string {
             call_count++;
-            return make_tool_call_sse("list_directory", R"({"path": "."})",
+            return make_tool_call_sse("list_path", R"({"path": "."})",
                                       "call_" + std::to_string(call_count));
         },
         true);
@@ -252,7 +252,7 @@ TEST_CASE("ChatSession reasoning with tool calls", "[chat]") {
                             {"id", "call_xyz"},
                             {"type", "function"},
                             {"function",
-                             {{"name", "list_directory"},
+                             {{"name", "list_path"},
                               {"arguments", R"({"path": "."})"}}}}}}}}}}}};
                 return "data: " + delta.dump() + "\n\ndata: [DONE]\n\n";
             }

@@ -126,7 +126,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
         names.insert(t["function"]["name"].get<std::string>());
     }
     CHECK(names == std::set<std::string>{
-                       "list_directory", "read_file",
+                       "list_path", "read_file",
                        "grep_files", "write_file",
                        "edit_file",
                        "run_bash", "web_search", "web_fetch",
@@ -143,7 +143,7 @@ TEST_CASE("ToolRegistry without write tools (Planner-style)", "[tools][registry]
 
     json tools = reg.to_openai_tools();
     REQUIRE(tools.is_array());
-    // 9 read-only tools: list_directory, read_file, grep_files,
+    // 9 read-only tools: list_path, read_file, grep_files,
     // web_search, web_fetch, git_status, git_diff, git_log, git_show
     REQUIRE(tools.size() == 9);
 
@@ -161,7 +161,7 @@ TEST_CASE("ToolRegistry without write tools (Planner-style)", "[tools][registry]
     CHECK(names.find("move_file") == names.end());
 
     // Read-only tools should be present
-    CHECK(names.find("list_directory") != names.end());
+    CHECK(names.find("list_path") != names.end());
     CHECK(names.find("read_file") != names.end());
     CHECK(names.find("grep_files") != names.end());
     CHECK(names.find("web_search") != names.end());
@@ -172,10 +172,10 @@ TEST_CASE("ToolRegistry without write tools (Planner-style)", "[tools][registry]
 }
 
 // ===================================================================
-// list_directory
+// list_path
 // ===================================================================
 
-TEST_CASE("list_directory basic", "[tools][list_directory]") {
+TEST_CASE("list_path basic", "[tools][list_path]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
     reg.add_defaults(sd, Config{});
@@ -185,7 +185,7 @@ TEST_CASE("list_directory basic", "[tools][list_directory]") {
     std::ofstream(sd + "/b.txt") << "world";
     fs::create_directory(sd + "/sub");
 
-    auto result = reg.execute("list_directory", R"({"path": "."})");
+    auto result = reg.execute("list_path", R"({"path": "."})");
     REQUIRE(result);
 
     // Output should contain our files
@@ -196,19 +196,19 @@ TEST_CASE("list_directory basic", "[tools][list_directory]") {
     fs::remove_all(sd);
 }
 
-TEST_CASE("list_directory path traversal rejected", "[tools][list_directory]") {
+TEST_CASE("list_path path traversal rejected", "[tools][list_path]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
     reg.add_defaults(sd, Config{});
 
-    auto result = reg.execute("list_directory", R"({"path": "../../etc"})");
+    auto result = reg.execute("list_path", R"({"path": "../../etc"})");
     CHECK_FALSE(result);
     CHECK(result.error().find("path must be under") != std::string::npos);
 
     fs::remove_all(sd);
 }
 
-TEST_CASE("list_directory recursive", "[tools][list_directory]") {
+TEST_CASE("list_path recursive", "[tools][list_path]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
     reg.add_defaults(sd, Config{});
@@ -222,7 +222,7 @@ TEST_CASE("list_directory recursive", "[tools][list_directory]") {
     std::ofstream(sd + "/tests/test_all.cpp") << "// tests\n";
 
     // Recursive listing with max_depth=5
-    auto result = reg.execute("list_directory", R"({"path": ".", "max_depth": 5})");
+    auto result = reg.execute("list_path", R"({"path": ".", "max_depth": 5})");
     REQUIRE(result);
 
     // Output should contain all files with relative paths
@@ -239,7 +239,7 @@ TEST_CASE("list_directory recursive", "[tools][list_directory]") {
     fs::remove_all(sd);
 }
 
-TEST_CASE("list_directory recursive max_depth", "[tools][list_directory]") {
+TEST_CASE("list_path recursive max_depth", "[tools][list_path]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
     reg.add_defaults(sd, Config{});
@@ -249,19 +249,19 @@ TEST_CASE("list_directory recursive max_depth", "[tools][list_directory]") {
     std::ofstream(sd + "/a/b/c/d/e/file.txt") << "deep\n";
 
     // Depth 2 should show a/b/ but not deeper
-    auto result = reg.execute("list_directory", R"({"path": ".", "max_depth": 2})");
+    auto result = reg.execute("list_path", R"({"path": ".", "max_depth": 2})");
     REQUIRE(result);
     CHECK(result->find("a") != std::string::npos);
     CHECK(result->find("a/b") != std::string::npos);
     CHECK(result->find("a/b/c") == std::string::npos);
 
     // Depth 6 should show everything (file.txt is at depth 6)
-    auto result6 = reg.execute("list_directory", R"({"path": ".", "max_depth": 6})");
+    auto result6 = reg.execute("list_path", R"({"path": ".", "max_depth": 6})");
     REQUIRE(result6);
     CHECK(result6->find("a/b/c/d/e/file.txt") != std::string::npos);
 
     // Depth 1 (default) should only show a/ (no deeper)
-    auto result1 = reg.execute("list_directory", R"({"path": ".", "max_depth": 1})");
+    auto result1 = reg.execute("list_path", R"({"path": ".", "max_depth": 1})");
     REQUIRE(result1);
     CHECK(result1->find("a") != std::string::npos);
     CHECK(result1->find("a/b") == std::string::npos);
@@ -269,14 +269,14 @@ TEST_CASE("list_directory recursive max_depth", "[tools][list_directory]") {
     fs::remove_all(sd);
 }
 
-TEST_CASE("list_directory single file path", "[tools][list_directory]") {
+TEST_CASE("list_path single file path", "[tools][list_path]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
     reg.add_defaults(sd, Config{});
 
     std::ofstream(sd + "/hello.txt") << "hello\n";
 
-    auto result = reg.execute("list_directory", R"({"path": "hello.txt"})");
+    auto result = reg.execute("list_path", R"({"path": "hello.txt"})");
     REQUIRE(result);
     // Should show the file as a single entry
     CHECK(result->find("hello.txt") != std::string::npos);
@@ -286,19 +286,19 @@ TEST_CASE("list_directory single file path", "[tools][list_directory]") {
     fs::remove_all(sd);
 }
 
-TEST_CASE("list_directory empty directory", "[tools][list_directory]") {
+TEST_CASE("list_path empty directory", "[tools][list_path]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
     reg.add_defaults(sd, Config{});
 
-    auto result = reg.execute("list_directory", R"({"path": "."})");
+    auto result = reg.execute("list_path", R"({"path": "."})");
     REQUIRE(result);
     CHECK(result->find("(empty directory)") != std::string::npos);
 
     fs::remove_all(sd);
 }
 
-TEST_CASE("list_directory default max_depth", "[tools][list_directory]") {
+TEST_CASE("list_path default max_depth", "[tools][list_path]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
     reg.add_defaults(sd, Config{});
@@ -307,7 +307,7 @@ TEST_CASE("list_directory default max_depth", "[tools][list_directory]") {
     std::ofstream(sd + "/sub/note.txt") << "note\n";
 
     // No max_depth arg — should default to 1 (non-recursive)
-    auto result = reg.execute("list_directory", R"({"path": "."})");
+    auto result = reg.execute("list_path", R"({"path": "."})");
     REQUIRE(result);
     CHECK(result->find("sub") != std::string::npos);
     // Should NOT show nested files
@@ -2135,10 +2135,10 @@ TEST_CASE("move_file absolute path inside safe_dir", "[tools][move_file]") {
 }
 
 // ===================================================================
-// Cancellation token interrupts list_directory (recursive)
+// Cancellation token interrupts list_path (recursive)
 // ===================================================================
 
-TEST_CASE("list_directory interrupted by cancelled token", "[tools][cancellation]") {
+TEST_CASE("list_path interrupted by cancelled token", "[tools][cancellation]") {
     auto sd = make_temp_dir();
     // Create a deep directory tree so the traversal takes enough time to
     // be interrupted.
@@ -2153,7 +2153,7 @@ TEST_CASE("list_directory interrupted by cancelled token", "[tools][cancellation
     reg.set_cancelled(token);
     reg.add_defaults(sd, Config{});
 
-    auto result = reg.execute("list_directory", R"({"path": ".", "max_depth": 10})");
+    auto result = reg.execute("list_path", R"({"path": ".", "max_depth": 10})");
     REQUIRE(result);
     // The tool should have been interrupted early and appended the
     // "(interrupted)" marker.

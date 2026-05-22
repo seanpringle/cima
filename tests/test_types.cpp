@@ -15,7 +15,7 @@ TEST_CASE("ToolAccumulator single chunk with all fields", "[types][toolacc]") {
             "id": "call_abc",
             "type": "function",
             "function": {
-                "name": "list_directory",
+                "name": "list_path",
                 "arguments": "{\"path\": \"/tmp\"}"
             }
         }]
@@ -27,7 +27,7 @@ TEST_CASE("ToolAccumulator single chunk with all fields", "[types][toolacc]") {
     REQUIRE(calls.size() == 1);
     CHECK(calls[0].index == 0);
     CHECK(calls[0].id == "call_abc");
-    CHECK(calls[0].name == "list_directory");
+    CHECK(calls[0].name == "list_path");
     CHECK(calls[0].arguments == R"({"path": "/tmp"})");
 }
 
@@ -95,7 +95,7 @@ TEST_CASE("ToolAccumulator multiple parallel tool calls", "[types][toolacc]") {
     // Chunk with two tool call starts
     acc.apply(json::parse(R"({
         "tool_calls": [
-            {"index": 0, "id": "call_1", "function": {"name": "list_directory", "arguments": "{\"pa"}},
+            {"index": 0, "id": "call_1", "function": {"name": "list_path", "arguments": "{\"pa"}},
             {"index": 1, "id": "call_2", "function": {"name": "read_file", "arguments": "{\"pat"}}
         ]
     })"));
@@ -114,7 +114,7 @@ TEST_CASE("ToolAccumulator multiple parallel tool calls", "[types][toolacc]") {
     // finalize() returns calls sorted by index
     CHECK(calls[0].index == 0);
     CHECK(calls[0].id == "call_1");
-    CHECK(calls[0].name == "list_directory");
+    CHECK(calls[0].name == "list_path");
     CHECK(calls[0].arguments == R"({"path": "/tmp"})");
 
     CHECK(calls[1].index == 1);

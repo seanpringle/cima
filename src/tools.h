@@ -168,7 +168,7 @@ std::string extract_uddg_url(const std::string& ddg_url);
 // ---------------------------------------------------------------------------
 // Tool factory declarations (used by ToolRegistry::add_defaults)
 // ---------------------------------------------------------------------------
-Tool make_list_directory_tool(std::shared_ptr<std::string> safe_dir_ptr,
+Tool make_list_path_tool(std::shared_ptr<std::string> safe_dir_ptr,
     const std::vector<std::string>& read_only_paths,
     int timeout,
     CancellationToken cancelled = nullptr,
