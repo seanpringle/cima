@@ -190,8 +190,6 @@ Tool make_write_file_tool(
     std::shared_ptr<std::string> safe_dir_ptr, FileModifiedCallback on_file_modified = nullptr);
 Tool make_edit_file_tool(
     std::shared_ptr<std::string> safe_dir_ptr, FileModifiedCallback on_file_modified = nullptr);
-Tool make_write_file_lines_tool(
-    std::shared_ptr<std::string> safe_dir_ptr, FileModifiedCallback on_file_modified = nullptr);
 Tool make_run_bash_tool(
     std::shared_ptr<std::string> safe_dir_ptr, int timeout,
     CancellationToken cancelled = nullptr,
