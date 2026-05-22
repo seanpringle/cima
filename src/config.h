@@ -40,30 +40,6 @@ struct McpEndpoint {
     int timeout_sec = 60;
 };
 
-// ── exec_ro / exec_rw whitelists ──
-// Read-only commands — no filesystem modification
-inline const std::set<std::string> exec_ro_allowed_commands = {
-    "ls", "cat", "head", "tail", "grep",
-    "cut", "tr", "wc", "pwd", "stat",
-    "file", "find", "diff", "strings",
-    "which", "date", "nl",
-    "sort", "uniq", "comm",
-    "basename", "dirname", "readlink", "realpath",
-    "printf", "fold", "expand", "unexpand"
-};
-
-// Read-write commands — can modify the filesystem.
-// Note: awk is excluded because it has built-in system() calls
-// (system(), print > file, "cmd" | getline) that allow arbitrary
-// shell execution from within the script, bypassing the path-argument
-// sandbox.  sed IS included because GNU sed's --sandbox flag
-// (which we force-prepend to every sed invocation) disables the
-// e/r/w commands that could otherwise escape.
-inline const std::set<std::string> exec_rw_allowed_commands = {
-    "cp", "dd", "ln", "mkdir", "mv", "patch",
-    "rm", "rmdir", "sed", "touch"
-};
-
 inline bool operator==(const McpEndpoint& a, const McpEndpoint& b) {
     return a.name == b.name && a.transport == b.transport && a.command == b.command &&
         a.args == b.args && a.cwd == b.cwd && a.url == b.url && a.api_key == b.api_key &&
@@ -117,10 +93,6 @@ struct Config {
     int web_search_timeout = 15;
     int web_fetch_timeout = 15;
 
-
-    // ── exec_ro / exec_rw tools ──
-    int exec_ro_timeout = 30;
-    int exec_rw_timeout = 30;
 
     // ── CMake tools ──
     bool cmake_enabled = false; // user-facing toggle (like bash_enabled)
