@@ -2,152 +2,44 @@
 
 #include <filesystem>
 #include <fstream>
-#include <sstream>
 #include <string>
 
-Tool make_read_file_lines_tool(std::shared_ptr<std::string> safe_dir_ptr,
-    const std::vector<std::string>& read_only_paths) {
-    Tool t;
-    t.name = "read_file_lines";
-    t.description =
-        "Read specific line ranges from a file. Returns lines prefixed with line "
-        "numbers. Use this when you know the line numbers you want (e.g. after a "
-        "grep match at line 52, read lines 45-78).";
-    t.parameters = {{"type", "object"},
-        {"properties",
-            {{"path", {{"type", "string"}, {"description", "Path to the file"}}},
-                {"start_line",
-                    {{"type", "integer"},
-                        {"description",
-                            "First line to read (1-indexed, default 1)"}}},
-                {"end_line",
-                    {{"type", "integer"},
-                        {"description",
-                            "Last line to read (inclusive). If omitted, reads to "
-                            "end of file (capped by max_lines)."}}},
-                {"max_lines",
-                    {{"type", "integer"},
-                        {"description",
-                            "Maximum lines to return (default 200, max 500)"}}}}},
-        {"required", {"path"}}};
-    t.execute = [safe_dir_ptr, read_only_paths](const json& args) -> Result<std::string> {
-        auto raw = args.value("path", std::string());
-        auto resolved = resolve_path(raw, *safe_dir_ptr, read_only_paths);
-        if (!resolved) {
-            return std::unexpected(resolved.error());
-        }
-
-        int start_line = args.value("start_line", 1);
-        int end_line = args.value("end_line", 0); // 0 = not specified
-        int max_lines = args.value("max_lines", 200);
-
-        if (start_line < 1) {
-            return std::unexpected("start_line must be >= 1");
-        }
-        if (end_line != 0 && end_line < start_line) {
-            return std::unexpected("end_line must be >= start_line");
-        }
-        if (max_lines < 1) max_lines = 1;
-        if (max_lines > 500) max_lines = 500;
-
-        std::error_code ec;
-        if (std::filesystem::exists(*resolved, ec) &&
-            !std::filesystem::is_regular_file(*resolved, ec)) {
-            return std::unexpected("Not a regular file: " + *resolved);
-        }
-
-        std::ifstream file(*resolved);
-        if (!file.is_open()) {
-            return std::unexpected("Failed to open file: " + *resolved);
-        }
-
-        std::string result;
-        std::string line;
-        int line_num = 0;
-        int count = 0;
-
-        // Skip lines before start_line
-        while (line_num < start_line - 1 && std::getline(file, line)) {
-            line_num++;
-        }
-
-        // Determine how many lines to read
-        int max_to_read = max_lines;
-        if (end_line != 0) {
-            int range = end_line - start_line + 1;
-            if (range < max_to_read) max_to_read = range;
-        }
-
-        while (count < max_to_read && std::getline(file, line)) {
-            line_num++;
-            result += std::to_string(line_num) + ": " + line + "\n";
-            count++;
-        }
-
-        // Check if there are more lines beyond what was read
-        // Try reading one more line to detect EOF reliably
-        bool has_more = false;
-        int remaining = 0;
-        if (end_line != 0 && line_num < end_line) {
-            // We haven't read far enough per end_line — definitely has more
-            has_more = true;
-            std::string dummy;
-            while (std::getline(file, dummy)) { remaining++; }
-        } else {
-            // Check if there's more content by attempting one more read
-            std::string peek;
-            has_more = static_cast<bool>(std::getline(file, peek));
-            if (has_more) {
-                remaining = 1;
-                std::string dummy;
-                while (std::getline(file, dummy)) { remaining++; }
-            }
-        }
-
-        if (has_more) {
-            result += "...(truncated, >" + std::to_string(count + remaining) +
-                " lines from line " + std::to_string(start_line) + ")";
-        } else if (count == 0 && start_line > 1) {
-            result = "(start_line " + std::to_string(start_line) +
-                " is beyond end of file)";
-        }
-        return result;
-    };
-    return t;
-}
-
 Tool make_read_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
-    const std::vector<std::string>& read_only_paths) {
+    const std::vector<std::string>& read_only_paths,
+    std::shared_ptr<std::vector<std::string>> tool_logs) {
+
     Tool t;
     t.name = "read_file";
-    t.description = "Read lines from a file (max 400 lines at a time, use offset to "
-                    "paginate)";
-    t.parameters = {{"type", "object"},
-        {"properties",
-            {{"path", {{"type", "string"}, {"description", "Path to the file to read"}}},
-                {"offset",
-                    {{"type", "integer"},
-                        {"description",
-                            "Line number to start from (1-indexed, default 0 = "
-                            "beginning)"}}},
-                {"max_lines",
-                    {{"type", "integer"},
-                        {"description",
-                            "Maximum lines to read starting from offset (default 200)"}}}}},
-        {"required", {"path"}}};
-    t.execute = [safe_dir_ptr, read_only_paths](const json& args) -> Result<std::string> {
+
+    t.description = "Read a block of lines from a file."
+        " Start with any small range; the discovered total line count will be reported."
+        " Lines are prefixed with line numbers, 1-based."
+    ;
+
+    t.parameters = {
+        {"type", "object"},
+        {"properties", {
+            {"path", {{"type", "string"}, {"description", "Path to the file to read."}}},
+            {"start_line", {{"type", "integer"}, {"description", "Beginning of range, 1-based"}}},
+            {"end_line", {{"type", "integer"}, {"description", "End of range (inclusive): 1-based"}}},
+        }},
+        {"required", {"path","start_line","end_line"}}
+    };
+
+    t.execute = [safe_dir_ptr, read_only_paths, tool_logs](const json& args) -> Result<std::string> {
+
+        for (auto& el: args.items()) {
+            if (el.key() == "path") continue;
+            if (el.key() == "start_line") continue;
+            if (el.key() == "end_line") continue;
+            return std::unexpected("unknown argument: " + el.key());
+        }
+
         auto raw = args.value("path", std::string());
         auto resolved = resolve_path(raw, *safe_dir_ptr, read_only_paths);
         if (!resolved) {
             return std::unexpected(resolved.error());
         }
-
-        int offset = args.value("offset", 0);
-        int max_lines = args.value("max_lines", 400);
-        if (offset < 0)
-            offset = 0;
-        if (max_lines < 1)
-            max_lines = 1;
 
         std::error_code ec;
         if (std::filesystem::exists(*resolved, ec) &&
@@ -160,30 +52,14 @@ Tool make_read_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
             return std::unexpected("Failed to open file: " + *resolved);
         }
 
-        std::string result;
-        std::string line;
-        int line_num = 0;
-        int count = 0;
+        std::string result(std::istreambuf_iterator<char>{file}, {});
 
-        // Skip lines before offset
-        while (line_num < offset && std::getline(file, line)) {
-            line_num++;
-        }
+        int start_line = args.value("start_line",1);
+        int end_line = args.value("end_line",1);
 
-        while (std::getline(file, line) && count < max_lines) {
-            line_num++;
-            result += line;
-            result += '\n';
-            count++;
-        }
-
-        if (!file.eof()) {
-            result += "...(truncated, >" + std::to_string(max_lines) + " lines from offset " +
-                std::to_string(offset) + ")";
-        } else if (count == 0 && offset > 0) {
-            result = "(offset " + std::to_string(offset) + " is beyond end of file)";
-        }
-        return result;
+        std::stringstream ss;
+        ss << "read_file " << raw << '\n' << format_line_range(result, start_line, end_line);
+        return ss.str();
     };
     return t;
 }
@@ -193,11 +69,17 @@ Tool make_write_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
     Tool t;
     t.name = "write_file";
     t.description = "Write content to a file, creating parent directories if needed";
-    t.parameters = {{"type", "object"},
-        {"properties",
-            {{"path", {{"type", "string"}, {"description", "File path"}}},
-                {"content", {{"type", "string"}, {"description", "Content to write"}}}}},
-        {"required", {"path", "content"}}};
+
+    t.parameters = {
+        {"type", "object"},
+        {"properties", {
+            {"path", {{"type", "string"}, {"description", "File path"}}},
+                {"content", {{"type", "string"}, {"description", "Content to write"}}}
+            }
+        },
+        {"required", {"path", "content"}}
+    };
+
     t.execute = [safe_dir_ptr, on_file_modified](const json& args) -> Result<std::string> {
         auto raw = args.value("path", std::string());
         auto content = args.value("content", std::string());
@@ -238,19 +120,25 @@ Tool make_edit_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
                     "The search string must match exactly once in the file — this ensures edits "
                     "are safe and unambiguous. "
                     "Use this to make targeted surgical edits instead of rewriting entire files.";
-    t.parameters = {{"type", "object"},
-        {"properties",
-            {{"path", {{"type", "string"}, {"description", "File path to edit"}}},
-                {"search",
-                    {{"type", "string"},
-                        {"description",
-                            "Exact string to search for; must match exactly once in the file. "
-                            "Include surrounding context (unique nearby lines) to guarantee a "
-                            "single match."}}},
-                {"replace",
-                    {{"type", "string"},
-                        {"description", "String to replace the matched occurrence with"}}}}},
-        {"required", {"path", "search", "replace"}}};
+
+    t.parameters = {
+        {"type", "object"},
+        {"properties", {
+            {"path", {
+                {"type", "string"}, {"description", "File path to edit"}}},
+            {"search", {
+                {"type", "string"},
+                {"description",
+                    "Exact string to search for; must match exactly once in the file. "
+                    "Include surrounding context (unique nearby lines) to guarantee a "
+                    "single match."}}},
+            {"replace", {
+                {"type", "string"},
+                {"description", "String to replace the matched occurrence with"}}}
+        }},
+        {"required", {"path", "search", "replace"}}
+    };
+
     t.execute = [safe_dir_ptr, on_file_modified](const json& args) -> Result<std::string> {
         auto raw = args.value("path", std::string());
         auto search = args.value("search", std::string());

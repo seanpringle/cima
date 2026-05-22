@@ -7,14 +7,17 @@ Tool make_view_tool_output_tool(
     std::shared_ptr<std::vector<std::string>> tool_logs) {
     Tool t;
     t.name = "view_tool_output";
+    
     t.description =
         "View the output of a previously executed tool that produced a large result."
         " Use the `id` from the long-output reference message."
         " Default action is to `tail -n100` the message."
         " Retrieve a range with `start_line` and `end_line`."
         " Lines are prefixed with line numbers.";
+
     t.permission = ToolPermission::ReadOnly;
     t.timeout_sec = 30;
+
     t.parameters = {{"type", "object"},
         {"properties",
             {{"id",
@@ -31,7 +34,9 @@ Tool make_view_tool_output_tool(
                         "Last line to return (inclusive, 1-indexed)."}}},
             }},
         {"required", {"id"}}};
+
     t.execute = [tool_logs](const json& args) -> Result<std::string> {
+
         for (auto& el: args.items()) {
             if (el.key() == "id") continue;
             if (el.key() == "start_line") continue;

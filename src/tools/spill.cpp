@@ -25,3 +25,35 @@ std::string spill_long_output(std::string output,
 
     return output;
 }
+
+std::string format_line_range(const std::string& content, int start_line, int end_line) {
+    std::vector<std::string> lines = {{}};
+
+    for (auto c: content) {
+        if (c == '\n') {
+            lines.emplace_back();
+            continue;
+        }
+        lines.back().push_back(c);
+    }
+
+    // fix loop adding extra line
+    if (lines.size() > 1 && content.back() == '\n') {
+        lines.pop_back();
+    }
+
+    start_line = std::max(1, std::min(start_line, int(lines.size())));
+    end_line = std::max(start_line, std::min(end_line, int(lines.size())));
+
+    std::stringstream ss;
+
+    ss << "lines " << start_line << ':' << end_line
+        << " of " << lines.size()
+        << '\n';
+
+    for (int i = start_line; i <= int(lines.size()) && i <= end_line; i++) {
+        ss << i << ": " << lines[i-1] << '\n';
+    }
+
+    return ss.str();
+}

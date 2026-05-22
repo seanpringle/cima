@@ -70,18 +70,24 @@ Tool make_project_tree_tool(std::shared_ptr<std::string> safe_dir_ptr,
         "Maximum depth of 5 by default. "
         "Use this to understand project structure in a single call "
         "instead of calling list_directory repeatedly.";
+
     t.timeout_sec = timeout;
-    t.parameters = {{"type", "object"},
-        {"properties",
-            {{"path",
-                {{"type", "string"},
+
+    t.parameters = {
+        {"type", "object"},
+        {"properties", {
+            {"path", {
+                {"type", "string"},
+                {"description",
+                    "Starting directory path (default '.')"}}},
+            {"max_depth",
+                {{"type", "integer"},
                     {"description",
-                        "Starting directory path (default '.')"}}},
-                {"max_depth",
-                    {{"type", "integer"},
-                        {"description",
-                            "Maximum recursion depth (default 5)"}}},
-        }}};
+                        "Maximum recursion depth (default 5)"}}},
+            }
+        }
+    };
+
     t.execute = [safe_dir_ptr, read_only_paths, cancelled, tool_logs](const json& args) -> Result<std::string> {
         auto raw = args.value("path", std::string("."));
         auto resolved = resolve_path(raw, *safe_dir_ptr, read_only_paths);
