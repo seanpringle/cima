@@ -229,7 +229,7 @@ void PrimaryAgent::restore_session_data() {
     ro_subagent_tool_gates["list_directory"] = true;
     ro_subagent_tool_gates["read_file"] = true;
     ro_subagent_tool_gates["read_file_lines"] = true;
-    ro_subagent_tool_gates["stat_file"] = true;
+
     ro_subagent_tool_gates["grep_files"] = true;
     ro_subagent_tool_gates["project_tree"] = true;
     ro_subagent_tool_gates["web_search"] = true;
