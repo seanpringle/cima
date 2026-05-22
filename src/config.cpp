@@ -27,7 +27,7 @@ std::string Config::SYSTEM_PROMPT =
     "\n"
     "Tool output > 100 lines or 4K chars may be placed into the tool log."
     " The output will be a message with a log entry ID."
-    " Use view_tool_output(ID=?,head=N,tail=N) to retrieve it.\n"
+    " Use view_tool_output(ID=?) to retrieve it.\n"
     "\n";
 
 std::string Config::SUBAGENT_SYSTEM_PROMPT =
