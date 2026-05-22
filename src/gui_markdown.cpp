@@ -69,8 +69,8 @@ struct RenderCtx {
     // code block rendering
     bool in_code_block = false;
     string code_buf;
+    int code_blocks = 0;
     int list_levels = 0;
-    int next_id = 0;
 
     vector<float> indents;
 
@@ -241,7 +241,7 @@ static int leave_block_cb(MD_BLOCKTYPE type, void* detail, void* userdata) {
         float width = GetContentRegionAvail().x-GetStyle().ItemSpacing.x;
         if (extents.x > width) height += GetStyle().ScrollbarSize;
 
-        string id = std::to_string(++ctx.next_id);
+        string id = std::to_string(++ctx.code_blocks);
 
         PushStyleColor(ImGuiCol_ChildBg, GetColorU32(ImGuiCol_TableRowBgAlt));
         BeginChild(id.c_str(),
