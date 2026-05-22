@@ -223,7 +223,8 @@ static void render_frame(PrimaryAgent& primary, bool& done) {
 
         // Left panel: session tabs
         SetCursorPos(planPos);
-        BeginChild("##left-session-tabs", planSize, ImGuiChildFlags_None, ImGuiWindowFlags_None);
+        BeginChild("##left-session-tabs", planSize, ImGuiChildFlags_None,
+            ImGuiWindowFlags_AlwaysVerticalScrollbar);
 
         if (BeginTabBar("##session-tabs")) {
             if (BeginTabItem("   Plan   ")) {

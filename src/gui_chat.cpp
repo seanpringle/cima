@@ -322,8 +322,7 @@ static int enter_span_cb(MD_SPANTYPE type, void* detail, void* userdata) {
         break;
     case MD_SPAN_CODE:
         PushStyleColor(ImGuiCol_Text, IM_COL32(200, 200, 255, 255));
-        if (ctx.mono_font)
-            PushFont(ctx.mono_font);
+        PushFont(ctx.mono_font);
         ctx.style_depth++;
         break;
     case MD_SPAN_A:
@@ -352,8 +351,7 @@ static int leave_span_cb(MD_SPANTYPE type, void* detail, void* userdata) {
     auto& ctx = *static_cast<RenderCtx*>(userdata);
     switch (type) {
     case MD_SPAN_CODE:
-        if (ctx.mono_font)
-            PopFont();
+        PopFont();
         PopStyleColor();
         ctx.style_depth--;
         break;
@@ -369,7 +367,6 @@ static int leave_span_cb(MD_SPANTYPE type, void* detail, void* userdata) {
     default:
         break;
     }
-    (void)detail;
     return 0;
 }
 
@@ -564,7 +561,6 @@ void render_display_entry(const auto& ui, const auto& entry, auto& i, const stri
             PopStyleColor();
             SameLine(0,0);
             render_content(entry.text);
-            NewLine();
             break;
         }
         case EntryType::Reasoning: {

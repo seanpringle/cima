@@ -51,14 +51,25 @@ Tool make_write_plan_tool(PlanBoard& board) {
     t.description = "Write the Plan document. This completely replaces the plan "
                     "body. Use this from the Planner "
                     "to document the implementation plan for the Builder.";
+
     t.permission = ToolPermission::Write;
+
     t.parameters = {{"type", "object"},
         {"properties",
-            {{"markdown", {{"type", "string"}, {"description", "Markdown content of the plan"}}}}},
-        {"required", {"markdown"}}};
+            {{"content", {{"type", "string"}, {"description", "Markdown content of the plan"}}}}},
+        {"required", {"content"}}};
+
     t.execute = [&board](const json& args) -> Result<std::string> {
-        auto markdown = args.value("markdown", std::string());
-        auto result = board.write_plan(markdown);
+        for (auto& el: args.items()) {
+            if (el.key() == "content") continue;
+            return std::unexpected("unknown argument: " + el.key());
+        }
+        if (!args.contains("content")) {
+            return std::unexpected("missing argument: content");
+        }
+
+        auto content = args.value("content", std::string());
+        auto result = board.write_plan(content);
         if (!result) {
             return std::unexpected(result.error());
         }
