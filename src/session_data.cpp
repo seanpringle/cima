@@ -91,6 +91,13 @@ json SessionData::to_json() const {
     }
     j["custom_mcp_servers"] = std::move(mcp_arr);
 
+    // Serialise input_history
+    json hist = json::array();
+    for (const auto& item : input_history) {
+        hist.push_back(item);
+    }
+    j["input_history"] = std::move(hist);
+
     return j;
 }
 
@@ -217,6 +224,16 @@ void SessionData::from_json(const json& j) {
 
             if (!m.name.empty()) {
                 custom_mcp_servers.push_back(std::move(m));
+            }
+        }
+    }
+
+    // Deserialise input_history
+    input_history.clear();
+    if (j.contains("input_history") && j["input_history"].is_array()) {
+        for (const auto& item : j["input_history"]) {
+            if (item.is_string()) {
+                input_history.push_back(item.get<std::string>());
             }
         }
     }

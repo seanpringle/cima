@@ -103,6 +103,8 @@ PrimaryAgent::~PrimaryAgent() {
     session_data.tool_gates = tool_gates;
     session_data.rw_subagent_tool_gates = rw_subagent_tool_gates;
     session_data.ro_subagent_tool_gates = ro_subagent_tool_gates;
+    session_data.input_history.assign(
+        ui_state.input_history.begin(), ui_state.input_history.end());
 
     std::error_code ec;
     auto cwd = std::filesystem::current_path(ec);
@@ -284,6 +286,12 @@ void PrimaryAgent::restore_session_data() {
             if (!result)
                 mcp_error[mcp.name] = result.error();
         }
+    }
+
+    // Restore input history
+    ui_state.input_history.clear();
+    for (const auto& item : session_data.input_history) {
+        ui_state.input_history.push_back(item);
     }
 }
 

@@ -35,6 +35,7 @@ struct SessionData {
     std::map<std::string, CmdToolConfig>
         custom_commands;                         // session-local custom commands (persisted)
     std::vector<McpEndpoint> custom_mcp_servers; // session-local custom MCP servers (persisted)
+    std::vector<std::string> input_history;       // per-tab input history (persisted)
 
     json to_json() const;
     void from_json(const json& j);
