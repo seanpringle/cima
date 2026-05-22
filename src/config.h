@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <map>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -37,6 +38,24 @@ struct McpEndpoint {
     // Common:
     std::map<std::string, std::string> env; // extra env vars for stdio
     int timeout_sec = 60;
+};
+
+// ── exec_ro / exec_rw whitelists ──
+// Read-only commands — no filesystem modification
+inline const std::set<std::string> exec_ro_allowed_commands = {
+    "ls", "cat", "head", "tail", "grep",
+    "cut", "tr", "wc", "pwd", "stat",
+    "file", "find", "diff", "strings",
+    "which", "date", "nl",
+    "sort", "uniq", "comm",
+    "basename", "dirname", "readlink", "realpath",
+    "printf", "fold", "expand", "unexpand"
+};
+
+// Read-write commands — can modify the filesystem
+inline const std::set<std::string> exec_rw_allowed_commands = {
+    "mkdir", "rmdir", "rm", "mv", "awk", "sed", "cp",
+    "patch", "touch", "ln"
 };
 
 inline bool operator==(const McpEndpoint& a, const McpEndpoint& b) {
@@ -92,6 +111,10 @@ struct Config {
     int web_search_timeout = 15;
     int web_fetch_timeout = 15;
 
+
+    // ── exec_ro / exec_rw tools ──
+    int exec_ro_timeout = 30;
+    int exec_rw_timeout = 30;
 
     // ── CMake tools ──
     bool cmake_enabled = false; // user-facing toggle (like bash_enabled)

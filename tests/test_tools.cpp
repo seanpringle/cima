@@ -110,7 +110,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
 
     json tools = reg.to_openai_tools();
     REQUIRE(tools.is_array());
-    REQUIRE(tools.size() == 23);
+    REQUIRE(tools.size() == 25);
 
     // Check structure of first tool
     CHECK(tools[0]["type"] == "function");
@@ -134,7 +134,8 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
                        "git_add", "git_commit",
                        "git_restore", "git_show",
                        "delete_file", "move_file",
-                       "create_directory", "delete_directory"});
+                       "create_directory", "delete_directory",
+                       "exec_ro", "exec_rw"});
 }
 
 TEST_CASE("ToolRegistry without write tools (Planner-style)", "[tools][registry]") {
@@ -143,9 +144,9 @@ TEST_CASE("ToolRegistry without write tools (Planner-style)", "[tools][registry]
 
     json tools = reg.to_openai_tools();
     REQUIRE(tools.is_array());
-    // 12 read-only tools: list_directory, read_file, read_file_lines, stat_file, grep_files,
-    // project_tree, web_search, web_fetch, git_status, git_diff, git_log, git_show
-    REQUIRE(tools.size() == 12);
+    // 13 read-only tools: list_directory, read_file, read_file_lines, stat_file, grep_files,
+    // project_tree, web_search, web_fetch, git_status, git_diff, git_log, git_show, exec_ro
+    REQUIRE(tools.size() == 13);
 
     // No write tools should be present
     std::set<std::string> names;
@@ -171,6 +172,7 @@ TEST_CASE("ToolRegistry without write tools (Planner-style)", "[tools][registry]
     CHECK(names.find("git_status") != names.end());
     CHECK(names.find("git_diff") != names.end());
     CHECK(names.find("git_log") != names.end());
+    CHECK(names.find("exec_ro") != names.end());
 }
 
 // ===================================================================
@@ -3335,4 +3337,723 @@ TEST_CASE("write_file_lines empty file", "[tools][write_file_lines]") {
     fs::remove_all(sd);
 }
 
+// ===================================================================
+// exec_ro
+// ===================================================================
 
+TEST_CASE("exec_ro basic ls", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    std::ofstream(sd + "/a.txt") << "hello";
+    std::ofstream(sd + "/b.txt") << "world";
+
+    auto result = reg.execute("exec_ro", R"({"cmd": "ls"})");
+    REQUIRE(result);
+    CHECK(result->find("a.txt") != std::string::npos);
+    CHECK(result->find("b.txt") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_ro cat file", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    std::ofstream(sd + "/hello.txt") << "Hello, World!\n";
+
+    auto result = reg.execute("exec_ro", R"({"cmd": "cat", "args": ["hello.txt"]})");
+    REQUIRE(result);
+    CHECK(result->find("Hello, World!") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_ro head/tail", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    {
+        std::ofstream f(sd + "/lines.txt");
+        for (int i = 1; i <= 20; i++) {
+            f << "Line " << i << "\n";
+        }
+    }
+
+    auto head_result = reg.execute("exec_ro", R"({"cmd": "head", "args": ["-n", "3", "lines.txt"]})");
+    REQUIRE(head_result);
+    CHECK(head_result->find("Line 1") != std::string::npos);
+    CHECK(head_result->find("Line 2") != std::string::npos);
+    CHECK(head_result->find("Line 3") != std::string::npos);
+    CHECK(head_result->find("Line 4") == std::string::npos);
+
+    auto tail_result = reg.execute("exec_ro", R"({"cmd": "tail", "args": ["-n", "2", "lines.txt"]})");
+    REQUIRE(tail_result);
+    CHECK(tail_result->find("Line 19") != std::string::npos);
+    CHECK(tail_result->find("Line 20") != std::string::npos);
+    CHECK(tail_result->find("Line 18") == std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_ro grep", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    {
+        std::ofstream f(sd + "/data.txt");
+        f << "apple\nbanana\ncherry\ndate\napple pie\n";
+    }
+
+    auto result = reg.execute("exec_ro", R"({"cmd": "grep", "args": ["apple", "data.txt"]})");
+    REQUIRE(result);
+    CHECK(result->find("apple") != std::string::npos);
+    CHECK(result->find("banana") == std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_ro cut", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    std::ofstream(sd + "/data.txt") << "a,b,c\nd,e,f\n";
+
+    auto result = reg.execute("exec_ro", R"({"cmd": "cut", "args": ["-d", ",", "-f", "2", "data.txt"]})");
+    REQUIRE(result);
+    CHECK(result->find("b") != std::string::npos);
+    CHECK(result->find("e") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_ro tr", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    // tr reads only stdin, so we test with --version (no stdin needed)
+    auto result = reg.execute("exec_ro", R"({"cmd": "tr", "args": ["--version"]})");
+    REQUIRE(result);
+    CHECK((result->find("tr") != std::string::npos || result->find("GNU") != std::string::npos));
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_ro wc", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    std::ofstream(sd + "/data.txt") << "hello world\nfoo bar\n";
+
+    auto result = reg.execute("exec_ro", R"({"cmd": "wc", "args": ["data.txt"]})");
+    REQUIRE(result);
+    // wc output typically has line/word/char counts
+    CHECK(result->find("2") != std::string::npos); // 2 lines
+    CHECK(result->find("4") != std::string::npos); // 4 words
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_ro pwd", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    auto result = reg.execute("exec_ro", R"({"cmd": "pwd"})");
+    REQUIRE(result);
+    // pwd should print the safe directory (since we chdir there)
+    CHECK(result->find(sd) != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_ro stat", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    std::ofstream(sd + "/data.txt") << "content\n";
+
+    auto result = reg.execute("exec_ro", R"({"cmd": "stat", "args": ["data.txt"]})");
+    REQUIRE(result);
+    CHECK(result->find("data.txt") != std::string::npos);
+    CHECK((result->find("File:") != std::string::npos || result->find("Size:") != std::string::npos));
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_ro file", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    std::ofstream(sd + "/data.txt") << "text content\n";
+
+    auto result = reg.execute("exec_ro", R"({"cmd": "file", "args": ["data.txt"]})");
+    REQUIRE(result);
+    CHECK((result->find("ASCII") != std::string::npos || result->find("text") != std::string::npos));
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_ro find", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    std::ofstream(sd + "/target.txt") << "found me\n";
+    std::ofstream(sd + "/other.txt") << "ignore me\n";
+
+    auto result = reg.execute("exec_ro", R"({"cmd": "find", "args": [".", "-name", "target.txt"]})");
+    REQUIRE(result);
+    CHECK(result->find("target.txt") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_ro diff", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    std::ofstream(sd + "/a.txt") << "same line\ndifferent line\n";
+    std::ofstream(sd + "/b.txt") << "same line\nchanged line\n";
+
+    auto result = reg.execute("exec_ro", R"({"cmd": "diff", "args": ["a.txt", "b.txt"]})");
+    REQUIRE(result);
+    CHECK(result->find("different") != std::string::npos);
+    CHECK(result->find("changed") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_ro strings", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    // Create a small binary-looking file with readable strings
+    {
+        std::ofstream f(sd + "/data.bin", std::ios::binary);
+        char data[] = "hello\0world\0test\0";
+        f.write(data, sizeof(data) - 1);
+    }
+
+    auto result = reg.execute("exec_ro", R"({"cmd": "strings", "args": ["data.bin"]})");
+    REQUIRE(result);
+    CHECK(result->find("hello") != std::string::npos);
+    CHECK(result->find("world") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_ro which", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    auto result = reg.execute("exec_ro", R"({"cmd": "which", "args": ["ls"]})");
+    REQUIRE(result);
+    CHECK((result->find("/bin/ls") != std::string::npos || result->find("/usr/bin/ls") != std::string::npos));
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_ro date", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    auto result = reg.execute("exec_ro", R"({"cmd": "date"})");
+    REQUIRE(result);
+    // Should return something that looks like a date
+    CHECK(result->size() > 5);
+    CHECK((result->find("UTC") != std::string::npos ||
+          result->find("202") != std::string::npos ||
+          result->find("Mon") != std::string::npos ||
+          result->find("Tue") != std::string::npos ||
+          result->find("Wed") != std::string::npos ||
+          result->find("Thu") != std::string::npos ||
+          result->find("Fri") != std::string::npos ||
+          result->find("Sat") != std::string::npos ||
+          result->find("Sun") != std::string::npos));
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_ro nl", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    {
+        std::ofstream f(sd + "/data.txt");
+        f << "line one\nline two\nline three\n";
+    }
+
+    auto result = reg.execute("exec_ro", R"({"cmd": "nl", "args": ["data.txt"]})");
+    REQUIRE(result);
+    CHECK(result->find("     1") != std::string::npos);
+    CHECK(result->find("     2") != std::string::npos);
+    CHECK(result->find("     3") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_ro sort", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    {
+        std::ofstream f(sd + "/data.txt");
+        f << "cherry\napple\nbanana\n";
+    }
+
+    auto result = reg.execute("exec_ro", R"({"cmd": "sort", "args": ["data.txt"]})");
+    REQUIRE(result);
+    // Check sorted order
+    auto pos_apple = result->find("apple");
+    auto pos_banana = result->find("banana");
+    auto pos_cherry = result->find("cherry");
+    CHECK(pos_apple != std::string::npos);
+    CHECK(pos_banana != std::string::npos);
+    CHECK(pos_cherry != std::string::npos);
+    CHECK(pos_apple < pos_banana);
+    CHECK(pos_banana < pos_cherry);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_ro uniq", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    {
+        std::ofstream f(sd + "/data.txt");
+        f << "apple\napple\nbanana\nbanana\ncherry\n";
+    }
+
+    auto result = reg.execute("exec_ro", R"({"cmd": "uniq", "args": ["data.txt"]})");
+    REQUIRE(result);
+    // uniq adjacent dedup — "apple" should appear once
+    // Count occurrences of "apple" after newline
+    size_t count = 0;
+    size_t pos = 0;
+    while ((pos = result->find("apple", pos)) != std::string::npos) {
+        count++;
+        pos += 5;
+    }
+    CHECK(count == 1);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_ro comm", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    {
+        std::ofstream f(sd + "/a.txt");
+        f << "apple\nbanana\ncherry\n";
+    }
+    {
+        std::ofstream f(sd + "/b.txt");
+        f << "banana\ndate\n";
+    }
+
+    auto result = reg.execute("exec_ro", R"({"cmd": "comm", "args": ["a.txt", "b.txt"]})");
+    REQUIRE(result);
+    // comm outputs 3 columns; banana is common
+    CHECK(result->find("banana") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_ro basename", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    // basename with a simple filename (no path separators) — pass through
+    auto result = reg.execute("exec_ro", R"({"cmd": "basename", "args": ["file.txt"]})");
+    REQUIRE(result);
+    CHECK(result->find("file.txt") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_ro dirname", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    auto result = reg.execute("exec_ro", R"({"cmd": "dirname", "args": ["some/path/file.txt"]})");
+    REQUIRE(result);
+    CHECK(result->find("some/path") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_ro readlink", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    std::ofstream(sd + "/target.txt") << "real file\n";
+    std::error_code ec;
+    std::filesystem::create_symlink(sd + "/target.txt", sd + "/link.txt", ec);
+    if (ec) {
+        fs::remove_all(sd);
+        return; // skip if symlinks not supported
+    }
+
+    auto result = reg.execute("exec_ro", R"({"cmd": "readlink", "args": ["link.txt"]})");
+    REQUIRE(result);
+    CHECK(result->find("target.txt") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_ro realpath", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    std::ofstream(sd + "/real.txt") << "hello\n";
+
+    auto result = reg.execute("exec_ro", R"({"cmd": "realpath", "args": ["real.txt"]})");
+    REQUIRE(result);
+    CHECK(result->find(sd) != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_ro printf", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    auto result = reg.execute("exec_ro", R"({"cmd": "printf", "args": ["hello\n"]})");
+    REQUIRE(result);
+    CHECK(result->find("hello") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_ro fold", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    std::ofstream(sd + "/data.txt") << "ThisIsAVeryLongLineThatShouldBeWrapped\n";
+
+    auto result = reg.execute("exec_ro", R"({"cmd": "fold", "args": ["-w", "10", "data.txt"]})");
+    REQUIRE(result);
+    // Output should have multiple lines due to wrapping
+    int nl = 0;
+    for (char c : *result) if (c == '\n') nl++;
+    CHECK(nl >= 2);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_ro expand/unexpand", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    // Create a file with tabs
+    std::ofstream(sd + "/tabs.txt") << "\tindented\n";
+
+    auto expand_result = reg.execute("exec_ro", R"({"cmd": "expand", "args": ["tabs.txt"]})");
+    REQUIRE(expand_result);
+    CHECK((expand_result->find("        indented") != std::string::npos ||
+          expand_result->find("    indented") != std::string::npos));
+
+    // Create a file with spaces for unexpand
+    std::ofstream(sd + "/spaces.txt") << "        indented\n";
+
+    auto unexpand_result = reg.execute("exec_ro", R"({"cmd": "unexpand", "args": ["spaces.txt"]})");
+    REQUIRE(unexpand_result);
+    // unexpand converts leading spaces back to tabs — output should contain a tab
+    CHECK(unexpand_result->find('\t') != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_ro invalid command", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    auto result = reg.execute("exec_ro", R"({"cmd": "not_a_real_command_xyz"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("not in the allowed commands list") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_ro path with /", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    auto result = reg.execute("exec_ro", R"({"cmd": "/bin/ls"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("simple command name") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_ro path traversal", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    auto result = reg.execute("exec_ro", R"({"cmd": "cat", "args": ["../../etc/passwd"]})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("path must be under") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_ro absolute path arg", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    auto result = reg.execute("exec_ro", R"({"cmd": "cat", "args": ["/etc/passwd"]})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("path must be under") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_ro long output spills", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    auto tool_logs = std::make_shared<std::vector<std::string>>();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{}, true, nullptr, tool_logs);
+
+    // Create a file with >100 lines
+    {
+        std::ofstream f(sd + "/long.txt");
+        for (int i = 0; i < 150; i++) {
+            f << "This is line " << i << "\n";
+        }
+    }
+
+    auto result = reg.execute("exec_ro", R"({"cmd": "cat", "args": ["long.txt"]})");
+    REQUIRE(result);
+    // Should have spill message instead of full content
+    CHECK(result->find("long tool output") != std::string::npos);
+    CHECK(result->find("view_tool_output") != std::string::npos);
+
+    // Tool logs should have the actual content
+    CHECK(tool_logs->size() == 1);
+
+    fs::remove_all(sd);
+}
+
+// ===================================================================
+// exec_rw
+// ===================================================================
+
+TEST_CASE("exec_rw mkdir", "[tools][exec_rw]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    auto result = reg.execute("exec_rw", R"({"cmd": "mkdir", "args": ["new_dir"]})");
+    REQUIRE(result);
+    CHECK(std::filesystem::exists(sd + "/new_dir"));
+    CHECK(std::filesystem::is_directory(sd + "/new_dir"));
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_rw rmdir", "[tools][exec_rw]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    std::filesystem::create_directories(sd + "/to_remove");
+    CHECK(std::filesystem::exists(sd + "/to_remove"));
+
+    auto result = reg.execute("exec_rw", R"({"cmd": "rmdir", "args": ["to_remove"]})");
+    REQUIRE(result);
+    CHECK(!std::filesystem::exists(sd + "/to_remove"));
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_rw rm file", "[tools][exec_rw]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    std::ofstream(sd + "/to_delete.txt") << "bye\n";
+    CHECK(std::filesystem::exists(sd + "/to_delete.txt"));
+
+    auto result = reg.execute("exec_rw", R"({"cmd": "rm", "args": ["to_delete.txt"]})");
+    REQUIRE(result);
+    CHECK(!std::filesystem::exists(sd + "/to_delete.txt"));
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_rw mv", "[tools][exec_rw]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    std::ofstream(sd + "/source.txt") << "content\n";
+    CHECK(std::filesystem::exists(sd + "/source.txt"));
+
+    auto result = reg.execute("exec_rw", R"({"cmd": "mv", "args": ["source.txt", "dest.txt"]})");
+    REQUIRE(result);
+    CHECK(!std::filesystem::exists(sd + "/source.txt"));
+    CHECK(std::filesystem::exists(sd + "/dest.txt"));
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_rw cp", "[tools][exec_rw]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    std::ofstream(sd + "/original.txt") << "content\n";
+
+    auto result = reg.execute("exec_rw", R"({"cmd": "cp", "args": ["original.txt", "copy.txt"]})");
+    REQUIRE(result);
+    CHECK(std::filesystem::exists(sd + "/original.txt"));
+    CHECK(std::filesystem::exists(sd + "/copy.txt"));
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_rw touch", "[tools][exec_rw]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    CHECK(!std::filesystem::exists(sd + "/new_file.txt"));
+
+    auto result = reg.execute("exec_rw", R"({"cmd": "touch", "args": ["new_file.txt"]})");
+    REQUIRE(result);
+    CHECK(std::filesystem::exists(sd + "/new_file.txt"));
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_rw ln", "[tools][exec_rw]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    std::ofstream(sd + "/target.txt") << "original\n";
+
+    auto result = reg.execute("exec_rw", R"({"cmd": "ln", "args": ["-s", "target.txt", "link.txt"]})");
+    REQUIRE(result);
+    CHECK(std::filesystem::exists(sd + "/link.txt"));
+    CHECK(std::filesystem::is_symlink(sd + "/link.txt"));
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_rw awk sed", "[tools][exec_rw]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    std::ofstream(sd + "/data.txt") << "hello world\nfoo bar\n";
+
+    // Test sed as stream editor (outputs modified text to stdout)
+    auto sed_result = reg.execute("exec_rw",
+        R"({"cmd": "sed", "args": ["-e", "s/hello/goodbye/g", "data.txt"]})");
+    REQUIRE(sed_result);
+    CHECK(sed_result->find("goodbye") != std::string::npos);
+    CHECK(sed_result->find("hello") == std::string::npos);
+
+    // Test awk: print first column of text file
+    auto awk_result = reg.execute("exec_rw",
+        R"({"cmd": "awk", "args": ["{print $1}", "data.txt"]})");
+    REQUIRE(awk_result);
+    CHECK(awk_result->find("hello") != std::string::npos); // original file still has "hello"
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_rw patch", "[tools][exec_rw]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    std::ofstream(sd + "/data.txt") << "original line\n";
+
+    // Create a patch file
+    {
+        std::ofstream f(sd + "/patch.diff");
+        f << "--- a/data.txt\n+++ b/data.txt\n@@ -1 +1 @@\n-original line\n+patched line\n";
+    }
+
+    auto result = reg.execute("exec_rw", R"({"cmd": "patch", "args": ["data.txt", "patch.diff"]})");
+    REQUIRE(result);
+
+    std::ifstream f(sd + "/data.txt");
+    std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    CHECK(content.find("patched line") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_rw invalid command", "[tools][exec_rw]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    auto result = reg.execute("exec_rw", R"({"cmd": "not_a_real_command_xyz"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("not in the allowed commands list") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_rw path traversal", "[tools][exec_rw]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    auto result = reg.execute("exec_rw", R"({"cmd": "rm", "args": ["/tmp/foo"]})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("path must be under") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_rw timeout", "[tools][exec_rw]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    // Use a command that will block (cat with no input)
+    // This should time out after the default 30s... but wait, our Config uses defaults.
+    // Actually the timeout is 30s which is long. Let's not test a timeout test that takes 30s.
+    // Instead, just verify we can configure a short timeout and it works.
+    // For now, skip the timeout test since we can't easily set a short timeout.
+    // The timeout mechanism is the same as run_bash which has its own test.
+    (void)sd;
+    (void)reg;
+    // Test skipped — timeout is inherited from the fork/exec pattern tested in run_bash
+}

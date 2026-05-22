@@ -90,6 +90,13 @@ void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
         add(std::move(t));
     }
 
+    // ── exec_ro (read-only) ──
+    {
+        auto t = make_exec_ro_tool(safe_dir_ptr, config.exec_ro_timeout, cancelled_, tool_logs);
+        t.permission = ToolPermission::ReadOnly;
+        add(std::move(t));
+    }
+
     // ── Write tools ──
     if (include_write) {
         {
@@ -144,6 +151,11 @@ void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
         }
         {
             auto t = make_delete_directory_tool(safe_dir_ptr);
+            t.permission = ToolPermission::Write;
+            add(std::move(t));
+        }
+        {
+            auto t = make_exec_rw_tool(safe_dir_ptr, config.exec_rw_timeout, cancelled_, tool_logs);
             t.permission = ToolPermission::Write;
             add(std::move(t));
         }
