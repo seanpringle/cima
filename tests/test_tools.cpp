@@ -3519,6 +3519,33 @@ TEST_CASE("exec_ro find", "[tools][exec_ro]") {
     fs::remove_all(sd);
 }
 
+TEST_CASE("exec_ro find -fprintf rejected", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    auto result = reg.execute("exec_ro",
+        R"({"cmd": "find", "args": [".", "-fprintf", "out.txt", "%p"]})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("find") != std::string::npos);
+    CHECK(result.error().find("fprintf") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_ro find -delete rejected", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    auto result = reg.execute("exec_ro",
+        R"({"cmd": "find", "args": [".", "-delete"]})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("find") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
 TEST_CASE("exec_ro diff", "[tools][exec_ro]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
@@ -3629,6 +3656,20 @@ TEST_CASE("exec_ro sort", "[tools][exec_ro]") {
     CHECK(pos_cherry != std::string::npos);
     CHECK(pos_apple < pos_banana);
     CHECK(pos_banana < pos_cherry);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_ro sort --output-directory rejected", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    auto result = reg.execute("exec_ro",
+        R"({"cmd": "sort", "args": ["--output-directory=mydir", "data.txt"]})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("sort") != std::string::npos);
+    CHECK(result.error().find("output-directory") != std::string::npos);
 
     fs::remove_all(sd);
 }
@@ -4036,6 +4077,28 @@ TEST_CASE("exec_rw patch", "[tools][exec_rw]") {
     std::ifstream f(sd + "/data.txt");
     std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
     CHECK(content.find("patched line") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_rw patch -d rejected", "[tools][exec_rw]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    // Separate form: -d DIR (relative path so we reach the cmd-specific check)
+    auto result = reg.execute("exec_rw",
+        R"({"cmd": "patch", "args": ["-d", "subdir", "data.txt", "patch.diff"]})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("patch") != std::string::npos);
+    CHECK(result.error().find("-d") != std::string::npos);
+
+    // Combined form: -dDIR
+    auto result2 = reg.execute("exec_rw",
+        R"({"cmd": "patch", "args": ["-d/etc", "data.txt", "patch.diff"]})");
+    CHECK_FALSE(result2);
+    CHECK(result2.error().find("patch") != std::string::npos);
+    CHECK(result2.error().find("-d") != std::string::npos);
 
     fs::remove_all(sd);
 }

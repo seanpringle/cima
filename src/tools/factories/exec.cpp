@@ -60,11 +60,15 @@ validate_exec_args(const json& args,
             continue;
         }
 
-        // Determine if this arg "looks like a path"
+        // Determine if this arg "looks like a path".
+        // Flags (args starting with -) are NEVER treated as paths, even if
+        // their value portion contains '/' (e.g. "--output-file=/tmp/foo").
+        // The cmd-specific safety checks below handle dangerous flags.
         bool looks_like_path = false;
 
-        // Check for path-like characteristics
-        if (a[0] == '/' || a[0] == '.') {
+        if (a[0] == '-') {
+            looks_like_path = false;
+        } else if (a[0] == '/' || a[0] == '.') {
             // Starts with / or . — definitely a path (absolute or relative reference)
             looks_like_path = true;
         } else {
@@ -129,22 +133,23 @@ validate_exec_args(const json& args,
     // ── cmd-specific safety checks ──
     if (cmd == "find") {
         // find's -exec/-execdir/-ok predicates execute arbitrary shell commands,
-        // and -delete modifies the filesystem — none of these belong in a
+        // and -delete/-fprintf modify the filesystem — none of these belong in a
         // read-only tool (or even a read-write one, since the command lives
         // entirely inside the arg string, not in a validated path).
         for (const auto& a : validated_args) {
-            if (a == "-exec" || a == "-execdir" || a == "-ok" || a == "-delete") {
+            if (a == "-exec" || a == "-execdir" || a == "-ok" ||
+                a == "-delete" || a == "-fprintf") {
                 return std::unexpected(
-                    "find with '" + a + "' is not allowed (shell-execution vector)");
+                    "find with '" + a + "' is not allowed (shell-execution or write vector)");
             }
         }
     } else if (cmd == "sort") {
-        // sort's -o/--output flag writes to a file, which is inappropriate for
-        // a read-only tool.  (If in-place sorting is needed, use exec_rw or run_bash.)
+        // sort's -o/--output/--output-directory flags write to a file,
+        // which is inappropriate for a read-only tool.
+        // (If in-place sorting is needed, use exec_rw or run_bash.)
         for (size_t i = 0; i < validated_args.size(); i++) {
             const auto& a = validated_args[i];
             if (a == "-o" || a == "--output") {
-                // The next arg is the output file — reject
                 return std::unexpected(
                     "sort with -o/--output is not allowed in exec_ro (writes to a file)");
             }
@@ -157,12 +162,17 @@ validate_exec_args(const json& args,
                 return std::unexpected(
                     "sort with -o/--output is not allowed in exec_ro (writes to a file)");
             }
+            if (a.starts_with("--output-directory")) {
+                // --output-directory=DIR or --output-directory DIR
+                return std::unexpected(
+                    "sort with --output-directory is not allowed in exec_ro (writes to a file)");
+            }
         }
     } else if (cmd == "patch") {
-        // -p0 makes patch resolve filenames in the diff with no component
-        // stripping, which can traverse upward via relative paths in diff
-        // headers.  --posix enables POSIX mode, which allows absolute paths
-        // in diff headers (default since 2.7 is to reject them).
+        // -p0 makes patch resolve filenames in the diff headers with no
+        // component stripping, enabling path traversal.  --posix allows
+        // absolute paths from diff headers.  -d changes the base directory
+        // for applying patches (combined form -dDIR or separate -d DIR).
         for (size_t i = 0; i < validated_args.size(); i++) {
             if (validated_args[i] == "-p0") {
                 return std::unexpected(
@@ -176,6 +186,12 @@ validate_exec_args(const json& args,
             if (validated_args[i] == "--posix") {
                 return std::unexpected(
                     "patch with --posix is not allowed (enables absolute paths from diff headers)");
+            }
+            if (validated_args[i] == "-d" ||
+                (validated_args[i].starts_with("-d") && validated_args[i].size() > 2)) {
+                // Separate: -d DIR  or  Combined: -dDIR
+                return std::unexpected(
+                    "patch with -d is not allowed (changes base directory)");
             }
         }
     }
@@ -298,7 +314,14 @@ static Result<std::string> run_exec(
     int status;
     waitpid(pid, &status, 0);
 
-    // Check exit status and annotate failures so the caller can see them.
+    // Count lines and size BEFORE appending annotations, so annotations
+    // don't push us over the spill threshold.
+    int output_nl = 0;
+    size_t output_sz = output.size();
+    for (char c : output)
+        if (c == '\n') output_nl++;
+
+    // Annotate failures so the caller can see them.
     if (WIFEXITED(status)) {
         int code = WEXITSTATUS(status);
         if (code != 0) {
@@ -309,15 +332,12 @@ static Result<std::string> run_exec(
         output += "\n(killed by signal: " + std::to_string(sig) + ")";
     }
 
-    // Spill to tool_logs if output exceeds threshold
+    // Spill to tool_logs if output exceeds threshold (using pre-annotation count).
     if (tool_logs) {
-        int nl = 0;
-        for (char c : output)
-            if (c == '\n') nl++;
-        if (nl > 100 || output.size() > 4096) {
+        if (output_nl > 100 || output_sz > 4096) {
             size_t id = tool_logs->size() + 1;
             tool_logs->push_back(std::move(output));
-            return "(long tool output: " + std::to_string(nl) + " lines, " +
+            return "(long tool output: " + std::to_string(output_nl) + " lines, " +
                    std::to_string(tool_logs->back().size()) + " chars. "
                    "Use view_tool_output(id=" + std::to_string(id) + ") to read it)";
         }
@@ -355,8 +375,8 @@ Tool make_exec_ro_tool(
         "This is NOT a general-purpose shell — no pipes, no redirects, "
         "no sequences. Useful for inspecting files and paths. ") +
         allowed_commands_line(exec_ro_allowed_commands) + " "
-        "Safety: find -exec/-execdir/-ok/-delete blocked; "
-        "sort -o/--output blocked. "
+        "Safety: find -exec/-execdir/-ok/-delete/-fprintf blocked; "
+        "sort -o/--output/--output-directory blocked. "
         "Long output (>100 lines or 4K chars) is redirected to the tool log.";
     t.permission = ToolPermission::ReadOnly;
     t.timeout_sec = 0; // internal timeout via fork/exec loop
@@ -398,7 +418,7 @@ Tool make_exec_rw_tool(
         "no sequences. Useful for modifying files and the filesystem. ") +
         allowed_commands_line(exec_rw_allowed_commands) + " "
         "Safety: sed is run with --sandbox (e/r/w disabled); "
-        "patch -p0 and --posix are rejected. "
+        "patch -p0/--posix/-d are rejected. "
         "Long output (>100 lines or 4K chars) is redirected to the tool log.";
     t.permission = ToolPermission::Write;
     t.timeout_sec = 0; // internal timeout via fork/exec loop
