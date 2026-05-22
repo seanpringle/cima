@@ -326,6 +326,19 @@ static Result<std::string> run_exec(
     return output;
 }
 
+// ── Build an "Allowed commands: ..." line from a whitelist set ──
+static std::string allowed_commands_line(const std::set<std::string>& cmds) {
+    std::string out = "Allowed commands: ";
+    bool first = true;
+    for (const auto& c : cmds) {
+        if (!first) out += ", ";
+        out += c;
+        first = false;
+    }
+    out += ".";
+    return out;
+}
+
 // ===================================================================
 // make_exec_ro_tool
 // ===================================================================
@@ -338,13 +351,10 @@ Tool make_exec_ro_tool(
     Tool t;
     t.name = "exec_ro";
     t.description =
-        "Execute a single read-only command on a file or path. "
+        std::string("Execute a single read-only command on a file or path. "
         "This is NOT a general-purpose shell — no pipes, no redirects, "
-        "no sequences. Useful for inspecting files and paths. "
-        "Allowed commands: ls, cat, head, tail, grep, cut, tr, wc, pwd, "
-        "stat, file, find, diff, strings, which, date, nl, sort, uniq, "
-        "comm, basename, dirname, readlink, realpath, printf, fold, "
-        "expand, unexpand. "
+        "no sequences. Useful for inspecting files and paths. ") +
+        allowed_commands_line(exec_ro_allowed_commands) + " "
         "Safety: find -exec/-execdir/-ok/-delete blocked; "
         "sort -o/--output blocked. "
         "Long output (>100 lines or 4K chars) is redirected to the tool log.";
@@ -383,11 +393,10 @@ Tool make_exec_rw_tool(
     Tool t;
     t.name = "exec_rw";
     t.description =
-        "Execute a single read-write command on a file or path. "
+        std::string("Execute a single read-write command on a file or path. "
         "This is NOT a general-purpose shell — no pipes, no redirects, "
-        "no sequences. Useful for modifying files and the filesystem. "
-        "Allowed commands: mkdir, rmdir, rm, mv, sed, cp, patch, "
-        "touch, ln. "
+        "no sequences. Useful for modifying files and the filesystem. ") +
+        allowed_commands_line(exec_rw_allowed_commands) + " "
         "Safety: sed is run with --sandbox (e/r/w disabled); "
         "patch -p0 and --posix are rejected. "
         "Long output (>100 lines or 4K chars) is redirected to the tool log.";
