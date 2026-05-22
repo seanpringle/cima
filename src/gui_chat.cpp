@@ -33,6 +33,13 @@ void render_history_tab(PrimaryAgent& tab) {
     auto& ui = tab.ui_state;
     auto& history = ui.input_history;
 
+    if (!history.empty()) {
+        if (Button("Clear History")) {
+            ui.input_history.clear();
+        }
+        Separator();
+    }
+
     if (history.empty()) {
         TextDisabled("No history yet");
         return;
