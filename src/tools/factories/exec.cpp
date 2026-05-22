@@ -117,6 +117,60 @@ validate_exec_args(const json& args,
         }
     }
 
+    // ── cmd-specific safety checks ──
+    if (cmd == "find") {
+        // find's -exec/-execdir/-ok predicates execute arbitrary shell commands,
+        // and -delete modifies the filesystem — none of these belong in a
+        // read-only tool (or even a read-write one, since the command lives
+        // entirely inside the arg string, not in a validated path).
+        for (const auto& a : validated_args) {
+            if (a == "-exec" || a == "-execdir" || a == "-ok" || a == "-delete") {
+                return std::unexpected(
+                    "find with '" + a + "' is not allowed (shell-execution vector)");
+            }
+        }
+    } else if (cmd == "sort") {
+        // sort's -o/--output flag writes to a file, which is inappropriate for
+        // a read-only tool.  (If in-place sorting is needed, use exec_rw or run_bash.)
+        for (size_t i = 0; i < validated_args.size(); i++) {
+            const auto& a = validated_args[i];
+            if (a == "-o" || a == "--output") {
+                // The next arg is the output file — reject
+                return std::unexpected(
+                    "sort with -o/--output is not allowed in exec_ro (writes to a file)");
+            }
+            if (a.starts_with("-o") && a.size() > 2) {
+                // Combined form: -oFILE
+                return std::unexpected(
+                    "sort with -o/--output is not allowed in exec_ro (writes to a file)");
+            }
+            if (a.starts_with("--output=")) {
+                return std::unexpected(
+                    "sort with -o/--output is not allowed in exec_ro (writes to a file)");
+            }
+        }
+    } else if (cmd == "patch") {
+        // -p0 makes patch resolve filenames in the diff with no component
+        // stripping, which can traverse upward via relative paths in diff
+        // headers.  --posix enables POSIX mode, which allows absolute paths
+        // in diff headers (default since 2.7 is to reject them).
+        for (size_t i = 0; i < validated_args.size(); i++) {
+            if (validated_args[i] == "-p0") {
+                return std::unexpected(
+                    "patch with -p0 is not allowed (path-traversal vector)");
+            }
+            if (validated_args[i] == "-p" && i + 1 < validated_args.size() &&
+                validated_args[i + 1] == "0") {
+                return std::unexpected(
+                    "patch with -p0 is not allowed (path-traversal vector)");
+            }
+            if (validated_args[i] == "--posix") {
+                return std::unexpected(
+                    "patch with --posix is not allowed (enables absolute paths from diff headers)");
+            }
+        }
+    }
+
     return std::make_pair(cmd, validated_args);
 }
 
@@ -282,6 +336,8 @@ Tool make_exec_ro_tool(
         "stat, file, find, diff, strings, which, date, nl, sort, uniq, "
         "comm, basename, dirname, readlink, realpath, printf, fold, "
         "expand, unexpand. "
+        "Safety: find -exec/-execdir/-ok/-delete blocked; "
+        "sort -o/--output blocked. "
         "Long output (>100 lines or 4K chars) is redirected to the tool log.";
     t.permission = ToolPermission::ReadOnly;
     t.timeout_sec = 0; // internal timeout via fork/exec loop
@@ -323,7 +379,8 @@ Tool make_exec_rw_tool(
         "no sequences. Useful for modifying files and the filesystem. "
         "Allowed commands: mkdir, rmdir, rm, mv, sed, cp, patch, "
         "touch, ln. "
-        "Note: sed is run with --sandbox (e/r/w commands disabled). "
+        "Safety: sed is run with --sandbox (e/r/w disabled); "
+        "patch -p0 and --posix are rejected. "
         "Long output (>100 lines or 4K chars) is redirected to the tool log.";
     t.permission = ToolPermission::Write;
     t.timeout_sec = 0; // internal timeout via fork/exec loop
@@ -349,6 +406,9 @@ Tool make_exec_rw_tool(
         if (cmd == "sed") {
             cmd_args.insert(cmd_args.begin(), "--sandbox");
         }
+        // The default behavior of GNU patch 2.7+ rejects absolute paths
+        // in diff headers — we just need to make sure --posix isn't used
+        // (which would re-enable them).
         return run_exec(cmd, cmd_args, safe_dir_ptr, timeout, cancelled, tool_logs);
     };
     return t;
