@@ -261,20 +261,23 @@ Tool make_project_tree_tool(std::shared_ptr<std::string> safe_dir_ptr,
     return t;
 }
 
-// ── create_directory ─────────────────────────────────────────────────
+// ── delete_path ─────────────────────────────────────────────────
 
-Tool make_create_directory_tool(std::shared_ptr<std::string> safe_dir_ptr) {
+Tool make_delete_path_tool(std::shared_ptr<std::string> safe_dir_ptr) {
     Tool t;
-    t.name = "create_directory";
-    t.description = "Create a directory (like mkdir -p). Creates parent "
-                    "directories if needed. Succeeds silently if the "
-                    "directory already exists.";
+    t.name = "delete_path";
+    t.description = "Delete a file or empty directory. If 'recurse' is "
+                    "true, recursively delete a directory and all of its "
+                    "contents (use with caution).";
     t.parameters = {{"type", "object"},
         {"properties",
-            {{"path", {{"type", "string"}, {"description", "Directory path to create"}}}}},
+            {{"path", {{"type", "string"}, {"description", "File or directory path to delete"}}},
+             {"recurse", {{"type", "boolean"}, {"description", "Recursively delete directory contents"},
+                          {"default", false}}}}},
         {"required", {"path"}}};
     t.execute = [safe_dir_ptr](const json& args) -> Result<std::string> {
         auto raw = args.value("path", std::string());
+        bool recurse = args.value("recurse", false);
 
         auto resolved = resolve_path(raw, *safe_dir_ptr);
         if (!resolved) {
@@ -282,58 +285,42 @@ Tool make_create_directory_tool(std::shared_ptr<std::string> safe_dir_ptr) {
         }
 
         std::error_code ec;
-        bool created = std::filesystem::create_directories(*resolved, ec);
-        if (ec) {
-            return std::unexpected("Failed to create directory: " + ec.message());
-        }
-        if (created) {
-            return "ok (created " + *resolved + ")";
-        } else {
-            return "ok (already exists: " + *resolved + ")";
-        }
-    };
-    return t;
-}
 
-// ── delete_directory ─────────────────────────────────────────────────
-
-Tool make_delete_directory_tool(std::shared_ptr<std::string> safe_dir_ptr) {
-    Tool t;
-    t.name = "delete_directory";
-    t.description = "Delete an empty directory. Only works if the "
-                    "directory is empty (no files or subdirectories).";
-    t.parameters = {{"type", "object"},
-        {"properties",
-            {{"path", {{"type", "string"}, {"description", "Directory path to delete"}}}}},
-        {"required", {"path"}}};
-    t.execute = [safe_dir_ptr](const json& args) -> Result<std::string> {
-        auto raw = args.value("path", std::string());
-
-        auto resolved = resolve_path(raw, *safe_dir_ptr);
-        if (!resolved) {
-            return std::unexpected(resolved.error());
+        // Check existence first (status() may error on non-existent paths)
+        if (!std::filesystem::exists(*resolved, ec)) {
+            if (ec) {
+                return std::unexpected("Cannot access path: " + *resolved);
+            }
+            return std::unexpected("Path not found: " + *resolved);
         }
 
-        std::error_code ec;
         auto status = std::filesystem::status(*resolved, ec);
         if (ec) {
             return std::unexpected("Cannot access path: " + *resolved);
         }
-        if (!std::filesystem::is_directory(status)) {
-            return std::unexpected("Not a directory: " + *resolved);
-        }
-        if (!std::filesystem::is_empty(*resolved, ec)) {
-            if (ec) {
-                return std::unexpected("Cannot check directory: " + ec.message());
+
+        if (std::filesystem::is_directory(status)) {
+            if (!recurse && !std::filesystem::is_empty(*resolved, ec)) {
+                if (ec) {
+                    return std::unexpected("Cannot check directory: " + ec.message());
+                }
+                return std::unexpected("Directory is not empty: " + *resolved);
             }
-            return std::unexpected("Directory is not empty: " + *resolved);
+
+            if (recurse) {
+                std::filesystem::remove_all(*resolved, ec);
+            } else {
+                std::filesystem::remove(*resolved, ec);
+            }
+        } else {
+            // Regular file (or symlink, etc.) — just remove it
+            std::filesystem::remove(*resolved, ec);
         }
 
-        bool removed = std::filesystem::remove(*resolved, ec);
-        if (ec || !removed) {
-            return std::unexpected("Failed to delete directory: " + ec.message());
+        if (ec) {
+            return std::unexpected("Failed to delete path: " + ec.message());
         }
-        return "ok (removed " + *resolved + ")";
+        return "ok (deleted " + *resolved + ")";
     };
     return t;
 }

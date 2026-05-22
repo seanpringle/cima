@@ -608,39 +608,6 @@ Tool make_write_file_lines_tool(std::shared_ptr<std::string> safe_dir_ptr,
     return t;
 }
 
-Tool make_delete_file_tool(std::shared_ptr<std::string> safe_dir_ptr) {
-    Tool t;
-    t.name = "delete_file";
-    t.description = "Delete a file";
-    t.parameters = {{"type", "object"},
-        {"properties",
-            {{"path", {{"type", "string"}, {"description", "File path to delete"}}}}},
-        {"required", {"path"}}};
-    t.execute = [safe_dir_ptr](const json& args) -> Result<std::string> {
-        auto raw = args.value("path", std::string());
-
-        auto resolved = resolve_path(raw, *safe_dir_ptr);
-        if (!resolved) {
-            return std::unexpected(resolved.error());
-        }
-
-        std::error_code ec;
-        if (!std::filesystem::exists(*resolved, ec)) {
-            return std::unexpected("File not found: " + *resolved);
-        }
-        if (!std::filesystem::is_regular_file(*resolved, ec)) {
-            return std::unexpected("Not a regular file: " + *resolved);
-        }
-        uintmax_t size = std::filesystem::file_size(*resolved, ec);
-        bool removed = std::filesystem::remove(*resolved, ec);
-        if (ec || !removed) {
-            return std::unexpected("Failed to delete file: " + ec.message());
-        }
-        return "ok (deleted " + *resolved + ", " + std::to_string(size) + " bytes)";
-    };
-    return t;
-}
-
 Tool make_move_file_tool(std::shared_ptr<std::string> safe_dir_ptr) {
     Tool t;
     t.name = "move_file";

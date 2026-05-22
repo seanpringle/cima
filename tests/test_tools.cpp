@@ -110,7 +110,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
 
     json tools = reg.to_openai_tools();
     REQUIRE(tools.is_array());
-    REQUIRE(tools.size() == 23);
+    REQUIRE(tools.size() == 21);
 
     // Check structure of first tool
     CHECK(tools[0]["type"] == "function");
@@ -133,8 +133,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
                        "project_tree", "git_status", "git_diff", "git_log",
                        "git_add", "git_commit",
                        "git_restore", "git_show",
-                       "delete_file", "move_file",
-                       "create_directory", "delete_directory",
+                       "delete_path", "move_file",
                        });
 }
 
@@ -158,7 +157,7 @@ TEST_CASE("ToolRegistry without write tools (Planner-style)", "[tools][registry]
     CHECK(names.find("run_bash") == names.end());
     CHECK(names.find("git_add") == names.end());
     CHECK(names.find("git_commit") == names.end());
-    CHECK(names.find("delete_file") == names.end());
+    CHECK(names.find("delete_path") == names.end());
     CHECK(names.find("move_file") == names.end());
 
     // Read-only tools should be present
@@ -301,139 +300,6 @@ TEST_CASE("stat_file not found", "[tools][stat_file]") {
     auto result = reg.execute("stat_file", R"({"path": "nonexistent"})");
     CHECK_FALSE(result);
     CHECK(result.error().find("Cannot access") != std::string::npos);
-
-    fs::remove_all(sd);
-}
-
-// ===================================================================
-// create_directory
-// ===================================================================
-
-TEST_CASE("create_directory basic", "[tools][create_directory]") {
-    auto sd = make_temp_dir();
-    ToolRegistry reg;
-    reg.add_defaults(sd, Config{});
-
-    auto result = reg.execute("create_directory", R"({"path": "my_dir"})");
-    REQUIRE(result);
-    CHECK(result->find("created") != std::string::npos);
-    CHECK(std::filesystem::exists(sd + "/my_dir"));
-    CHECK(std::filesystem::is_directory(sd + "/my_dir"));
-
-    fs::remove_all(sd);
-}
-
-TEST_CASE("create_directory nested", "[tools][create_directory]") {
-    auto sd = make_temp_dir();
-    ToolRegistry reg;
-    reg.add_defaults(sd, Config{});
-
-    auto result = reg.execute("create_directory", R"({"path": "a/b/c"})");
-    REQUIRE(result);
-    CHECK(result->find("created") != std::string::npos);
-    CHECK(std::filesystem::exists(sd + "/a/b/c"));
-    CHECK(std::filesystem::is_directory(sd + "/a/b/c"));
-
-    fs::remove_all(sd);
-}
-
-TEST_CASE("create_directory already exists", "[tools][create_directory]") {
-    auto sd = make_temp_dir();
-    ToolRegistry reg;
-    reg.add_defaults(sd, Config{});
-
-    // Create it once
-    std::filesystem::create_directories(sd + "/existing");
-    CHECK(std::filesystem::exists(sd + "/existing"));
-
-    // Create it again — should succeed silently
-    auto result = reg.execute("create_directory", R"({"path": "existing"})");
-    REQUIRE(result);
-    CHECK(result->find("already exists") != std::string::npos);
-
-    fs::remove_all(sd);
-}
-
-TEST_CASE("create_directory path traversal rejected", "[tools][create_directory]") {
-    auto sd = make_temp_dir();
-    ToolRegistry reg;
-    reg.add_defaults(sd, Config{});
-
-    auto result = reg.execute("create_directory", R"({"path": "../../etc/evil"})");
-    CHECK_FALSE(result);
-    CHECK(result.error().find("path must be under") != std::string::npos);
-
-    fs::remove_all(sd);
-}
-
-// ===================================================================
-// delete_directory
-// ===================================================================
-
-TEST_CASE("delete_directory basic", "[tools][delete_directory]") {
-    auto sd = make_temp_dir();
-    ToolRegistry reg;
-    reg.add_defaults(sd, Config{});
-
-    // Create a directory first
-    std::filesystem::create_directories(sd + "/to_delete");
-    CHECK(std::filesystem::exists(sd + "/to_delete"));
-
-    // Delete it
-    auto result = reg.execute("delete_directory", R"({"path": "to_delete"})");
-    REQUIRE(result);
-    CHECK(result->find("removed") != std::string::npos);
-    CHECK(!std::filesystem::exists(sd + "/to_delete"));
-
-    fs::remove_all(sd);
-}
-
-TEST_CASE("delete_directory only works on empty dir", "[tools][delete_directory]") {
-    auto sd = make_temp_dir();
-    ToolRegistry reg;
-    reg.add_defaults(sd, Config{});
-
-    // Create a directory with a file inside
-    std::filesystem::create_directories(sd + "/not_empty");
-    std::ofstream(sd + "/not_empty/file.txt") << "content";
-    CHECK(std::filesystem::exists(sd + "/not_empty/file.txt"));
-
-    // Try to delete — should fail because directory is not empty
-    auto result = reg.execute("delete_directory", R"({"path": "not_empty"})");
-    CHECK_FALSE(result);
-    CHECK(result.error().find("not empty") != std::string::npos);
-
-    // Verify directory still exists
-    CHECK(std::filesystem::exists(sd + "/not_empty"));
-
-    fs::remove_all(sd);
-}
-
-TEST_CASE("delete_directory path traversal rejected", "[tools][delete_directory]") {
-    auto sd = make_temp_dir();
-    ToolRegistry reg;
-    reg.add_defaults(sd, Config{});
-
-    auto result = reg.execute("delete_directory", R"({"path": "../../etc"})");
-    CHECK_FALSE(result);
-    CHECK(result.error().find("path must be under") != std::string::npos);
-
-    fs::remove_all(sd);
-}
-
-TEST_CASE("delete_directory not a directory", "[tools][delete_directory]") {
-    auto sd = make_temp_dir();
-    ToolRegistry reg;
-    reg.add_defaults(sd, Config{});
-
-    // Create a regular file
-    std::ofstream(sd + "/a_file") << "hello";
-    CHECK(std::filesystem::exists(sd + "/a_file"));
-
-    // Try to delete it with delete_directory — should fail
-    auto result = reg.execute("delete_directory", R"({"path": "a_file"})");
-    CHECK_FALSE(result);
-    CHECK(result.error().find("Not a directory") != std::string::npos);
 
     fs::remove_all(sd);
 }
@@ -2463,76 +2329,110 @@ TEST_CASE("web_fetch binary content-type rejected", "[tools][web_fetch]") {
 }
 
 // ===================================================================
-// delete_file
+// delete_path
 // ===================================================================
 
-TEST_CASE("delete_file basic", "[tools][delete_file]") {
+TEST_CASE("delete_path file", "[tools][delete_path]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
     reg.add_defaults(sd, Config{});
 
-    // Create a file to delete
     std::ofstream(sd + "/to_delete.txt") << "delete me";
 
-    auto result = reg.execute("delete_file", R"({"path": "to_delete.txt"})");
+    auto result = reg.execute("delete_path", R"({"path": "to_delete.txt"})");
     REQUIRE(result);
     CHECK(result->find("ok") != std::string::npos);
     CHECK(result->find("deleted") != std::string::npos);
-
-    // File should be gone
     CHECK_FALSE(fs::exists(sd + "/to_delete.txt"));
 
     fs::remove_all(sd);
 }
 
-TEST_CASE("delete_file file not found", "[tools][delete_file]") {
+TEST_CASE("delete_path empty directory", "[tools][delete_path]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
     reg.add_defaults(sd, Config{});
 
-    auto result = reg.execute("delete_file", R"({"path": "nonexistent.txt"})");
-    CHECK_FALSE(result);
-    CHECK(result.error().find("File not found") != std::string::npos);
+    fs::create_directories(sd + "/to_delete");
+    CHECK(fs::exists(sd + "/to_delete"));
+
+    auto result = reg.execute("delete_path", R"({"path": "to_delete"})");
+    REQUIRE(result);
+    CHECK(result->find("ok") != std::string::npos);
+    CHECK_FALSE(fs::exists(sd + "/to_delete"));
 
     fs::remove_all(sd);
 }
 
-TEST_CASE("delete_file directory rejected", "[tools][delete_file]") {
+TEST_CASE("delete_path non-empty directory rejected", "[tools][delete_path]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
     reg.add_defaults(sd, Config{});
 
-    fs::create_directories(sd + "/mydir");
+    fs::create_directories(sd + "/not_empty");
+    std::ofstream(sd + "/not_empty/file.txt") << "content";
+    CHECK(fs::exists(sd + "/not_empty/file.txt"));
 
-    auto result = reg.execute("delete_file", R"({"path": "mydir"})");
+    auto result = reg.execute("delete_path", R"({"path": "not_empty"})");
     CHECK_FALSE(result);
-    CHECK(result.error().find("Not a regular file") != std::string::npos);
-
-    // Directory should still exist
-    CHECK(fs::exists(sd + "/mydir"));
+    CHECK(result.error().find("not empty") != std::string::npos);
+    CHECK(fs::exists(sd + "/not_empty"));
 
     fs::remove_all(sd);
 }
 
-TEST_CASE("delete_file path traversal rejected", "[tools][delete_file]") {
+TEST_CASE("delete_path recursive delete", "[tools][delete_path]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
     reg.add_defaults(sd, Config{});
 
-    auto result = reg.execute("delete_file", R"({"path": "../../etc/passwd"})");
+    // Create a nested directory structure
+    fs::create_directories(sd + "/parent/sub/leaf");
+    std::ofstream(sd + "/parent/a.txt") << "a";
+    std::ofstream(sd + "/parent/sub/b.txt") << "b";
+    std::ofstream(sd + "/parent/sub/leaf/c.txt") << "c";
+    CHECK(fs::exists(sd + "/parent/sub/leaf/c.txt"));
+
+    auto result = reg.execute("delete_path",
+        R"({"path": "parent", "recurse": true})");
+    REQUIRE(result);
+    CHECK(result->find("ok") != std::string::npos);
+    CHECK_FALSE(fs::exists(sd + "/parent"));
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("delete_path path not found", "[tools][delete_path]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    auto result = reg.execute("delete_path", R"({"path": "nonexistent"})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("Path not found") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("delete_path path traversal rejected", "[tools][delete_path]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    auto result = reg.execute("delete_path", R"({"path": "../../etc/passwd"})");
     CHECK_FALSE(result);
 
     fs::remove_all(sd);
 }
 
-TEST_CASE("delete_file absolute path inside safe_dir", "[tools][delete_file]") {
+TEST_CASE("delete_path absolute path inside safe_dir", "[tools][delete_path]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
     reg.add_defaults(sd, Config{});
 
     std::ofstream(sd + "/absfile.txt") << "absolute path test";
 
-    auto result = reg.execute("delete_file",
+    auto result = reg.execute("delete_path",
         json{{"path", sd + "/absfile.txt"}}.dump());
     REQUIRE(result);
     CHECK_FALSE(fs::exists(sd + "/absfile.txt"));
@@ -2540,7 +2440,7 @@ TEST_CASE("delete_file absolute path inside safe_dir", "[tools][delete_file]") {
     fs::remove_all(sd);
 }
 
-TEST_CASE("delete_file in subdirectory", "[tools][delete_file]") {
+TEST_CASE("delete_path subdirectory file", "[tools][delete_path]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
     reg.add_defaults(sd, Config{});
@@ -2548,10 +2448,9 @@ TEST_CASE("delete_file in subdirectory", "[tools][delete_file]") {
     fs::create_directories(sd + "/subdir");
     std::ofstream(sd + "/subdir/nested.txt") << "nested";
 
-    auto result = reg.execute("delete_file", R"({"path": "subdir/nested.txt"})");
+    auto result = reg.execute("delete_path", R"({"path": "subdir/nested.txt"})");
     REQUIRE(result);
     CHECK_FALSE(fs::exists(sd + "/subdir/nested.txt"));
-    // Parent directory should remain
     CHECK(fs::exists(sd + "/subdir"));
 
     fs::remove_all(sd);

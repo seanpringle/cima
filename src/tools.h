@@ -172,9 +172,7 @@ Tool make_list_directory_tool(
     std::shared_ptr<std::string> safe_dir_ptr,
     const std::vector<std::string>& read_only_paths,
     std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
-Tool make_create_directory_tool(
-    std::shared_ptr<std::string> safe_dir_ptr);
-Tool make_delete_directory_tool(
+Tool make_delete_path_tool(
     std::shared_ptr<std::string> safe_dir_ptr);
 Tool make_stat_file_tool(
     std::shared_ptr<std::string> safe_dir_ptr,
@@ -216,7 +214,6 @@ Tool make_project_tree_tool(std::shared_ptr<std::string> safe_dir_ptr,
     int timeout,
     CancellationToken cancelled = nullptr,
     std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
-Tool make_delete_file_tool(std::shared_ptr<std::string> safe_dir_ptr);
 Tool make_move_file_tool(std::shared_ptr<std::string> safe_dir_ptr);
 
 class ChatSession; // forward decl for SubagentLookup

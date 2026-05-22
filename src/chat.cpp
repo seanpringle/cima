@@ -91,7 +91,7 @@ std::unique_ptr<ChatSession> ChatSession::create_subagent(
         // File write tools
         session->tools_.remove("write_file");
         session->tools_.remove("edit_file");
-        session->tools_.remove("delete_file");
+        session->tools_.remove("delete_path");
         session->tools_.remove("move_file");
         // Git write tools
         session->tools_.remove("git_add");

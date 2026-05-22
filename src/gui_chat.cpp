@@ -620,8 +620,7 @@ void render_config_tab(PrimaryAgent& tab) {
                         if (name == "list_directory" || name == "read_file" || name == "read_file_lines" ||
                             name == "stat_file" || name == "grep_files" || name == "project_tree" ||
                             name == "write_file" || name == "write_file_lines" || name == "edit_file" ||
-                            name == "delete_file" || name == "move_file" || name == "create_directory" ||
-                            name == "delete_directory")
+                            name == "delete_path" || name == "move_file")
                             return "File";
                         if (name == "git_status" || name == "git_diff" || name == "git_log" ||
                             name == "git_show" || name == "git_add" || name == "git_commit" ||
