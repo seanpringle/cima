@@ -88,6 +88,8 @@ PrimaryAgent::~PrimaryAgent() {
             break;
         }
         entry["text"] = e.text;
+        if (!e.tool_result.empty())
+            entry["tool_result"] = e.tool_result;
         if (e.is_streaming)
             entry["streaming"] = true;
         log_arr.push_back(std::move(entry));
@@ -174,6 +176,7 @@ void PrimaryAgent::restore_session_data() {
             else
                 continue;
             e.text = entry.value("text", "");
+            e.tool_result = entry.value("tool_result", "");
             e.is_streaming = entry.value("streaming", false);
             ui_state.entries.push_back(std::move(e));
         }
