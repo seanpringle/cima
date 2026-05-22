@@ -321,7 +321,7 @@ Tool make_exec_rw_tool(
         "Execute a single read-write command on a file or path. "
         "This is NOT a general-purpose shell — no pipes, no redirects, "
         "no sequences. Useful for modifying files and the filesystem. "
-        "Allowed commands: mkdir, rmdir, rm, mv, awk, sed, cp, patch, "
+        "Allowed commands: mkdir, rmdir, rm, mv, cp, patch, "
         "touch, ln. "
         "Long output (>100 lines or 4K chars) is redirected to the tool log.";
     t.permission = ToolPermission::Write;

@@ -3973,25 +3973,23 @@ TEST_CASE("exec_rw ln", "[tools][exec_rw]") {
     fs::remove_all(sd);
 }
 
-TEST_CASE("exec_rw awk sed", "[tools][exec_rw]") {
+TEST_CASE("exec_rw awk sed rejected", "[tools][exec_rw]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
     reg.add_defaults(sd, Config{});
 
-    std::ofstream(sd + "/data.txt") << "hello world\nfoo bar\n";
+    // awk and sed were removed from the whitelist because they have
+    // built-in system() calls (awk's system(), sed's 'e' flag) that
+    // bypass the path-argument sandbox.
+    auto awk_result = reg.execute("exec_rw",
+        R"({"cmd": "awk", "args": ["{print}", "data.txt"]})");
+    CHECK_FALSE(awk_result);
+    CHECK(awk_result.error().find("not in the allowed commands list") != std::string::npos);
 
-    // Test sed as stream editor (outputs modified text to stdout)
     auto sed_result = reg.execute("exec_rw",
         R"({"cmd": "sed", "args": ["-e", "s/hello/goodbye/g", "data.txt"]})");
-    REQUIRE(sed_result);
-    CHECK(sed_result->find("goodbye") != std::string::npos);
-    CHECK(sed_result->find("hello") == std::string::npos);
-
-    // Test awk: print first column of text file
-    auto awk_result = reg.execute("exec_rw",
-        R"({"cmd": "awk", "args": ["{print $1}", "data.txt"]})");
-    REQUIRE(awk_result);
-    CHECK(awk_result->find("hello") != std::string::npos); // original file still has "hello"
+    CHECK_FALSE(sed_result);
+    CHECK(sed_result.error().find("not in the allowed commands list") != std::string::npos);
 
     fs::remove_all(sd);
 }
