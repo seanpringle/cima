@@ -291,6 +291,15 @@ static Result<std::string> run_exec(
         if (pipefd[1] > STDERR_FILENO)
             close(pipefd[1]);
 
+        // Redirect stdin from /dev/null so commands that read stdin
+        // (e.g., grep without a file argument) exit immediately instead
+        // of blocking forever.
+        int devnull = open("/dev/null", O_RDONLY);
+        if (devnull != -1) {
+            dup2(devnull, STDIN_FILENO);
+            close(devnull);
+        }
+
         prctl(PR_SET_PDEATHSIG, SIGKILL);
         setpgid(0, 0);
 

@@ -51,6 +51,14 @@ Tool make_run_bash_tool(std::shared_ptr<std::string> safe_dir_ptr,
             if (pipefd[1] > STDERR_FILENO)
                 close(pipefd[1]);
 
+            // Redirect stdin from /dev/null so commands that read stdin
+            // exit immediately instead of blocking forever.
+            int devnull = open("/dev/null", O_RDONLY);
+            if (devnull != -1) {
+                dup2(devnull, STDIN_FILENO);
+                close(devnull);
+            }
+
             // Ensure grandchildren are killed when this child dies
             // (covers the edge case where setpgid fails and killpg falls
             // back to kill() which only targets the direct child).

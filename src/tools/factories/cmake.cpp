@@ -38,6 +38,14 @@ static Result<std::string> run_cmake_command(
         if (pipefd[1] > STDERR_FILENO)
             close(pipefd[1]);
 
+        // Redirect stdin from /dev/null so commands that read stdin
+        // exit immediately instead of blocking forever.
+        int devnull = open("/dev/null", O_RDONLY);
+        if (devnull != -1) {
+            dup2(devnull, STDIN_FILENO);
+            close(devnull);
+        }
+
         setpgid(0, 0);
 
         if (!safe_dir_ptr->empty()) {

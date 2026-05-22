@@ -3907,6 +3907,43 @@ TEST_CASE("exec_ro long output spills", "[tools][exec_ro]") {
     fs::remove_all(sd);
 }
 
+// ── stdin hardening: commands that read stdin should not block ──
+
+TEST_CASE("exec_ro no stdin blocking", "[tools][exec_ro]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    // grep with a pattern but no file argument would normally read stdin
+    // and block forever.  With stdin redirected from /dev/null, it should
+    // see EOF immediately and exit with code 1 (no match).
+    {
+        auto start = std::chrono::steady_clock::now();
+        auto result = reg.execute("exec_ro",
+            R"({"cmd": "grep", "args": ["nonexistent_pattern_xyzzy"]})");
+        auto elapsed = std::chrono::steady_clock::now() - start;
+        REQUIRE(result);
+        // Must complete in well under the 30s timeout — should be instant
+        CHECK(std::chrono::duration_cast<std::chrono::seconds>(elapsed).count() < 2);
+        // grep reads EOF → no match → exit code 1
+        CHECK(result->find("exit code: 1") != std::string::npos);
+    }
+
+    // tr always reads stdin; should also see EOF and exit cleanly
+    {
+        auto start = std::chrono::steady_clock::now();
+        auto result = reg.execute("exec_ro",
+            R"({"cmd": "tr", "args": ["a-z", "A-Z"]})");
+        auto elapsed = std::chrono::steady_clock::now() - start;
+        REQUIRE(result);
+        CHECK(std::chrono::duration_cast<std::chrono::seconds>(elapsed).count() < 2);
+        // tr with no input exits 0
+        CHECK(result->find("exit code") == std::string::npos);
+    }
+
+    fs::remove_all(sd);
+}
+
 // ===================================================================
 // exec_rw
 // ===================================================================
