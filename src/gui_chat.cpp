@@ -402,25 +402,34 @@ static void render_tool_result(size_t seq, const std::string& result, RenderTool
     }
 
     float line_height = GetTextLineHeightWithSpacing();
-    float max_height = line_height * std::min(line_count, 5) + GetStyle().WindowPadding.y * 2;
-
     string id = "##toolresult-" + std::to_string(seq);
-
-    BeginChild(id.c_str(),
-        ImVec2(0, max_height),
-        ImGuiChildFlags_Borders,
-        ImGuiWindowFlags_HorizontalScrollbar);
-
-    PushFont(mono_font);
 
     switch (mode) {
         case RenderToolResult::Plain: {
+            float height = GetTextLineHeightWithSpacing() * std::min(line_count, 5);
+            height += GetStyle().WindowPadding.y * 2;
+            BeginChild(id.c_str(),
+                ImVec2(0, height),
+                ImGuiChildFlags_Borders,
+                ImGuiWindowFlags_HorizontalScrollbar);
+            PushFont(mono_font);
             PushStyleColor(ImGuiCol_Text, IM_COL32(160, 160, 160, 255));
             TextUnformatted(result.c_str());
             PopStyleColor();
+            PopFont();
+            EndChild();
             break;
         }
         case RenderToolResult::Diff: {
+            float height = GetTextLineHeightWithSpacing() * std::min(line_count, 15);
+            height += GetStyle().WindowPadding.y * 2;
+
+            BeginChild(id.c_str(),
+                ImVec2(0, height),
+                ImGuiChildFlags_Borders,
+                ImGuiWindowFlags_HorizontalScrollbar);
+            PushFont(mono_font);
+
             string_view cur(result);
             while (cur.size()) {
                 auto sol = cur;
@@ -429,10 +438,10 @@ static void render_tool_result(size_t seq, const std::string& result, RenderTool
                 }
                 auto color = IM_COL32(160, 160, 160, 255);
                 if (sol.starts_with("+")) {
-                    color = IM_COL32(160, 200, 160, 255);
+                    color = IM_COL32(80, 200, 80, 255);
                 }
                 if (sol.starts_with("-")) {
-                    color = IM_COL32(200, 160, 160, 255);
+                    color = IM_COL32(200, 60, 60, 255);
                 }
                 PushStyleColor(ImGuiCol_Text, color);
                 TextUnformatted(sol.data(), cur.data());
@@ -441,12 +450,11 @@ static void render_tool_result(size_t seq, const std::string& result, RenderTool
                     cur.remove_prefix(1);
                 }
             }
+            PopFont();
+            EndChild();
             break;
         }
     }
-
-    PopFont();
-    EndChild();
 }
 
 static void render_tool_call_group(const auto& ui, size_t& i) {
@@ -459,7 +467,7 @@ static void render_tool_call_group(const auto& ui, size_t& i) {
         text_unformatted_ellipsis(ui.entries[i].text);
         if (ui.entries[i].tool_result.size()) {
             render_tool_result(i, ui.entries[i].tool_result, [&]() {
-                if (string_view(ui.entries[i].text).starts_with("edit_file")) {
+                if (string_view(ui.entries[i].text).contains("edit_file(")) {
                     return RenderToolResult::Diff;
                 }
                 return RenderToolResult::Plain;
@@ -1687,15 +1695,22 @@ void render_subagent_chat(SubAgent& tab) {
         case EntryType::UserText:
             PushStyleColor(ImGuiCol_Text, IM_COL32(100, 180, 255, 255));
             PushTextWrapPos(0);
-            TextUnformatted(("You: " + entry.text).c_str());
-            NewLine();
-            PopTextWrapPos();
+            TextUnformatted("Primary: ");
             PopStyleColor();
+            SameLine(0,0);
+            TextUnformatted(entry.text.c_str());
+            PopTextWrapPos();
+            NewLine();
             break;
         case EntryType::Reasoning:
-            PushStyleColor(ImGuiCol_Text, IM_COL32(160, 160, 160, 255));
-            render_content("Thinking: " + entry.text);
+            PushStyleColor(ImGuiCol_Text, IM_COL32(50, 160, 50, 255));
+            TextUnformatted("Thinking: ");
+            if (entry.text.size()) SameLine(0,0);
             PopStyleColor();
+            PushStyleColor(ImGuiCol_Text, IM_COL32(160, 160, 160, 255));
+            render_content(entry.text);
+            PopStyleColor();
+            if (!entry.text.size()) NewLine();
             break;
         case EntryType::Content:
             PushStyleColor(ImGuiCol_Text, GetColorU32(ImGuiCol_Text));
@@ -1782,21 +1797,26 @@ void render_chat_ui(PrimaryAgent& tab, bool& done) {
 
         PushID(string("entry-" + std::to_string(i)).c_str());
 
-        stringstream ss;
         switch (entry.type) {
         case EntryType::UserText:
             PushStyleColor(ImGuiCol_Text, IM_COL32(100, 180, 255, 255));
             PushTextWrapPos(0);
-            ss << "You: " << entry.text;
-            TextUnformatted(ss.str().c_str());
-            NewLine();
-            PopTextWrapPos();
+            TextUnformatted("You: ");
             PopStyleColor();
+            SameLine(0,0);
+            TextUnformatted(entry.text.c_str());
+            PopTextWrapPos();
+            NewLine();
             break;
         case EntryType::Reasoning:
-            PushStyleColor(ImGuiCol_Text, IM_COL32(160, 160, 160, 255));
-            render_content("Thinking: " + entry.text);
+            PushStyleColor(ImGuiCol_Text, IM_COL32(50, 160, 50, 255));
+            TextUnformatted("Thinking: ");
+            if (entry.text.size()) SameLine(0,0);
             PopStyleColor();
+            PushStyleColor(ImGuiCol_Text, IM_COL32(160, 160, 160, 255));
+            render_content(entry.text);
+            PopStyleColor();
+            if (!entry.text.size()) NewLine();
             break;
         case EntryType::Content:
             PushStyleColor(ImGuiCol_Text, GetColorU32(ImGuiCol_Text));
