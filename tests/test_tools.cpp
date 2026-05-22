@@ -3973,23 +3973,46 @@ TEST_CASE("exec_rw ln", "[tools][exec_rw]") {
     fs::remove_all(sd);
 }
 
-TEST_CASE("exec_rw awk sed rejected", "[tools][exec_rw]") {
+TEST_CASE("exec_rw awk rejected", "[tools][exec_rw]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
     reg.add_defaults(sd, Config{});
 
-    // awk and sed were removed from the whitelist because they have
-    // built-in system() calls (awk's system(), sed's 'e' flag) that
-    // bypass the path-argument sandbox.
+    // awk has built-in system() calls that bypass the path-argument sandbox.
     auto awk_result = reg.execute("exec_rw",
         R"({"cmd": "awk", "args": ["{print}", "data.txt"]})");
     CHECK_FALSE(awk_result);
     CHECK(awk_result.error().find("not in the allowed commands list") != std::string::npos);
 
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_rw sed sandboxed", "[tools][exec_rw]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    std::ofstream(sd + "/data.txt") << "hello world\nfoo bar\n";
+
+    // sed is allowed but --sandbox is forced to disable e/r/w commands.
+    // Normal substitution should still work.
     auto sed_result = reg.execute("exec_rw",
         R"({"cmd": "sed", "args": ["-e", "s/hello/goodbye/g", "data.txt"]})");
-    CHECK_FALSE(sed_result);
-    CHECK(sed_result.error().find("not in the allowed commands list") != std::string::npos);
+    REQUIRE(sed_result);
+    CHECK(sed_result->find("goodbye") != std::string::npos);
+    CHECK(sed_result->find("hello") == std::string::npos);
+
+    // Make sure the e flag is blocked by sandbox
+    auto e_flag = reg.execute("exec_rw",
+        R"({"cmd": "sed", "args": ["-e", "s/.*/echo pwned/e", "data.txt"]})");
+    REQUIRE(e_flag);
+    // The e flag should be disabled — output should contain an error,
+    // not the result of executing "echo pwned"
+    CHECK(e_flag->find("pwned") == std::string::npos);
+    CHECK((e_flag->find("e") != std::string::npos ||   // "e" command is disabled
+           e_flag->find("not permitted") != std::string::npos ||
+           e_flag->find("invalid") != std::string::npos ||
+           e_flag->find("sandbox") != std::string::npos));
 
     fs::remove_all(sd);
 }

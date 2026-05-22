@@ -53,12 +53,14 @@ inline const std::set<std::string> exec_ro_allowed_commands = {
 };
 
 // Read-write commands — can modify the filesystem.
-// Note: awk and sed are intentionally excluded because they have
-// built-in system() calls (e.g. awk's system(), sed's 'e' flag)
-// that allow arbitrary shell execution from within the script,
-// bypassing the path-argument sandbox.
+// Note: awk is excluded because it has built-in system() calls
+// (system(), print > file, "cmd" | getline) that allow arbitrary
+// shell execution from within the script, bypassing the path-argument
+// sandbox.  sed IS included because GNU sed's --sandbox flag
+// (which we force-prepend to every sed invocation) disables the
+// e/r/w commands that could otherwise escape.
 inline const std::set<std::string> exec_rw_allowed_commands = {
-    "mkdir", "rmdir", "rm", "mv", "cp",
+    "mkdir", "rmdir", "rm", "mv", "sed", "cp",
     "patch", "touch", "ln"
 };
 

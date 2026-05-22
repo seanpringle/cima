@@ -321,8 +321,9 @@ Tool make_exec_rw_tool(
         "Execute a single read-write command on a file or path. "
         "This is NOT a general-purpose shell — no pipes, no redirects, "
         "no sequences. Useful for modifying files and the filesystem. "
-        "Allowed commands: mkdir, rmdir, rm, mv, cp, patch, "
+        "Allowed commands: mkdir, rmdir, rm, mv, sed, cp, patch, "
         "touch, ln. "
+        "Note: sed is run with --sandbox (e/r/w commands disabled). "
         "Long output (>100 lines or 4K chars) is redirected to the tool log.";
     t.permission = ToolPermission::Write;
     t.timeout_sec = 0; // internal timeout via fork/exec loop
@@ -342,6 +343,12 @@ Tool make_exec_rw_tool(
             return std::unexpected(validated.error());
         }
         auto& [cmd, cmd_args] = *validated;
+        // Force --sandbox on sed to disable e/r/w commands that could
+        // execute arbitrary shell commands from within the script,
+        // bypassing the path-argument sandbox.
+        if (cmd == "sed") {
+            cmd_args.insert(cmd_args.begin(), "--sandbox");
+        }
         return run_exec(cmd, cmd_args, safe_dir_ptr, timeout, cancelled, tool_logs);
     };
     return t;
