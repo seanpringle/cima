@@ -93,9 +93,8 @@ struct Config {
     int web_search_timeout = 15;
     int web_fetch_timeout = 15;
 
-
     // ── CMake tools ──
-    bool cmake_enabled = false; // user-facing toggle (like bash_enabled)
+    bool cmake_enabled = false;        // user-facing toggle (like bash_enabled)
     int cmake_configure_timeout = 120; // cmake configure can be slow
     int cmake_build_timeout = 300;     // builds can take minutes
     int cmake_ctest_timeout = 300;     // test suites can be long

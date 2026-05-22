@@ -21,9 +21,7 @@ using std::string_view;
 using std::stringstream;
 using std::vector;
 
-
 namespace {
-
 
 void text_unformatted_inline_wrap(const string& text) {
     auto blit = [&](string_view chunk) {
@@ -402,4 +400,3 @@ void render_content(const string& text) {
         ctx.style_depth--;
     }
 }
-

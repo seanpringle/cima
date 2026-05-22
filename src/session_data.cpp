@@ -143,7 +143,8 @@ void SessionData::from_json(const json& j) {
     // Deserialise rw_subagent_tool_gates map
     rw_subagent_tool_gates.clear();
     if (j.contains("rw_subagent_tool_gates") && j["rw_subagent_tool_gates"].is_object()) {
-        for (auto it = j["rw_subagent_tool_gates"].begin(); it != j["rw_subagent_tool_gates"].end(); ++it) {
+        for (auto it = j["rw_subagent_tool_gates"].begin(); it != j["rw_subagent_tool_gates"].end();
+            ++it) {
             if (it.value().is_boolean()) {
                 rw_subagent_tool_gates[it.key()] = it.value().get<bool>();
             }
@@ -153,7 +154,8 @@ void SessionData::from_json(const json& j) {
     // Deserialise ro_subagent_tool_gates map
     ro_subagent_tool_gates.clear();
     if (j.contains("ro_subagent_tool_gates") && j["ro_subagent_tool_gates"].is_object()) {
-        for (auto it = j["ro_subagent_tool_gates"].begin(); it != j["ro_subagent_tool_gates"].end(); ++it) {
+        for (auto it = j["ro_subagent_tool_gates"].begin(); it != j["ro_subagent_tool_gates"].end();
+            ++it) {
             if (it.value().is_boolean()) {
                 ro_subagent_tool_gates[it.key()] = it.value().get<bool>();
             }

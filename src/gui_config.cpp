@@ -21,10 +21,6 @@ using std::string_view;
 using std::stringstream;
 using std::vector;
 
-
-
-
-
 void render_config_tab(PrimaryAgent& tab) {
     auto& ui = tab.ui_state;
     auto& session = *tab.session;
@@ -204,9 +200,10 @@ void render_config_tab(PrimaryAgent& tab) {
 
             // ── Tool Calls sub-tab ──
             if (BeginTabItem("  Tool Calls  ")) {
-                if (BeginTable("ToolGateTable", 4,
+                if (BeginTable("ToolGateTable",
+                        4,
                         ImGuiTableFlags_BordersV | ImGuiTableFlags_BordersOuterH |
-                        ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
+                            ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
                     // Column setup
                     TableSetupColumn("Tool", ImGuiTableColumnFlags_WidthStretch);
                     TableSetupColumn("Primary", ImGuiTableColumnFlags_WidthFixed);
@@ -218,9 +215,9 @@ void render_config_tab(PrimaryAgent& tab) {
 
                     // Categorisation helpers.
                     auto category_of = [](const std::string& name) -> const char* {
-                        if (name == "list_directory" || name == "read_file" || name == "read_file_lines" ||
-                            name == "grep_files" || name == "project_tree" ||
-                            name == "write_file" || name == "edit_file" ||
+                        if (name == "list_directory" || name == "read_file" ||
+                            name == "read_file_lines" || name == "grep_files" ||
+                            name == "project_tree" || name == "write_file" || name == "edit_file" ||
                             name == "delete_path" || name == "move_file")
                             return "File";
                         if (name == "git_status" || name == "git_diff" || name == "git_log" ||
@@ -229,7 +226,8 @@ void render_config_tab(PrimaryAgent& tab) {
                             return "Git";
                         if (name == "web_search" || name == "web_fetch")
                             return "Web";
-                        if (name == "cmake_configure" || name == "cmake_build" || name == "cmake_ctest")
+                        if (name == "cmake_configure" || name == "cmake_build" ||
+                            name == "cmake_ctest")
                             return "Cmake";
                         if (name == "run_bash" || name == "call_subagent")
                             return "Execution";
@@ -238,27 +236,35 @@ void render_config_tab(PrimaryAgent& tab) {
 
                     // Category display order.
                     auto cat_order = [](const char* cat) -> int {
-                        if (!strcmp(cat, "Execution")) return 0;
-                        if (!strcmp(cat, "Cmake"))     return 1;
-                        if (!strcmp(cat, "File"))      return 2;
-                        if (!strcmp(cat, "Git"))       return 3;
-                        if (!strcmp(cat, "Web"))       return 4;
+                        if (!strcmp(cat, "Execution"))
+                            return 0;
+                        if (!strcmp(cat, "Cmake"))
+                            return 1;
+                        if (!strcmp(cat, "File"))
+                            return 2;
+                        if (!strcmp(cat, "Git"))
+                            return 3;
+                        if (!strcmp(cat, "Web"))
+                            return 4;
                         return 5;
                     };
 
                     // Filter and sort.
-                    names.erase(std::remove_if(names.begin(), names.end(),
-                        [](const std::string& name) {
-                            return name.rfind("mcp_", 0) == 0 || name == "read_plan" ||
-                                   name == "write_plan" || name == "view_tool_output" ||
-                                   name.rfind("cmd_", 0) == 0;
-                        }),
+                    names.erase(std::remove_if(names.begin(),
+                                    names.end(),
+                                    [](const std::string& name) {
+                                        return name.rfind("mcp_", 0) == 0 || name == "read_plan" ||
+                                            name == "write_plan" || name == "view_tool_output" ||
+                                            name.rfind("cmd_", 0) == 0;
+                                    }),
                         names.end());
-                    std::sort(names.begin(), names.end(),
+                    std::sort(names.begin(),
+                        names.end(),
                         [&](const std::string& a, const std::string& b) {
                             int ca = cat_order(category_of(a));
                             int cb = cat_order(category_of(b));
-                            if (ca != cb) return ca < cb;
+                            if (ca != cb)
+                                return ca < cb;
                             return a < b;
                         });
 
@@ -267,7 +273,8 @@ void render_config_tab(PrimaryAgent& tab) {
                         const char* cat = category_of(name);
                         if (cat != last_cat) {
                             TableNextRow();
-                            TableSetBgColor(ImGuiTableBgTarget_RowBg0, GetColorU32(ImGuiCol_TableHeaderBg));
+                            TableSetBgColor(
+                                ImGuiTableBgTarget_RowBg0, GetColorU32(ImGuiCol_TableHeaderBg));
                             TableNextColumn();
                             TextUnformatted(cat);
                             TableNextColumn();
@@ -298,7 +305,8 @@ void render_config_tab(PrimaryAgent& tab) {
                                 if (name == "run_bash") {
                                     tab.bash_enabled = enabled;
                                     session.set_bash_enabled(enabled);
-                                } else if (name == "cmake_configure" || name == "cmake_build" || name == "cmake_ctest") {
+                                } else if (name == "cmake_configure" || name == "cmake_build" ||
+                                    name == "cmake_ctest") {
                                     tab.cmake_enabled = enabled;
                                     session.set_cmake_enabled(enabled);
                                 }
@@ -319,7 +327,8 @@ void render_config_tab(PrimaryAgent& tab) {
                                 EndDisabled();
                             } else {
                                 auto it = tab.rw_subagent_tool_gates.find(name);
-                                bool enabled = (it == tab.rw_subagent_tool_gates.end()) || it->second;
+                                bool enabled =
+                                    (it == tab.rw_subagent_tool_gates.end()) || it->second;
                                 PushID((name + "_rw").c_str());
                                 if (Checkbox("", &enabled)) {
                                     tab.rw_subagent_tool_gates[name] = enabled;
@@ -390,7 +399,8 @@ void render_config_tab(PrimaryAgent& tab) {
                             TextColored(ImVec4(0, 1, 0, 1), "(*) running");
                         } else if (tab.mcp_error.count(mcp.name)) {
                             SameLine();
-                            TextColored(ImVec4(1, 0, 0, 1), "(!) %s", tab.mcp_error[mcp.name].c_str());
+                            TextColored(
+                                ImVec4(1, 0, 0, 1), "(!) %s", tab.mcp_error[mcp.name].c_str());
                         }
                         if (IsItemHovered()) {
                             BeginTooltip();
@@ -398,7 +408,8 @@ void render_config_tab(PrimaryAgent& tab) {
                             if (!mcp.args.empty()) {
                                 std::string args_str;
                                 for (const auto& a : mcp.args) {
-                                    if (!args_str.empty()) args_str += " ";
+                                    if (!args_str.empty())
+                                        args_str += " ";
                                     args_str += a;
                                 }
                                 Text("args: %s", args_str.c_str());
@@ -414,7 +425,8 @@ void render_config_tab(PrimaryAgent& tab) {
 
                 // ── Custom MCP Servers CRUD ──
                 auto validate_mcp_name = [](const std::string& name) -> std::string {
-                    if (name.empty()) return "Name must not be empty";
+                    if (name.empty())
+                        return "Name must not be empty";
                     for (char c : name) {
                         if (std::isspace(static_cast<unsigned char>(c)))
                             return "Name must not contain spaces";
@@ -425,7 +437,8 @@ void render_config_tab(PrimaryAgent& tab) {
                 // Check if name conflicts with any config server
                 auto is_config_server = [&tab](const std::string& name) -> bool {
                     for (const auto& m : cfg.mcp_servers) {
-                        if (m.name == name) return true;
+                        if (m.name == name)
+                            return true;
                     }
                     return false;
                 };
@@ -433,35 +446,47 @@ void render_config_tab(PrimaryAgent& tab) {
                 if (tab.mcp_edit.active) {
                     PushID("mcp-edit");
 
-                   InputText("Name", tab.mcp_edit.name_buf.data(), tab.mcp_edit.name_buf.size());
+                    InputText("Name", tab.mcp_edit.name_buf.data(), tab.mcp_edit.name_buf.size());
                     if (BeginCombo("Transport", tab.mcp_edit.transport_buf.data())) {
                         for (const char* opt : {"stdio", "streamable-http"}) {
                             bool selected = strcmp(tab.mcp_edit.transport_buf.data(), opt) == 0;
                             if (Selectable(opt, selected)) {
-                                std::fill(tab.mcp_edit.transport_buf.begin(), tab.mcp_edit.transport_buf.end(), 0);
-                                std::copy(opt, opt + strlen(opt), tab.mcp_edit.transport_buf.begin());
+                                std::fill(tab.mcp_edit.transport_buf.begin(),
+                                    tab.mcp_edit.transport_buf.end(),
+                                    0);
+                                std::copy(
+                                    opt, opt + strlen(opt), tab.mcp_edit.transport_buf.begin());
                             }
-                            if (selected) break;
+                            if (selected)
+                                break;
                         }
                         EndCombo();
                     }
 
                     // Show "Command" or "URL" label based on transport
-                    std::string ctrl_label = (strcmp(tab.mcp_edit.transport_buf.data(), "streamable-http") == 0)
-                        ? "URL" : "Command";
-                    InputText(ctrl_label.c_str(), tab.mcp_edit.command_or_url_buf.data(),
-                              tab.mcp_edit.command_or_url_buf.size());
+                    std::string ctrl_label =
+                        (strcmp(tab.mcp_edit.transport_buf.data(), "streamable-http") == 0)
+                        ? "URL"
+                        : "Command";
+                    InputText(ctrl_label.c_str(),
+                        tab.mcp_edit.command_or_url_buf.data(),
+                        tab.mcp_edit.command_or_url_buf.size());
 
                     InputText("Args", tab.mcp_edit.args_buf.data(), tab.mcp_edit.args_buf.size());
                     InputText("CWD", tab.mcp_edit.cwd_buf.data(), tab.mcp_edit.cwd_buf.size());
 
                     // API Key shown only for HTTP transport
-                    bool is_http = strcmp(tab.mcp_edit.transport_buf.data(), "streamable-http") == 0;
+                    bool is_http =
+                        strcmp(tab.mcp_edit.transport_buf.data(), "streamable-http") == 0;
                     if (is_http) {
-                        InputText("API Key", tab.mcp_edit.api_key_buf.data(), tab.mcp_edit.api_key_buf.size());
+                        InputText("API Key",
+                            tab.mcp_edit.api_key_buf.data(),
+                            tab.mcp_edit.api_key_buf.size());
                     }
 
-                    InputText("Timeout", tab.mcp_edit.timeout_buf.data(), tab.mcp_edit.timeout_buf.size());
+                    InputText("Timeout",
+                        tab.mcp_edit.timeout_buf.data(),
+                        tab.mcp_edit.timeout_buf.size());
 
                     if (!tab.mcp_edit.error.empty()) {
                         PushStyleColor(ImGuiCol_Text, IM_COL32(255, 0, 0, 255));
@@ -499,7 +524,8 @@ void render_config_tab(PrimaryAgent& tab) {
                         if (err.empty() && !timeout_str.empty()) {
                             try {
                                 int t = std::stoi(timeout_str);
-                                if (t <= 0) err = "Timeout must be positive";
+                                if (t <= 0)
+                                    err = "Timeout must be positive";
                             } catch (...) {
                                 err = "Timeout must be a valid number";
                             }
@@ -514,13 +540,17 @@ void render_config_tab(PrimaryAgent& tab) {
                                 std::stringstream ss(args_str);
                                 std::string arg;
                                 while (std::getline(ss, arg, ' ')) {
-                                    if (!arg.empty()) args_vec.push_back(arg);
+                                    if (!arg.empty())
+                                        args_vec.push_back(arg);
                                 }
                             }
 
                             int timeout_sec = 60;
                             if (!timeout_str.empty()) {
-                                try { timeout_sec = std::stoi(timeout_str); } catch (...) {}
+                                try {
+                                    timeout_sec = std::stoi(timeout_str);
+                                } catch (...) {
+                                }
                             }
 
                             McpEndpoint mcp;
@@ -542,7 +572,8 @@ void render_config_tab(PrimaryAgent& tab) {
                             if (!tab.mcp_edit.original_name.empty()) {
                                 // Find and replace in vector
                                 for (auto it = tab.session_data.custom_mcp_servers.begin();
-                                     it != tab.session_data.custom_mcp_servers.end(); ++it) {
+                                    it != tab.session_data.custom_mcp_servers.end();
+                                    ++it) {
                                     if (it->name == tab.mcp_edit.original_name) {
                                         it->name = name;
                                         it->transport = transport;
@@ -578,25 +609,31 @@ void render_config_tab(PrimaryAgent& tab) {
                         tab.mcp_edit.error.clear();
                     }
                     PopID();
-                 } else {
+                } else {
                     if (Button("+ Add Custom Server")) {
                         tab.mcp_edit = {};
                         tab.mcp_edit.active = true;
                         std::fill(tab.mcp_edit.name_buf.begin(), tab.mcp_edit.name_buf.end(), 0);
-                        std::fill(tab.mcp_edit.transport_buf.begin(), tab.mcp_edit.transport_buf.end(), 0);
+                        std::fill(tab.mcp_edit.transport_buf.begin(),
+                            tab.mcp_edit.transport_buf.end(),
+                            0);
                         std::copy("stdio", "stdio" + 5, tab.mcp_edit.transport_buf.begin());
-                        std::fill(tab.mcp_edit.command_or_url_buf.begin(), tab.mcp_edit.command_or_url_buf.end(), 0);
+                        std::fill(tab.mcp_edit.command_or_url_buf.begin(),
+                            tab.mcp_edit.command_or_url_buf.end(),
+                            0);
                         std::fill(tab.mcp_edit.args_buf.begin(), tab.mcp_edit.args_buf.end(), 0);
                         std::fill(tab.mcp_edit.cwd_buf.begin(), tab.mcp_edit.cwd_buf.end(), 0);
-                        std::fill(tab.mcp_edit.api_key_buf.begin(), tab.mcp_edit.api_key_buf.end(), 0);
-                        std::fill(tab.mcp_edit.timeout_buf.begin(), tab.mcp_edit.timeout_buf.end(), 0);
+                        std::fill(
+                            tab.mcp_edit.api_key_buf.begin(), tab.mcp_edit.api_key_buf.end(), 0);
+                        std::fill(
+                            tab.mcp_edit.timeout_buf.begin(), tab.mcp_edit.timeout_buf.end(), 0);
                         std::copy("60", "60" + 2, tab.mcp_edit.timeout_buf.begin());
                     }
                 }
 
-                              // List custom MCP servers
+                // List custom MCP servers
                 for (auto it = tab.session_data.custom_mcp_servers.begin();
-                     it != tab.session_data.custom_mcp_servers.end();) {
+                    it != tab.session_data.custom_mcp_servers.end();) {
                     PushID(it->name.c_str());
                     bool enabled = tab.mcp_enabled[it->name];
                     if (Checkbox("##en", &enabled)) {
@@ -630,7 +667,8 @@ void render_config_tab(PrimaryAgent& tab) {
                         if (!it->args.empty()) {
                             std::string args_str;
                             for (const auto& a : it->args) {
-                                if (!args_str.empty()) args_str += " ";
+                                if (!args_str.empty())
+                                    args_str += " ";
                                 args_str += a;
                             }
                             Text("args: %s", args_str.c_str());
@@ -649,41 +687,59 @@ void render_config_tab(PrimaryAgent& tab) {
                         tab.mcp_edit.active = true;
                         tab.mcp_edit.original_name = it->name;
                         std::fill(tab.mcp_edit.name_buf.begin(), tab.mcp_edit.name_buf.end(), 0);
-                        std::fill(tab.mcp_edit.transport_buf.begin(), tab.mcp_edit.transport_buf.end(), 0);
-                        std::fill(tab.mcp_edit.command_or_url_buf.begin(), tab.mcp_edit.command_or_url_buf.end(), 0);
+                        std::fill(tab.mcp_edit.transport_buf.begin(),
+                            tab.mcp_edit.transport_buf.end(),
+                            0);
+                        std::fill(tab.mcp_edit.command_or_url_buf.begin(),
+                            tab.mcp_edit.command_or_url_buf.end(),
+                            0);
                         std::fill(tab.mcp_edit.args_buf.begin(), tab.mcp_edit.args_buf.end(), 0);
                         std::fill(tab.mcp_edit.cwd_buf.begin(), tab.mcp_edit.cwd_buf.end(), 0);
-                        std::fill(tab.mcp_edit.api_key_buf.begin(), tab.mcp_edit.api_key_buf.end(), 0);
-                        std::fill(tab.mcp_edit.timeout_buf.begin(), tab.mcp_edit.timeout_buf.end(), 0);
+                        std::fill(
+                            tab.mcp_edit.api_key_buf.begin(), tab.mcp_edit.api_key_buf.end(), 0);
+                        std::fill(
+                            tab.mcp_edit.timeout_buf.begin(), tab.mcp_edit.timeout_buf.end(), 0);
 
                         std::copy(it->name.begin(), it->name.end(), tab.mcp_edit.name_buf.begin());
-                        std::copy(it->transport.begin(), it->transport.end(), tab.mcp_edit.transport_buf.begin());
+                        std::copy(it->transport.begin(),
+                            it->transport.end(),
+                            tab.mcp_edit.transport_buf.begin());
 
                         if (it->transport == "streamable-http") {
-                            std::copy(it->url.begin(), it->url.end(), tab.mcp_edit.command_or_url_buf.begin());
+                            std::copy(it->url.begin(),
+                                it->url.end(),
+                                tab.mcp_edit.command_or_url_buf.begin());
                         } else {
-                            std::copy(it->command.begin(), it->command.end(), tab.mcp_edit.command_or_url_buf.begin());
+                            std::copy(it->command.begin(),
+                                it->command.end(),
+                                tab.mcp_edit.command_or_url_buf.begin());
                         }
 
                         // Serialize args back to space-separated string
                         if (!it->args.empty()) {
                             std::string args_str;
                             for (size_t i = 0; i < it->args.size(); ++i) {
-                                if (i > 0) args_str += " ";
+                                if (i > 0)
+                                    args_str += " ";
                                 args_str += it->args[i];
                             }
-                            std::copy(args_str.begin(), args_str.end(), tab.mcp_edit.args_buf.begin());
+                            std::copy(
+                                args_str.begin(), args_str.end(), tab.mcp_edit.args_buf.begin());
                         }
 
                         if (!it->cwd.empty()) {
                             std::copy(it->cwd.begin(), it->cwd.end(), tab.mcp_edit.cwd_buf.begin());
                         }
                         if (!it->api_key.empty()) {
-                            std::copy(it->api_key.begin(), it->api_key.end(), tab.mcp_edit.api_key_buf.begin());
+                            std::copy(it->api_key.begin(),
+                                it->api_key.end(),
+                                tab.mcp_edit.api_key_buf.begin());
                         }
 
                         std::string timeout_str = std::to_string(it->timeout_sec);
-                        std::copy(timeout_str.begin(), timeout_str.end(), tab.mcp_edit.timeout_buf.begin());
+                        std::copy(timeout_str.begin(),
+                            timeout_str.end(),
+                            tab.mcp_edit.timeout_buf.begin());
 
                         tab.mcp_edit.error.clear();
                     }
@@ -724,7 +780,8 @@ void render_config_tab(PrimaryAgent& tab) {
 
                 // ── Session Custom Commands CRUD ──
                 auto validate_cmd_name = [](const std::string& name) -> std::string {
-                    if (name.empty()) return "Name must not be empty";
+                    if (name.empty())
+                        return "Name must not be empty";
                     for (char c : name) {
                         if (std::isspace(static_cast<unsigned char>(c)))
                             return "Name must not contain spaces";
@@ -735,8 +792,11 @@ void render_config_tab(PrimaryAgent& tab) {
                 if (tab.cmd_edit.active) {
                     PushID("cmd-edit");
                     InputText("Name", tab.cmd_edit.name_buf.data(), tab.cmd_edit.name_buf.size());
-                    InputText("Description", tab.cmd_edit.desc_buf.data(), tab.cmd_edit.desc_buf.size());
-                    InputText("Command", tab.cmd_edit.command_buf.data(), tab.cmd_edit.command_buf.size());
+                    InputText(
+                        "Description", tab.cmd_edit.desc_buf.data(), tab.cmd_edit.desc_buf.size());
+                    InputText("Command",
+                        tab.cmd_edit.command_buf.data(),
+                        tab.cmd_edit.command_buf.size());
                     if (!tab.cmd_edit.error.empty()) {
                         PushStyleColor(ImGuiCol_Text, IM_COL32(255, 0, 0, 255));
                         TextUnformatted(tab.cmd_edit.error.c_str());
@@ -752,7 +812,8 @@ void render_config_tab(PrimaryAgent& tab) {
                         if (!err.empty()) {
                             tab.cmd_edit.error = std::move(err);
                         } else {
-                            if (!tab.cmd_edit.original_name.empty() && tab.cmd_edit.original_name != name) {
+                            if (!tab.cmd_edit.original_name.empty() &&
+                                tab.cmd_edit.original_name != name) {
                                 tab.session_data.custom_commands.erase(tab.cmd_edit.original_name);
                                 session.unregister_custom_command(tab.cmd_edit.original_name);
                             }
@@ -779,12 +840,13 @@ void render_config_tab(PrimaryAgent& tab) {
                         tab.cmd_edit.active = true;
                         std::fill(tab.cmd_edit.name_buf.begin(), tab.cmd_edit.name_buf.end(), 0);
                         std::fill(tab.cmd_edit.desc_buf.begin(), tab.cmd_edit.desc_buf.end(), 0);
-                        std::fill(tab.cmd_edit.command_buf.begin(), tab.cmd_edit.command_buf.end(), 0);
+                        std::fill(
+                            tab.cmd_edit.command_buf.begin(), tab.cmd_edit.command_buf.end(), 0);
                     }
                 }
 
                 for (auto it = tab.session_data.custom_commands.begin();
-                     it != tab.session_data.custom_commands.end();) {
+                    it != tab.session_data.custom_commands.end();) {
                     PushID(it->first.c_str());
                     bool enabled = tab.cmd_tools_enabled[it->first];
                     if (Checkbox("##en", &enabled)) {
@@ -793,11 +855,17 @@ void render_config_tab(PrimaryAgent& tab) {
                     }
                     SameLine();
                     std::string preview = it->second.description;
-                    if (preview.size() > 60) { preview.resize(60); preview += "\xe2\x80\xa6"; }
+                    if (preview.size() > 60) {
+                        preview.resize(60);
+                        preview += "\xe2\x80\xa6";
+                    }
                     Text("%s: %s", it->first.c_str(), preview.c_str());
                     bool masks_config = false;
                     for (const auto& ct : cfg.cmd_tools) {
-                        if (ct.name == it->first) { masks_config = true; break; }
+                        if (ct.name == it->first) {
+                            masks_config = true;
+                            break;
+                        }
                     }
                     if (masks_config) {
                         SameLine();
@@ -809,10 +877,16 @@ void render_config_tab(PrimaryAgent& tab) {
                         tab.cmd_edit.original_name = it->first;
                         std::fill(tab.cmd_edit.name_buf.begin(), tab.cmd_edit.name_buf.end(), 0);
                         std::fill(tab.cmd_edit.desc_buf.begin(), tab.cmd_edit.desc_buf.end(), 0);
-                        std::fill(tab.cmd_edit.command_buf.begin(), tab.cmd_edit.command_buf.end(), 0);
-                        std::copy(it->first.begin(), it->first.end(), tab.cmd_edit.name_buf.begin());
-                        std::copy(it->second.description.begin(), it->second.description.end(), tab.cmd_edit.desc_buf.begin());
-                        std::copy(it->second.command.begin(), it->second.command.end(), tab.cmd_edit.command_buf.begin());
+                        std::fill(
+                            tab.cmd_edit.command_buf.begin(), tab.cmd_edit.command_buf.end(), 0);
+                        std::copy(
+                            it->first.begin(), it->first.end(), tab.cmd_edit.name_buf.begin());
+                        std::copy(it->second.description.begin(),
+                            it->second.description.end(),
+                            tab.cmd_edit.desc_buf.begin());
+                        std::copy(it->second.command.begin(),
+                            it->second.command.end(),
+                            tab.cmd_edit.command_buf.begin());
                         tab.cmd_edit.error.clear();
                     }
                     SameLine();
@@ -840,19 +914,24 @@ void render_config_tab(PrimaryAgent& tab) {
             // ── Snippets sub-tab ──
             if (BeginTabItem("  Snippets  ")) {
                 auto validate_snippet_name = [](const std::string& name) -> std::string {
-                    if (name.empty()) return "Name must not be empty";
+                    if (name.empty())
+                        return "Name must not be empty";
                     for (char c : name) {
                         if (std::isspace(static_cast<unsigned char>(c)))
                             return "Name must not contain spaces";
-                        if (c == '!') return "Name must not contain '!'";
+                        if (c == '!')
+                            return "Name must not contain '!'";
                     }
                     return {};
                 };
 
                 if (tab.snippet_edit.active) {
                     PushID("snippet-edit");
-                    InputText("Name", tab.snippet_edit.name_buf.data(), tab.snippet_edit.name_buf.size());
-                    InputText("Content", tab.snippet_edit.content_buf.data(), tab.snippet_edit.content_buf.size());
+                    InputText(
+                        "Name", tab.snippet_edit.name_buf.data(), tab.snippet_edit.name_buf.size());
+                    InputText("Content",
+                        tab.snippet_edit.content_buf.data(),
+                        tab.snippet_edit.content_buf.size());
                     if (!tab.snippet_edit.error.empty()) {
                         PushStyleColor(ImGuiCol_Text, IM_COL32(255, 0, 0, 255));
                         TextUnformatted(tab.snippet_edit.error.data());
@@ -866,7 +945,8 @@ void render_config_tab(PrimaryAgent& tab) {
                         } else {
                             if (!tab.snippet_edit.original_name.empty())
                                 tab.session_data.snippets.erase(tab.snippet_edit.original_name);
-                            tab.session_data.snippets[name] = std::string(tab.snippet_edit.content_buf.data());
+                            tab.session_data.snippets[name] =
+                                std::string(tab.snippet_edit.content_buf.data());
                             tab.snippet_edit.active = false;
                             tab.snippet_edit.error.clear();
                         }
@@ -881,13 +961,16 @@ void render_config_tab(PrimaryAgent& tab) {
                     if (Button("+ Add Snippet")) {
                         tab.snippet_edit = {};
                         tab.snippet_edit.active = true;
-                        std::fill(tab.snippet_edit.name_buf.begin(), tab.snippet_edit.name_buf.end(), 0);
-                        std::fill(tab.snippet_edit.content_buf.begin(), tab.snippet_edit.content_buf.end(), 0);
+                        std::fill(
+                            tab.snippet_edit.name_buf.begin(), tab.snippet_edit.name_buf.end(), 0);
+                        std::fill(tab.snippet_edit.content_buf.begin(),
+                            tab.snippet_edit.content_buf.end(),
+                            0);
                     }
                 }
 
                 for (auto it = tab.session_data.snippets.begin();
-                     it != tab.session_data.snippets.end();) {
+                    it != tab.session_data.snippets.end();) {
                     PushID(it->first.c_str());
                     if (Button("X")) {
                         it = tab.session_data.snippets.erase(it);
@@ -896,16 +979,23 @@ void render_config_tab(PrimaryAgent& tab) {
                     }
                     SameLine();
                     std::string preview = it->second.substr(0, 60);
-                    if (it->second.size() > 60) preview += "\xe2\x80\xa6";
+                    if (it->second.size() > 60)
+                        preview += "\xe2\x80\xa6";
                     Text("%s: \"%s\"", it->first.c_str(), preview.c_str());
                     SameLine();
                     if (Button("Edit")) {
                         tab.snippet_edit.active = true;
                         tab.snippet_edit.original_name = it->first;
-                        std::fill(tab.snippet_edit.name_buf.begin(), tab.snippet_edit.name_buf.end(), 0);
-                        std::fill(tab.snippet_edit.content_buf.begin(), tab.snippet_edit.content_buf.end(), 0);
-                        std::copy(it->first.begin(), it->first.end(), tab.snippet_edit.name_buf.begin());
-                        std::copy(it->second.begin(), it->second.end(), tab.snippet_edit.content_buf.begin());
+                        std::fill(
+                            tab.snippet_edit.name_buf.begin(), tab.snippet_edit.name_buf.end(), 0);
+                        std::fill(tab.snippet_edit.content_buf.begin(),
+                            tab.snippet_edit.content_buf.end(),
+                            0);
+                        std::copy(
+                            it->first.begin(), it->first.end(), tab.snippet_edit.name_buf.begin());
+                        std::copy(it->second.begin(),
+                            it->second.end(),
+                            tab.snippet_edit.content_buf.begin());
                         tab.snippet_edit.error.clear();
                     }
                     ++it;
@@ -920,4 +1010,3 @@ void render_config_tab(PrimaryAgent& tab) {
 
     Separator();
 }
-

@@ -17,8 +17,9 @@ static const std::unordered_set<std::string> cmake_tool_names = {
     "cmake_ctest",
 };
 
-ChatSession::ChatSession(
-    const Config& config, const Provider& provider, CancellationToken cancelled,
+ChatSession::ChatSession(const Config& config,
+    const Provider& provider,
+    CancellationToken cancelled,
     std::shared_ptr<GatingState> gates)
     : config_(config), model_(provider.model), reasoning_effort_(provider.reasoning_effort),
       provider_name_(provider.name),
@@ -43,17 +44,22 @@ ChatSession::ChatSession(
     tools_.add(make_read_plan_tool(::plan));
 
     // CMake tools — always registered; conditionally published in run_once().
-    tools_.add(make_cmake_configure_tool(safe_dir_, config.cmake_configure_timeout,
-        cancelled_, tool_logs_));
-    tools_.add(make_cmake_build_tool(safe_dir_, config.cmake_build_timeout,
-        cancelled_, tool_logs_));
-    tools_.add(make_cmake_ctest_tool(safe_dir_, config.cmake_ctest_timeout,
-        cancelled_, tool_logs_));
+    tools_.add(make_cmake_configure_tool(
+        safe_dir_, config.cmake_configure_timeout, cancelled_, tool_logs_));
+    tools_.add(
+        make_cmake_build_tool(safe_dir_, config.cmake_build_timeout, cancelled_, tool_logs_));
+    tools_.add(
+        make_cmake_ctest_tool(safe_dir_, config.cmake_ctest_timeout, cancelled_, tool_logs_));
 
     // Custom cmd_tools — registered from config.
     for (const auto& ct : config.cmd_tools) {
-        tools_.add(make_cmd_tool(ct.name, ct.description, ct.command,
-                                 safe_dir_, config.bash_timeout, cancelled_, tool_logs_));
+        tools_.add(make_cmd_tool(ct.name,
+            ct.description,
+            ct.command,
+            safe_dir_,
+            config.bash_timeout,
+            cancelled_,
+            tool_logs_));
     }
 
     // view_tool_output — always available to all agents
@@ -64,9 +70,11 @@ ChatSession::ChatSession(
 // Subagent factory
 // ===================================================================
 
-std::unique_ptr<ChatSession> ChatSession::create_subagent(
-    const Config& config, const Provider& provider, bool read_only,
-    CancellationToken cancelled, std::shared_ptr<GatingState> gates) {
+std::unique_ptr<ChatSession> ChatSession::create_subagent(const Config& config,
+    const Provider& provider,
+    bool read_only,
+    CancellationToken cancelled,
+    std::shared_ptr<GatingState> gates) {
     // Build a simpler system prompt for subagents
     std::string sp = Config::SUBAGENT_SYSTEM_PROMPT;
 
@@ -77,8 +85,8 @@ std::unique_ptr<ChatSession> ChatSession::create_subagent(
     // in build_effective_prompt() based on gates_->cmake_enabled.
 
     // Create the session with the given gates (nullptr = fresh default).
-    auto session = std::make_unique<ChatSession>(
-        config, provider, std::move(cancelled), std::move(gates));
+    auto session =
+        std::make_unique<ChatSession>(config, provider, std::move(cancelled), std::move(gates));
     session->system_prompt_ = std::move(sp);
     session->is_read_only_ = read_only;
 
@@ -616,9 +624,7 @@ Result<void> ChatSession::start_custom_mcp_server(const McpEndpoint& config) {
     return start_mcp_server(config);
 }
 
-void ChatSession::stop_custom_mcp_server(const std::string& name) {
-    stop_mcp_server(name);
-}
+void ChatSession::stop_custom_mcp_server(const std::string& name) { stop_mcp_server(name); }
 
 // ---------------------------------------------------------------------------
 // Clear
@@ -634,14 +640,15 @@ void ChatSession::clear() {
 // ===================================================================
 
 void ChatSession::register_custom_command(const std::string& name,
-    const std::string& description, const std::string& command,
+    const std::string& description,
+    const std::string& command,
     int timeout_sec) {
     std::string tool_name = "cmd_" + name;
     // Remove config version if exists (session masks config)
     tools_.remove(tool_name);
     // Register session version
-    tools_.add(make_cmd_tool(name, description, command,
-                             safe_dir_, timeout_sec, cancelled_, tool_logs_));
+    tools_.add(
+        make_cmd_tool(name, description, command, safe_dir_, timeout_sec, cancelled_, tool_logs_));
     // Default to enabled
     set_custom_tool_enabled(tool_name, true);
 }
@@ -652,8 +659,13 @@ void ChatSession::unregister_custom_command(const std::string& name) {
     // Re-register config version if it exists
     for (const auto& ct : config_.cmd_tools) {
         if (ct.name == name) {
-            tools_.add(make_cmd_tool(ct.name, ct.description, ct.command,
-                                     safe_dir_, config_.bash_timeout, cancelled_, tool_logs_));
+            tools_.add(make_cmd_tool(ct.name,
+                ct.description,
+                ct.command,
+                safe_dir_,
+                config_.bash_timeout,
+                cancelled_,
+                tool_logs_));
             break;
         }
     }

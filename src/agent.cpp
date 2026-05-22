@@ -248,18 +248,20 @@ void PrimaryAgent::restore_session_data() {
     // from the legacy fields — e.g. from a previous session toggle).
     bash_enabled = session->tool_enabled("run_bash");
     session->set_bash_enabled(bash_enabled);
-    cmake_enabled = session->tool_enabled("cmake_configure")
-                 || session->tool_enabled("cmake_build")
-                 || session->tool_enabled("cmake_ctest");
+    cmake_enabled = session->tool_enabled("cmake_configure") ||
+        session->tool_enabled("cmake_build") || session->tool_enabled("cmake_ctest");
     session->set_cmake_enabled(cmake_enabled);
 
     // Restore cmd_tools_enabled, keeping entries for config commands AND
     // session custom commands (silently dropping truly stale entries).
     cmd_tools_enabled = session_data.cmd_tools_enabled;
-    for (auto it = cmd_tools_enabled.begin(); it != cmd_tools_enabled.end(); ) {
+    for (auto it = cmd_tools_enabled.begin(); it != cmd_tools_enabled.end();) {
         bool in_config = false;
         for (const auto& ct : cfg.cmd_tools) {
-            if (ct.name == it->first) { in_config = true; break; }
+            if (ct.name == it->first) {
+                in_config = true;
+                break;
+            }
         }
         bool in_session = session_data.custom_commands.count(it->first) > 0;
         if (!in_config && !in_session) {
@@ -271,8 +273,7 @@ void PrimaryAgent::restore_session_data() {
 
     // Register session custom commands (masks config commands with same name).
     for (const auto& [name, cmd] : session_data.custom_commands) {
-        session->register_custom_command(
-            name, cmd.description, cmd.command, cfg.bash_timeout);
+        session->register_custom_command(name, cmd.description, cmd.command, cfg.bash_timeout);
     }
 
     // Apply enabled state to all cmd_tools (config + session).
@@ -335,7 +336,8 @@ Result<SubAgent*> PrimaryAgent::subagent_by_name(const std::string& name) {
 }
 
 void PrimaryAgent::register_subagent_tools() {
-    session->register_call_subagent_tool(*this, cfg.subagents); // uses cfg.subagent_timeout internally
+    session->register_call_subagent_tool(
+        *this, cfg.subagents); // uses cfg.subagent_timeout internally
 }
 
 // ── ChatUIState methods ─────────────────────────────────────────────────────

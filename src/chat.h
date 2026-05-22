@@ -41,8 +41,8 @@ using OutputCallback = std::function<void(const std::string& text, OutputType ty
 
 class ChatSession {
   public:
-    explicit ChatSession(
-        const Config& config, const Provider& provider,
+    explicit ChatSession(const Config& config,
+        const Provider& provider,
         CancellationToken cancelled = nullptr,
         std::shared_ptr<GatingState> gates = nullptr);
 
@@ -124,8 +124,10 @@ class ChatSession {
 
     /// Enable/disable a custom cmd_* tool by its full name (e.g. "cmd_lint").
     void set_custom_tool_enabled(const std::string& name, bool v) {
-        if (v) gates_->custom_tools[name] = true;
-        else   gates_->custom_tools.erase(name);
+        if (v)
+            gates_->custom_tools[name] = true;
+        else
+            gates_->custom_tools.erase(name);
     }
     bool custom_tool_enabled(const std::string& name) const {
         auto it = gates_->custom_tools.find(name);
@@ -136,8 +138,10 @@ class ChatSession {
     /// When disabled, an entry tool_gates[name]=false is created.
     /// When enabled, the entry is removed (restoring default-allow).
     void set_tool_enabled(const std::string& name, bool v) {
-        if (v) gates_->tool_gates.erase(name);
-        else   gates_->tool_gates[name] = false;
+        if (v)
+            gates_->tool_gates.erase(name);
+        else
+            gates_->tool_gates[name] = false;
     }
     /// Return whether a tool is enabled.
     /// A tool with no entry in tool_gates is allowed by default.
@@ -186,7 +190,8 @@ class ChatSession {
     /// cmd_<name> already exists (from config), it is removed first
     /// (session masks config).
     void register_custom_command(const std::string& name,
-        const std::string& description, const std::string& command,
+        const std::string& description,
+        const std::string& command,
         int timeout_sec);
 
     /// Unregister a session custom command tool by name. If a config version

@@ -26,13 +26,14 @@ struct SessionData {
     json plan;                               // { "plan": "...", "comments": [...] }
     bool bash_enabled = false;               // run_bash tool enabled for this session
     bool cmake_enabled = false;              // cmake tools enabled for this session
-    std::map<std::string, bool> mcp_enabled;    // per-server MCP enabled state
-    std::map<std::string, bool> cmd_tools_enabled; // per-cmd-tool enabled state
-    std::map<std::string, bool> tool_gates; // per-tool enabled overrides (persisted)
+    std::map<std::string, bool> mcp_enabled; // per-server MCP enabled state
+    std::map<std::string, bool> cmd_tools_enabled;      // per-cmd-tool enabled state
+    std::map<std::string, bool> tool_gates;             // per-tool enabled overrides (persisted)
     std::map<std::string, bool> rw_subagent_tool_gates; // read-write subagent gates (persisted)
     std::map<std::string, bool> ro_subagent_tool_gates; // read-only subagent gates (persisted)
     std::map<std::string, std::string> snippets; // session-local snippet overrides (persisted)
-    std::map<std::string, CmdToolConfig> custom_commands; // session-local custom commands (persisted)
+    std::map<std::string, CmdToolConfig>
+        custom_commands;                         // session-local custom commands (persisted)
     std::vector<McpEndpoint> custom_mcp_servers; // session-local custom MCP servers (persisted)
 
     json to_json() const;
