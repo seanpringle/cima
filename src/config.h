@@ -88,6 +88,7 @@ struct Config {
     int git_log_timeout = 10;
     int git_add_timeout = 10;
     int git_commit_timeout = 10;
+    int git_restore_timeout = 10;
     int grep_timeout = 10;
     int web_search_timeout = 15;
     int web_fetch_timeout = 15;

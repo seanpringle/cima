@@ -2281,14 +2281,14 @@ TEST_CASE("git_restore unstage file", "[tools][git_restore]") {
                          std::istreambuf_iterator<char>());
     CHECK(content == "# Staged\n");
 
-    // The file should now appear with 'D' in the index column (removed from
-    // index but present in HEAD) and '?' in the worktree column (exists on
-    // disk but not tracked), showing as "D? README.md"
+    // The file should now appear with ' ' in the index column (restored to
+    // match HEAD) and 'M' in the worktree column (still modified on disk),
+    // showing as " M README.md"
     auto after = reg.execute("git_status", "{}");
     REQUIRE(after);
     {
-        bool found_unstaged = (after->find("D? README.md") != std::string::npos) ||
-                              (after->find("D?\tREADME.md") != std::string::npos);
+        bool found_unstaged = (after->find(" M README.md") != std::string::npos) ||
+                              (after->find(" M\tREADME.md") != std::string::npos);
         CHECK(found_unstaged);
     }
 

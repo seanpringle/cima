@@ -720,8 +720,8 @@ Tool make_git_restore_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeou
         "Like 'git restore <path>' or 'git restore --staged <path>'.\n"
         "If 'staged' is false (default), discards unstaged changes "
         "in the working tree (files are restored from HEAD).\n"
-        "If 'staged' is true, unstages the file (removes it from "
-        "the index) but keeps working tree changes.\n"
+        "If 'staged' is true, restores the index entry to match "
+        "HEAD (or source), keeping working tree changes.\n"
         "Use 'source' to restore from a specific revision instead of "
         "HEAD, e.g. source=\"HEAD~1\", source=\"main\".\n"
         "Use path=\".\" to restore all files.\n"
@@ -739,7 +739,8 @@ Tool make_git_restore_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeou
              {"staged",
                 {{"type", "boolean"},
                     {"description",
-                        "If true, unstage the file (remove from index). "
+                        "If true, restore index entry to match HEAD (or "
+                        "source), keeping working tree changes. "
                         "If false (default), discard working tree changes."}}},
              {"source",
                 {{"type", "string"},
@@ -805,7 +806,7 @@ Tool make_git_restore_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeou
         }
 
         if (staged) {
-            // ── Unstage mode: remove from index ──
+            // ── Unstage mode: restore index entries to match HEAD (or source) ──
             git_index* index = nullptr;
             int err = git_repository_index(&index, repo);
             if (err) {
@@ -816,25 +817,96 @@ Tool make_git_restore_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeou
             auto index_cleanup = std::unique_ptr<git_index, decltype(&git_index_free)>(
                 index, git_index_free);
 
-            if (raw_path == ".") {
-                // Unstage all: remove all entries from index
-                err = git_index_remove_all(index, nullptr, nullptr, nullptr);
+            // Resolve the source tree (HEAD or specified revision)
+            git_object* target_obj = nullptr;
+            if (!source.empty()) {
+                err = git_revparse_single(&target_obj, repo, source.c_str());
                 if (err) {
                     const git_error* e = git_error_last();
-                    return std::unexpected("git_restore error unstaging all: " +
+                    return std::unexpected("git_restore error resolving source '" +
+                        source + "': " +
                         (e ? std::string(e->message) : std::string("unknown error")));
                 }
             } else {
-                err = git_index_remove_bypath(index, rel_path.c_str());
+                err = git_revparse_single(&target_obj, repo, "HEAD^{tree}");
                 if (err) {
-                    if (err == GIT_ENOTFOUND) {
-                        return std::unexpected("path '" + raw_path +
-                            "' is not staged");
-                    }
                     const git_error* e = git_error_last();
-                    return std::unexpected("git_restore error unstaging '" +
-                        raw_path + "': " +
+                    return std::unexpected("git_restore error resolving HEAD: " +
                         (e ? std::string(e->message) : std::string("unknown error")));
+                }
+            }
+            auto obj_cleanup = std::unique_ptr<git_object, decltype(&git_object_free)>(
+                target_obj, git_object_free);
+
+            // Peel to a tree
+            git_tree* source_tree = nullptr;
+            if (target_obj) {
+                if (git_object_type(target_obj) == GIT_OBJECT_TREE) {
+                    source_tree = reinterpret_cast<git_tree*>(target_obj);
+                    // Transfer ownership: release obj_cleanup since
+                    // source_tree (via tree_cleanup) now owns the ref
+                    obj_cleanup.release();
+                } else {
+                    err = git_commit_tree(&source_tree,
+                        reinterpret_cast<git_commit*>(target_obj));
+                    if (err) {
+                        const git_error* e = git_error_last();
+                        return std::unexpected("git_restore error getting source tree: " +
+                            (e ? std::string(e->message) : std::string("unknown error")));
+                    }
+                }
+            }
+            auto tree_cleanup = std::unique_ptr<git_tree, decltype(&git_tree_free)>(
+                source_tree, git_tree_free);
+
+            if (raw_path == ".") {
+                // Restore all index entries from source tree
+                err = git_index_read_tree(index, source_tree);
+                if (err) {
+                    const git_error* e = git_error_last();
+                    return std::unexpected("git_restore error restoring index: " +
+                        (e ? std::string(e->message) : std::string("unknown error")));
+                }
+            } else {
+                // Look up the path in the source tree
+                git_tree_entry* tree_entry = nullptr;
+                err = git_tree_entry_bypath(&tree_entry, source_tree, rel_path.c_str());
+                if (err == GIT_ENOTFOUND) {
+                    // File doesn't exist in source — remove from index
+                    err = git_index_remove_bypath(index, rel_path.c_str());
+                    if (err && err != GIT_ENOTFOUND) {
+                        const git_error* e = git_error_last();
+                        return std::unexpected("git_restore error removing '" +
+                            raw_path + "': " +
+                            (e ? std::string(e->message) : std::string("unknown error")));
+                    }
+                } else if (err) {
+                    const git_error* e = git_error_last();
+                    return std::unexpected("git_restore error looking up '" +
+                        raw_path + "' in source tree: " +
+                        (e ? std::string(e->message) : std::string("unknown error")));
+                } else {
+                    // Restore index entry from the tree entry
+                    auto entry_cleanup = std::unique_ptr<git_tree_entry,
+                        decltype(&git_tree_entry_free)>(
+                        tree_entry, git_tree_entry_free);
+
+                    const git_oid* oid = git_tree_entry_id(tree_entry);
+                    git_filemode_t mode = git_tree_entry_filemode(tree_entry);
+
+                    // Add the tree entry back to the index with its original OID and mode
+                    git_index_entry ie;
+                    memset(&ie, 0, sizeof(ie));
+                    ie.mode = mode;
+                    ie.path = rel_path.c_str();
+                    git_oid_cpy(&ie.id, oid);
+
+                    err = git_index_add(index, &ie);
+                    if (err) {
+                        const git_error* e = git_error_last();
+                        return std::unexpected("git_restore error adding to index: " +
+                            (e ? std::string(e->message) : std::string("unknown error")));
+                    }
                 }
             }
 
@@ -846,6 +918,9 @@ Tool make_git_restore_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeou
             }
 
             std::string msg = "Unstaged";
+            if (!source.empty()) {
+                msg += " from '" + source + "'";
+            }
             if (raw_path == ".") {
                 msg += " all files";
             } else {

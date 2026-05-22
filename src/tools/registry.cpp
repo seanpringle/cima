@@ -104,7 +104,7 @@ void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
             add(std::move(t));
         }
         {
-            auto t = make_git_restore_tool(safe_dir_ptr, config.git_status_timeout);
+            auto t = make_git_restore_tool(safe_dir_ptr, config.git_restore_timeout);
             t.permission = ToolPermission::Write;
             add(std::move(t));
         }

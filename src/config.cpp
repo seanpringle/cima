@@ -108,6 +108,7 @@ json Config::to_json() const {
     j["git_log_timeout"] = git_log_timeout;
     j["git_add_timeout"] = git_add_timeout;
     j["git_commit_timeout"] = git_commit_timeout;
+    j["git_restore_timeout"] = git_restore_timeout;
     j["grep_timeout"] = grep_timeout;
     j["web_search_timeout"] = web_search_timeout;
     j["web_fetch_timeout"] = web_fetch_timeout;
@@ -311,6 +312,7 @@ Config Config::load() {
         load_timeout("git_log_timeout", cfg.git_log_timeout);
         load_timeout("git_add_timeout", cfg.git_add_timeout);
         load_timeout("git_commit_timeout", cfg.git_commit_timeout);
+        load_timeout("git_restore_timeout", cfg.git_restore_timeout);
         load_timeout("grep_timeout", cfg.grep_timeout);
         load_timeout("web_search_timeout", cfg.web_search_timeout);
         load_timeout("web_fetch_timeout", cfg.web_fetch_timeout);

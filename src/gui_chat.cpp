@@ -1716,7 +1716,7 @@ void render_subagent_chat(SubAgent& tab) {
             TextUnformatted("Primary: ");
             PopStyleColor();
             SameLine(0,0);
-            TextUnformatted(entry.text.c_str());
+            render_content(entry.text);
             NewLine();
             break;
         case EntryType::Reasoning:
@@ -1820,7 +1820,7 @@ void render_chat_ui(PrimaryAgent& tab, bool& done) {
             TextUnformatted("You: ");
             PopStyleColor();
             SameLine(0,0);
-            TextUnformatted(entry.text.c_str());
+            render_content(entry.text);
             NewLine();
             break;
         case EntryType::Reasoning:
