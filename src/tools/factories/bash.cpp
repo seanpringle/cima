@@ -112,7 +112,7 @@ Tool make_run_bash_tool(std::shared_ptr<std::string> safe_dir_ptr,
             if (now >= deadline) {
                 kill_child();
                 close(pipefd[0]);
-                return output;
+                return output + "\n(timed out)";
             }
 
             ssize_t n = read(pipefd[0], buf, sizeof(buf) - 1);
@@ -137,6 +137,17 @@ Tool make_run_bash_tool(std::shared_ptr<std::string> safe_dir_ptr,
         close(pipefd[0]);
         int status;
         waitpid(pid, &status, 0);
+
+        // Annotate failures so the caller can see them.
+        if (WIFEXITED(status)) {
+            int code = WEXITSTATUS(status);
+            if (code != 0) {
+                output += "\n(exit code: " + std::to_string(code) + ")";
+            }
+        } else if (WIFSIGNALED(status)) {
+            int sig = WTERMSIG(status);
+            output += "\n(killed by signal: " + std::to_string(sig) + ")";
+        }
 
         // Spill to tool_logs if output exceeds threshold
         if (tool_logs) {

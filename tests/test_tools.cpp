@@ -1975,8 +1975,9 @@ TEST_CASE("run_bash timeout kills process", "[tools][run_bash]") {
     REQUIRE(result);
     // Should NOT take 10 seconds — the 2s timeout should kill the process
     CHECK(elapsed < std::chrono::seconds(5));
-    // Partial output may be empty (sleep produces no output)
-    CHECK(result->empty());  // sleep 10 produces no output before SIGKILL
+    // Partial output may be empty (sleep produces no output before SIGKILL),
+    // but the tool should append "(timed out)" to indicate the failure.
+    CHECK(result->find("timed out") != std::string::npos);
 
     fs::remove_all(sd);
 }
