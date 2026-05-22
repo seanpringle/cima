@@ -74,9 +74,8 @@ Tool make_write_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
         {"type", "object"},
         {"properties", {
             {"path", {{"type", "string"}, {"description", "File path"}}},
-                {"content", {{"type", "string"}, {"description", "Content to write"}}}
-            }
-        },
+            {"content", {{"type", "string"}, {"description", "Content to write"}}}
+        }},
         {"required", {"path", "content"}}
     };
 
