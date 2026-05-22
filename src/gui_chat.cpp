@@ -1683,7 +1683,7 @@ void render_subagent_chat(SubAgent& tab) {
     if (!IsWindowHovered(ImGuiHoveredFlags_ChildWindows)) {
         float scroll_y = GetScrollY();
         float scroll_max = GetScrollMaxY();
-        if (scroll_y >= scroll_max - 10.0f) {
+        if (scroll_y >= scroll_max - GetFrameHeightWithSpacing()) {
             SetScrollHereY(1.0f);
         }
     }
