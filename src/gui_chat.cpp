@@ -389,18 +389,20 @@ static int text_cb(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* us
 
 } // anonymous namespace
 
+enum class RenderToolResult {
+    Plain,
+    Diff,
+};
+
 // ── Render tool result inline (compact child window) ──
-static void render_tool_result(size_t seq, const std::string& result) {
+static void render_tool_result(size_t seq, const std::string& result, RenderToolResult mode) {
     int line_count = 1;
-    for (char c : result)
-        if (c == '\n')
-            line_count++;
+    for (char c : result) {
+        if (c == '\n') line_count++;
+    }
 
     float line_height = GetTextLineHeightWithSpacing();
     float max_height = line_height * std::min(line_count, 5) + GetStyle().WindowPadding.y * 2;
-
-    PushStyleColor(ImGuiCol_Text, IM_COL32(160, 160, 160, 255));
-    PushFont(mono_font);
 
     string id = "##toolresult-" + std::to_string(seq);
 
@@ -408,11 +410,43 @@ static void render_tool_result(size_t seq, const std::string& result) {
         ImVec2(0, max_height),
         ImGuiChildFlags_Borders,
         ImGuiWindowFlags_HorizontalScrollbar);
-    TextUnformatted(result.c_str());
-    EndChild();
+
+    PushFont(mono_font);
+
+    switch (mode) {
+        case RenderToolResult::Plain: {
+            PushStyleColor(ImGuiCol_Text, IM_COL32(160, 160, 160, 255));
+            TextUnformatted(result.c_str());
+            PopStyleColor();
+            break;
+        }
+        case RenderToolResult::Diff: {
+            string_view cur(result);
+            while (cur.size()) {
+                auto sol = cur;
+                while (cur.size() && cur.front() != '\n') {
+                    cur.remove_prefix(1);
+                }
+                auto color = IM_COL32(160, 160, 160, 255);
+                if (sol.starts_with("+")) {
+                    color = IM_COL32(160, 200, 160, 255);
+                }
+                if (sol.starts_with("-")) {
+                    color = IM_COL32(200, 160, 160, 255);
+                }
+                PushStyleColor(ImGuiCol_Text, color);
+                TextUnformatted(sol.data(), cur.data());
+                PopStyleColor();
+                if (cur.size() && cur.front() == '\n') {
+                    cur.remove_prefix(1);
+                }
+            }
+            break;
+        }
+    }
 
     PopFont();
-    PopStyleColor();
+    EndChild();
 }
 
 static void render_tool_call_group(const auto& ui, size_t& i) {
@@ -424,7 +458,12 @@ static void render_tool_call_group(const auto& ui, size_t& i) {
     auto render_pair = [&]() {
         text_unformatted_ellipsis(ui.entries[i].text);
         if (ui.entries[i].tool_result.size()) {
-            render_tool_result(i, ui.entries[i].tool_result);
+            render_tool_result(i, ui.entries[i].tool_result, [&]() {
+                if (string_view(ui.entries[i].text).starts_with("edit_file")) {
+                    return RenderToolResult::Diff;
+                }
+                return RenderToolResult::Plain;
+            }());
         }
     };
 
@@ -1680,12 +1719,10 @@ void render_subagent_chat(SubAgent& tab) {
     }
 
     // auto-scroll
-    if (!IsWindowHovered(ImGuiHoveredFlags_ChildWindows)) {
-        float scroll_y = GetScrollY();
-        float scroll_max = GetScrollMaxY();
-        if (scroll_y >= scroll_max - GetFrameHeightWithSpacing()) {
-            SetScrollHereY(1.0f);
-        }
+    float scroll_y = GetScrollY();
+    float scroll_max = GetScrollMaxY();
+    if (scroll_y >= scroll_max - GetFrameHeightWithSpacing()) {
+        SetScrollHereY(1.0f);
     }
 
     EndChild();
@@ -1778,12 +1815,10 @@ void render_chat_ui(PrimaryAgent& tab, bool& done) {
     NewLine();
 
     // auto-scroll
-    if (!IsWindowHovered(ImGuiHoveredFlags_ChildWindows)) {
-        float scroll_y = GetScrollY();
-        float scroll_max = GetScrollMaxY();
-        if (scroll_y >= scroll_max - 10.0f) {
-            SetScrollHereY(1.0f);
-        }
+    float scroll_y = GetScrollY();
+    float scroll_max = GetScrollMaxY();
+    if (scroll_y >= scroll_max - GetFrameHeightWithSpacing()) {
+        SetScrollHereY(1.0f);
     }
 
     EndChild();
