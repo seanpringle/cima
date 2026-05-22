@@ -619,8 +619,8 @@ void render_config_tab(PrimaryAgent& tab) {
                     auto category_of = [](const std::string& name) -> const char* {
                         if (name == "list_directory" || name == "read_file" || name == "read_file_lines" ||
                             name == "stat_file" || name == "grep_files" || name == "project_tree" ||
-                            name == "write_file" || name == "edit_file" || name == "delete_file" ||
-                            name == "move_file" || name == "create_directory" ||
+                            name == "write_file" || name == "write_file_lines" || name == "edit_file" ||
+                            name == "delete_file" || name == "move_file" || name == "create_directory" ||
                             name == "delete_directory")
                             return "File";
                         if (name == "git_status" || name == "git_diff" || name == "git_log" ||
