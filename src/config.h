@@ -60,8 +60,8 @@ inline const std::set<std::string> exec_ro_allowed_commands = {
 // (which we force-prepend to every sed invocation) disables the
 // e/r/w commands that could otherwise escape.
 inline const std::set<std::string> exec_rw_allowed_commands = {
-    "mkdir", "rmdir", "rm", "mv", "sed", "cp",
-    "patch", "touch", "ln"
+    "cp", "dd", "ln", "mkdir", "mv", "patch",
+    "rm", "rmdir", "sed", "touch"
 };
 
 inline bool operator==(const McpEndpoint& a, const McpEndpoint& b) {

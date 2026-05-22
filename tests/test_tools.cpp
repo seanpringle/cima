@@ -4155,3 +4155,97 @@ TEST_CASE("exec_rw timeout", "[tools][exec_rw]") {
     (void)reg;
     // Test skipped — timeout is inherited from the fork/exec pattern tested in run_bash
 }
+
+// ===================================================================
+// exec_rw dd
+// ===================================================================
+
+TEST_CASE("exec_rw dd copy file", "[tools][exec_rw]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    // Create an input file
+    std::ofstream(sd + "/input.txt") << "hello dd world\n";
+
+    auto result = reg.execute("exec_rw",
+        R"({"cmd": "dd", "args": ["if=input.txt", "of=output.txt", "bs=4096", "count=1"]})");
+    REQUIRE(result);
+
+    // Read the output file and verify contents
+    std::ifstream f(sd + "/output.txt");
+    std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    CHECK(content == "hello dd world\n");
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_rw dd create file", "[tools][exec_rw]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    // Create a zero-length file with dd
+    auto result = reg.execute("exec_rw",
+        R"({"cmd": "dd", "args": ["of=empty.txt", "bs=1024", "count=0"]})");
+    REQUIRE(result);
+
+    CHECK(std::filesystem::exists(sd + "/empty.txt"));
+    CHECK(std::filesystem::file_size(sd + "/empty.txt") == 0);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_rw dd blocked absolute path", "[tools][exec_rw]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    // if= with absolute path outside safe_dir should be rejected
+    auto result = reg.execute("exec_rw",
+        R"({"cmd": "dd", "args": ["if=/etc/passwd", "of=output.txt"]})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("path must be under") != std::string::npos);
+
+    // of= with absolute path outside safe_dir should be rejected
+    auto result2 = reg.execute("exec_rw",
+        R"({"cmd": "dd", "args": ["if=input.txt", "of=/tmp/evil.txt"]})");
+    CHECK_FALSE(result2);
+    CHECK(result2.error().find("path must be under") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_rw dd blocked path traversal", "[tools][exec_rw]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    // of= with .. traversal should be rejected
+    auto result = reg.execute("exec_rw",
+        R"({"cmd": "dd", "args": ["if=input.txt", "of=../esc.txt"]})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("path must be under") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("exec_rw dd relative subdirectory", "[tools][exec_rw]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    // Create a subdirectory with an input file
+    std::filesystem::create_directory(sd + "/subdir");
+    std::ofstream(sd + "/subdir/input.txt") << "subdir content\n";
+
+    auto result = reg.execute("exec_rw",
+        R"({"cmd": "dd", "args": ["if=subdir/input.txt", "of=out.txt", "bs=4096", "count=1"]})");
+    REQUIRE(result);
+
+    std::ifstream f(sd + "/out.txt");
+    std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    CHECK(content == "subdir content\n");
+
+    fs::remove_all(sd);
+}

@@ -234,6 +234,26 @@ validate_exec_args(const json& args,
                     "patch with --directory is not allowed (changes base directory)");
             }
         }
+    } else if (cmd == "dd") {
+        // dd uses key=value operands (e.g. if=input.txt of=output.txt bs=4096).
+        // The generic path checker above either passes these through unchanged
+        // (when the whole string doesn't resolve to a real path) or resolves
+        // them as complete relative paths.  In either case we need to parse
+        // the key=value pairs ourselves to validate the paths in if= and of=.
+        for (auto& a : validated_args) {
+            auto eq = a.find('=');
+            if (eq != std::string::npos && eq > 0 && eq + 1 < a.size()) {
+                std::string key = a.substr(0, eq);
+                std::string val = a.substr(eq + 1);
+                if ((key == "if" || key == "of") && !val.empty()) {
+                    auto resolved = resolve_path(val, *safe_dir_ptr);
+                    if (!resolved) {
+                        return std::unexpected(resolved.error());
+                    }
+                    a = key + "=" + *resolved;
+                }
+            }
+        }
     }
 
     return std::make_pair(cmd, validated_args);
@@ -458,7 +478,8 @@ Tool make_exec_rw_tool(
         "no sequences. Useful for modifying files and the filesystem. ") +
         allowed_commands_line(exec_rw_allowed_commands) + " "
         "Safety: sed is run with --sandbox (e/r/w disabled); "
-        "patch -p0/--posix/-d/--directory are rejected. "
+        "patch -p0/--posix/-d/--directory are rejected; "
+        "dd if=/of= paths restricted to safe_dir. "
         "Long output (>100 lines or 4K chars) is redirected to the tool log.";
     t.permission = ToolPermission::Write;
     t.timeout_sec = 0; // internal timeout via fork/exec loop
