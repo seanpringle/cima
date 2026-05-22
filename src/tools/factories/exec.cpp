@@ -60,9 +60,44 @@ validate_exec_args(const json& args,
             continue;
         }
 
+        // For long flags with embedded values (--flag=value), split on the
+        // first '=' and validate the value portion as a path.  This catches
+        // e.g. "--directory=/etc" even though the arg starts with '-'.
+        if (a.starts_with("--")) {
+            auto eq = a.find('=');
+            if (eq != std::string::npos && eq + 1 < a.size()) {
+                std::string flag_part = a.substr(0, eq + 1); // includes '='
+                std::string val_part = a.substr(eq + 1);
+
+                // Check if the value looks like a path and validate it.
+                bool val_looks_like_path = false;
+                if (val_part[0] == '/' || val_part[0] == '.') {
+                    val_looks_like_path = true;
+                } else {
+                    for (size_t i = 0; i < val_part.size(); i++) {
+                        if (val_part[i] == '/' || val_part[i] == '\\') {
+                            val_looks_like_path = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (val_looks_like_path) {
+                    auto resolved = resolve_path(val_part, *safe_dir_ptr);
+                    if (!resolved) {
+                        return std::unexpected(resolved.error());
+                    }
+                    validated_args.push_back(flag_part + *resolved);
+                } else {
+                    validated_args.push_back(a); // pass through unchanged
+                }
+                continue; // done with this arg
+            }
+        }
+
         // Determine if this arg "looks like a path".
-        // Flags (args starting with -) are NEVER treated as paths, even if
-        // their value portion contains '/' (e.g. "--output-file=/tmp/foo").
+        // Short flags (args starting with a single -) are NEVER treated as
+        // paths, even if their value portion contains '/' (e.g. "-d/etc").
         // The cmd-specific safety checks below handle dangerous flags.
         bool looks_like_path = false;
 
@@ -192,6 +227,11 @@ validate_exec_args(const json& args,
                 // Separate: -d DIR  or  Combined: -dDIR
                 return std::unexpected(
                     "patch with -d is not allowed (changes base directory)");
+            }
+            if (validated_args[i].starts_with("--directory")) {
+                // --directory=DIR  (long form, already split-and-resolved)
+                return std::unexpected(
+                    "patch with --directory is not allowed (changes base directory)");
             }
         }
     }
@@ -418,7 +458,7 @@ Tool make_exec_rw_tool(
         "no sequences. Useful for modifying files and the filesystem. ") +
         allowed_commands_line(exec_rw_allowed_commands) + " "
         "Safety: sed is run with --sandbox (e/r/w disabled); "
-        "patch -p0/--posix/-d are rejected. "
+        "patch -p0/--posix/-d/--directory are rejected. "
         "Long output (>100 lines or 4K chars) is redirected to the tool log.";
     t.permission = ToolPermission::Write;
     t.timeout_sec = 0; // internal timeout via fork/exec loop

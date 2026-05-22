@@ -4100,6 +4100,19 @@ TEST_CASE("exec_rw patch -d rejected", "[tools][exec_rw]") {
     CHECK(result2.error().find("patch") != std::string::npos);
     CHECK(result2.error().find("-d") != std::string::npos);
 
+    // Long form: --directory=DIR with absolute path (caught by = splitting before cmd-specific check)
+    auto result3 = reg.execute("exec_rw",
+        R"({"cmd": "patch", "args": ["--directory=/etc", "data.txt", "patch.diff"]})");
+    CHECK_FALSE(result3);
+    CHECK(result3.error().find("path must be under") != std::string::npos);
+
+    // Long form: --directory=DIR with relative path (reaches cmd-specific check)
+    auto result4 = reg.execute("exec_rw",
+        R"({"cmd": "patch", "args": ["--directory=subdir", "data.txt", "patch.diff"]})");
+    CHECK_FALSE(result4);
+    CHECK(result4.error().find("patch") != std::string::npos);
+    CHECK(result4.error().find("directory") != std::string::npos);
+
     fs::remove_all(sd);
 }
 
