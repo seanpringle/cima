@@ -367,6 +367,14 @@ void Agent::drain_pending() {
         if (type == OutputType::ToolInvocation) {
             ui.finalize_streaming_entry();
             ui.push_entry(EntryType::ToolCall, pending_text, false);
+        } else if (type == OutputType::ToolResult) {
+            // Attach result to the most recent ToolCall entry without a result
+            for (auto it = ui.entries.rbegin(); it != ui.entries.rend(); ++it) {
+                if (it->type == EntryType::ToolCall && it->tool_result.empty()) {
+                    it->tool_result = pending_text;
+                    break;
+                }
+            }
         } else {
             auto entry_type =
                 (type == OutputType::Reasoning) ? EntryType::Reasoning : EntryType::Content;

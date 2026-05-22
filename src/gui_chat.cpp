@@ -389,6 +389,28 @@ static int text_cb(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* us
 
 } // anonymous namespace
 
+// ── Render tool result inline (compact child window) ──
+static void render_tool_result(const std::string& result) {
+    int line_count = 1;
+    for (char c : result)
+        if (c == '\n') line_count++;
+
+    float line_height = GetTextLineHeightWithSpacing();
+    float max_height = line_height * std::min(line_count, 10);
+
+    PushStyleColor(ImGuiCol_Text, IM_COL32(160, 160, 160, 255));
+    PushFont(mono_font);
+
+    BeginChild("##toolresult", ImVec2(0, max_height),
+               ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar);
+    TextUnformatted(result.c_str());
+    EndChild();
+
+    PopFont();
+    PopStyleColor();
+    NewLine();
+}
+
 void render_content(const string& text) {
     string_view trim(text);
     while (trim.size() && std::isspace(trim.back()))
@@ -1514,10 +1536,11 @@ void render_subagent_chat(SubAgent& tab) {
             render_content(entry.text);
             PopStyleColor();
             break;
-        case EntryType::ToolCall:
+        case EntryType::ToolCall: {
             PushStyleColor(ImGuiCol_Text, IM_COL32(255, 165, 0, 255));
             PushTextWrapPos(0);
             PushFont(mono_font);
+            size_t group_start = i;
             text_unformatted_ellipsis(entry.text);
             for (; i + 1 < ui.entries.size() && ui.entries[i + 1].type == EntryType::ToolCall;
                 i++) {
@@ -1527,8 +1550,16 @@ void render_subagent_chat(SubAgent& tab) {
             NewLine();
             PopTextWrapPos();
             PopStyleColor();
+
+            // Render tool results for each tool call in this group
+            for (size_t r = group_start; r <= i; r++) {
+                if (!ui.entries[r].tool_result.empty()) {
+                    render_tool_result(ui.entries[r].tool_result);
+                }
+            }
             break;
         }
+        } // closes switch
 
         PopID();
     }
@@ -1618,10 +1649,11 @@ void render_chat_ui(PrimaryAgent& tab, bool& done) {
             render_content(entry.text);
             PopStyleColor();
             break;
-        case EntryType::ToolCall:
+        case EntryType::ToolCall: {
             PushStyleColor(ImGuiCol_Text, IM_COL32(255, 165, 0, 255));
             PushTextWrapPos(0);
             PushFont(mono_font);
+            size_t group_start = i;
             text_unformatted_ellipsis(entry.text);
             for (; i + 1 < ui.entries.size() && ui.entries[i + 1].type == EntryType::ToolCall;
                 i++) {
@@ -1631,8 +1663,16 @@ void render_chat_ui(PrimaryAgent& tab, bool& done) {
             NewLine();
             PopTextWrapPos();
             PopStyleColor();
+
+            // Render tool results for each tool call in this group
+            for (size_t r = group_start; r <= i; r++) {
+                if (!ui.entries[r].tool_result.empty()) {
+                    render_tool_result(ui.entries[r].tool_result);
+                }
+            }
             break;
         }
+        } // closes switch
 
         PopID();
     }

@@ -324,6 +324,9 @@ Result<void> ChatSession::execute_tool_calls(
                 tr = std::unexpected(std::string(e.what()));
             }
             conversation_.add_tool(msg_id, call.id, tr ? *tr : tr.error());
+            if (output_cb_) {
+                output_cb_(tr ? *tr : tr.error(), OutputType::ToolResult);
+            }
         }
     } else if (has_write) {
         // Serial execution for batch with write tools
@@ -343,6 +346,9 @@ Result<void> ChatSession::execute_tool_calls(
                 tr = std::unexpected(std::string(e.what()));
             }
             conversation_.add_tool(msg_id, call.id, tr ? *tr : tr.error());
+            if (output_cb_) {
+                output_cb_(tr ? *tr : tr.error(), OutputType::ToolResult);
+            }
         }
     } else {
         // Parallel execution for read-only batch.
@@ -377,6 +383,9 @@ Result<void> ChatSession::execute_tool_calls(
             }
             conversation_.add_tool(
                 msg_id, calls[i].id, results[i] ? *results[i] : results[i].error());
+            if (output_cb_) {
+                output_cb_(results[i] ? *results[i] : results[i].error(), OutputType::ToolResult);
+            }
         }
     }
 

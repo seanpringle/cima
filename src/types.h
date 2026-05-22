@@ -40,6 +40,7 @@ struct DisplayEntry {
     std::string text;
     bool is_streaming = false;
     int seq = 0;
+    std::string tool_result; // populated for ToolCall entries with the tool's result
 };
 
 // ---------------------------------------------------------------------------

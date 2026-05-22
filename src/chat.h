@@ -35,7 +35,7 @@ struct ChatResult {
     std::string reasoning;
 };
 
-enum class OutputType { Reasoning, Content, ToolInvocation };
+enum class OutputType { Reasoning, Content, ToolInvocation, ToolResult };
 
 using OutputCallback = std::function<void(const std::string& text, OutputType type)>;
 
