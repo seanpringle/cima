@@ -238,6 +238,13 @@ Tool make_cmake_ctest_tool(std::shared_ptr<std::string> safe_dir_ptr,
     int timeout, CancellationToken cancelled,
     std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
 
+// ── Utility: spill long output to tool_logs ──
+/// If \p output exceeds ~100 lines or 4K chars, move it into \p tool_logs
+/// and return a short reference message.  Otherwise return \p output as-is.
+/// Pass `std::move(your_string)` to avoid a copy.
+std::string spill_long_output(std::string output,
+    std::shared_ptr<std::vector<std::string>> tool_logs);
+
 struct PrimaryAgent;
 
 // ── Subagent tool ──

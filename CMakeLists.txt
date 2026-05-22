@@ -126,6 +126,7 @@ add_library(cima_core
     src/tools/factories/web.cpp
     src/tools/factories/git.cpp
     src/tools/registry.cpp
+    src/tools/spill.cpp
     src/agent.cpp
     src/client.cpp
     src/chat.cpp

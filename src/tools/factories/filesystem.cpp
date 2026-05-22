@@ -53,21 +53,7 @@ Tool make_list_directory_tool(std::shared_ptr<std::string> safe_dir_ptr,
             result = "(empty directory)";
         }
 
-        // Spill to tool_logs if output exceeds threshold
-        if (tool_logs) {
-            int nl = 0;
-            for (char c : result)
-                if (c == '\n') nl++;
-            if (nl > 100 || result.size() > 4096) {
-                size_t id = tool_logs->size() + 1;
-                tool_logs->push_back(std::move(result));
-                return "(long tool output: " + std::to_string(nl) + " lines, " +
-                       std::to_string(tool_logs->back().size()) + " chars. "
-                       "Use view_tool_output(id=" + std::to_string(id) + ") to read it)";
-            }
-        }
-
-        return result;
+        return spill_long_output(std::move(result), tool_logs);
     };
     return t;
 }
@@ -216,19 +202,9 @@ Tool make_project_tree_tool(std::shared_ptr<std::string> safe_dir_ptr,
         // Walk
         walk(*resolved, 1, "");
 
-        // Spill to tool_logs if output exceeds threshold
-        if (tool_logs) {
-            int nl = 0;
-            for (char c : result)
-                if (c == '\n') nl++;
-            if (nl > 100 || result.size() > 4096) {
-                size_t id = tool_logs->size() + 1;
-                tool_logs->push_back(std::move(result));
-                return "(long tool output: " + std::to_string(nl) + " lines, " +
-                       std::to_string(tool_logs->back().size()) + " chars. "
-                       "Use view_tool_output(id=" + std::to_string(id) + ") to read it)";
-            }
-        }
+        result = spill_long_output(std::move(result), tool_logs);
+        if (result.rfind("(long tool output:", 0) == 0)
+            return result;
 
         if (interrupted) {
             result += "(interrupted)\n";

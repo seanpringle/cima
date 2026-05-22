@@ -234,32 +234,14 @@ Tool make_web_fetch_tool(int timeout, CancellationToken cancelled,
             body = html2md::Convert(body);
         }
 
-        // ── Spill to tool_logs if output exceeds threshold ──
-        if (tool_logs) {
-            int nl = 0;
-            for (char c : body)
-                if (c == '\n') nl++;
-            if (nl > 100 || body.size() > 4096) {
-                // Cache the full body before moving
-                {
-                    std::lock_guard<std::mutex> lock(g_fetch_cache_mutex);
-                    g_fetch_cache[url] = body;
-                }
-                size_t id = tool_logs->size() + 1;
-                tool_logs->push_back(std::move(body));
-                return "(long tool output: " + std::to_string(nl) + " lines, " +
-                       std::to_string(tool_logs->back().size()) + " chars. "
-                       "Use view_tool_output(id=" + std::to_string(id) + ") to read it)";
-            }
-        }
-
-        // ── Cache the result ──
+        // ── Cache the result (before potential move into tool_logs) ──
         {
             std::lock_guard<std::mutex> lock(g_fetch_cache_mutex);
             g_fetch_cache[url] = body;
         }
 
-        return body;
+        // ── Spill to tool_logs if output exceeds threshold ──
+        return spill_long_output(std::move(body), tool_logs);
     };
     return t;
 }

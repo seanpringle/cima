@@ -130,22 +130,7 @@ static Result<std::string> run_cmake_command(
         output += "\n(killed by signal: " + std::to_string(sig) + ")";
     }
 
-    // Soft limit: if output exceeds ~100 lines or 4K chars, spill to tool_logs
-    if (tool_logs) {
-        int nl = 0;
-        for (char c : output)
-            if (c == '\n') nl++;
-        if (nl > 100 || output.size() > 4096) {
-            // 1-based ID so 0 doesn't look like a default / !truthy value
-            size_t id = tool_logs->size() + 1;
-            tool_logs->push_back(std::move(output));
-            return "(long tool output: " + std::to_string(nl) + " lines, " +
-                   std::to_string(tool_logs->back().size()) + " chars. "
-                   "Use view_tool_output(id=" + std::to_string(id) + ") to read it)";
-        }
-    }
-
-    return output;
+    return spill_long_output(std::move(output), tool_logs);
 }
 
 // ===================================================================
