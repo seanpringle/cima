@@ -353,7 +353,7 @@ void render_chat_ui(PrimaryAgent& tab, bool& done) {
         ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_WordWrap |
         ImGuiInputTextFlags_CallbackAlways;
 
-    ImVec2 inputSize(0, std::max(GetFrameHeightWithSpacing() * 3, GetContentRegionAvail().y - 4));
+    ImVec2 inputSize(0, GetContentRegionAvail().y - GetFrameHeight());
 
     if (InputTextMultiline("##input",
             buffer.data(),
@@ -438,8 +438,7 @@ void render_chat_ui(PrimaryAgent& tab, bool& done) {
         auto sepSize = CalcTextSize(sep.c_str());
 
         // Lay out right-aligned: [branch] :: [tokens] :: [state]
-        ImVec2 pos = GetCursorScreenPos() - ImVec2(0, GetFrameHeight()) +
-            ImVec2(GetContentRegionAvail().x - GetStyle().FramePadding.x, 0);
+        ImVec2 pos = GetCursorScreenPos() + ImVec2(GetContentRegionAvail().x, 0);
 
         pos = pos - ImVec2(branchSize.x, 0);
         GetForegroundDrawList()->AddText(
@@ -457,4 +456,8 @@ void render_chat_ui(PrimaryAgent& tab, bool& done) {
         pos = pos - ImVec2(stateSize.x, 0);
         GetForegroundDrawList()->AddText(pos, stateColor, stateInfo.c_str());
     }
+
+    PushStyleColor(ImGuiCol_Text, GetColorU32(ImGuiCol_TextDisabled));
+    TextUnformatted(tab.session->safe_dir().c_str());
+    PopStyleColor();
 }
