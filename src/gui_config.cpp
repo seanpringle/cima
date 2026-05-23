@@ -158,19 +158,6 @@ void render_config_tab(PrimaryAgent& tab) {
             }
         }
 
-        // ── Clear Plan button ──
-        {
-            auto plan_content = ::plan.read_plan();
-            bool has_plan = plan_content && *plan_content != "(empty plan)";
-            if (has_plan) {
-                if (Button("Clear Plan")) {
-                    ::plan.write_plan("");
-                }
-            } else {
-                TextDisabled("No plan to clear");
-            }
-        }
-
         // ── Stop button ──
         {
             BeginDisabled(!tab.chat_state->running);

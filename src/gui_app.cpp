@@ -229,9 +229,22 @@ static void render_frame(PrimaryAgent& primary, bool& done) {
 
         if (BeginTabBar("##session-tabs")) {
             if (BeginTabItem("   Plan   ")) {
-                auto plan_result = primary.session->plan().read_plan();
-                if (plan_result) {
-                    render_content(*plan_result);
+                // ── Clear Plan button ──
+                {
+                    auto plan_result = ::plan.read_plan();
+                    bool has_plan = plan_result && *plan_result != "(empty plan)";
+                    if (has_plan) {
+                        if (Button("Clear Plan")) {
+                            ::plan.write_plan("");
+                        }
+                    } else {
+                        TextDisabled("No plan to clear");
+                    }
+                }
+
+                auto content = primary.session->plan().read_plan();
+                if (content) {
+                    render_content(*content);
                 } else {
                     TextDisabled("(empty plan)");
                 }
