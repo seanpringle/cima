@@ -862,7 +862,7 @@ TEST_CASE("git_add stage tracked file", "[tools][git_add]") {
     std::ofstream(sd + "/README.md") << "# Modified\n";
 
     // Stage it
-    auto result = reg.execute("git_add", R"({"path": "README.md"})");
+    auto result = reg.execute("git_add", R"({"paths": ["README.md"]})");
     REQUIRE(result);
     CHECK(result->find("ok") != std::string::npos);
     CHECK(result->find("staged") != std::string::npos);
@@ -884,7 +884,7 @@ TEST_CASE("git_add stage untracked file", "[tools][git_add]") {
     std::ofstream(sd + "/new.txt") << "new content\n";
 
     // Stage it with explicit path
-    auto result = reg.execute("git_add", R"({"path": "new.txt"})");
+    auto result = reg.execute("git_add", R"({"paths": ["new.txt"]})");
     REQUIRE(result);
     CHECK(result->find("ok") != std::string::npos);
 
@@ -896,7 +896,7 @@ TEST_CASE("git_add stage untracked file", "[tools][git_add]") {
     fs::remove_all(sd);
 }
 
-TEST_CASE("git_add all stages everything", "[tools][git_add]") {
+TEST_CASE("git_add multiple paths", "[tools][git_add]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
     reg.add_defaults(sd, Config{});
@@ -906,11 +906,12 @@ TEST_CASE("git_add all stages everything", "[tools][git_add]") {
     std::ofstream(sd + "/new.txt") << "new file\n";
     std::ofstream(sd + "/another.txt") << "another file\n";
 
-    // Stage all changes
-    auto result = reg.execute("git_add", R"({"all": true})");
+    // Stage all with explicit paths
+    auto result = reg.execute("git_add",
+        R"({"paths": ["README.md", "new.txt", "another.txt"]})");
     REQUIRE(result);
     CHECK(result->find("ok") != std::string::npos);
-    CHECK(result->find("staged all") != std::string::npos);
+    CHECK(result->find("staged 3 files") != std::string::npos);
 
     // Verify via git_status: all three should show as staged
     auto status = reg.execute("git_status", "{}");
@@ -927,7 +928,7 @@ TEST_CASE("git_add not a git repo", "[tools][git_add]") {
     ToolRegistry reg;
     reg.add_defaults(sd, Config{});
 
-    auto result = reg.execute("git_add", R"({"path": "."})");
+    auto result = reg.execute("git_add", R"({"paths": ["."]})");
     CHECK_FALSE(result);
     CHECK(result.error().find("not a git repository") != std::string::npos);
 
@@ -939,9 +940,33 @@ TEST_CASE("git_add path traversal rejected", "[tools][git_add]") {
     ToolRegistry reg;
     reg.add_defaults(sd, Config{});
 
-    auto result = reg.execute("git_add", R"({"path": "../../etc/passwd"})");
+    auto result = reg.execute("git_add", R"({"paths": ["../../etc/passwd"]})");
     CHECK_FALSE(result);
     CHECK(result.error().find("path must be under") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_add empty paths rejected", "[tools][git_add]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    auto result = reg.execute("git_add", R"({"paths": []})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("empty") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("git_add missing paths rejected", "[tools][git_add]") {
+    auto sd = make_git_repo();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    auto result = reg.execute("git_add", R"({})");
+    CHECK_FALSE(result);
+    CHECK(result.error().find("paths") != std::string::npos);
 
     fs::remove_all(sd);
 }
@@ -957,7 +982,7 @@ TEST_CASE("git_commit basic", "[tools][git_commit]") {
 
     // Stage a change
     std::ofstream(sd + "/README.md") << "# Modified for commit\n";
-    auto add_result = reg.execute("git_add", R"({"path": "README.md"})");
+    auto add_result = reg.execute("git_add", R"({"paths": ["README.md"]})");
     REQUIRE(add_result);
 
     // Commit
@@ -2220,7 +2245,7 @@ TEST_CASE("git_restore restore all files", "[tools][git_restore]") {
     // Create another tracked file via commit
     std::ofstream(sd + "/file2.txt") << "content2\n";
     {
-        auto r = reg.execute("git_add", R"({"path": "file2.txt"})");
+        auto r = reg.execute("git_add", R"({"paths": ["file2.txt"]})");
         REQUIRE(r);
         r = reg.execute("git_commit", R"({"message": "add file2", "all": true})");
         REQUIRE(r);
@@ -2257,7 +2282,7 @@ TEST_CASE("git_restore unstage file", "[tools][git_restore]") {
 
     // Modify and stage a file
     std::ofstream(sd + "/README.md") << "# Staged\n";
-    auto r = reg.execute("git_add", R"({"path": "README.md"})");
+    auto r = reg.execute("git_add", R"({"paths": ["README.md"]})");
     REQUIRE(r);
 
     // Verify it's staged before restore
@@ -2339,7 +2364,7 @@ TEST_CASE("git_show HEAD shows commit metadata and diff", "[tools][git_show]") {
 
     // Create a second commit with actual changes
     std::ofstream(sd + "/newfile.txt") << "new content\n";
-    auto r = reg.execute("git_add", R"({"path": "newfile.txt"})");
+    auto r = reg.execute("git_add", R"({"paths": ["newfile.txt"]})");
     REQUIRE(r);
     r = reg.execute("git_commit", R"({"message": "add newfile", "all": true})");
     REQUIRE(r);
@@ -2370,14 +2395,14 @@ TEST_CASE("git_show specific revision", "[tools][git_show]") {
 
     // Create a second commit
     std::ofstream(sd + "/file2.txt") << "second\n";
-    auto r = reg.execute("git_add", R"({"path": "file2.txt"})");
+    auto r = reg.execute("git_add", R"({"paths": ["file2.txt"]})");
     REQUIRE(r);
     r = reg.execute("git_commit", R"({"message": "second commit", "all": true})");
     REQUIRE(r);
 
     // Create a third commit
     std::ofstream(sd + "/file3.txt") << "third\n";
-    r = reg.execute("git_add", R"({"path": "file3.txt"})");
+    r = reg.execute("git_add", R"({"paths": ["file3.txt"]})");
     REQUIRE(r);
     r = reg.execute("git_commit", R"({"message": "third commit", "all": true})");
     REQUIRE(r);

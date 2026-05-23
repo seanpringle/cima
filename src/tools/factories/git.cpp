@@ -443,34 +443,19 @@ Tool make_git_add_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout) {
     Tool t;
     t.name = "git_add";
     t.description =
-        "Stage file(s) for commit. Like 'git add <path>' or 'git add -A'.\n"
-        "If 'all' is true, stages all changes (added, modified, deleted) "
-        "in the entire working tree.\n"
-        "If 'path' is specified, only that file or pathspec is staged.\n"
+        "Stage file(s) for commit. Provide explicit paths to stage.\n"
         "Use git_status first to see which files are changed, "
-        "then git_add to stage them, then git_commit to commit.";
+        "then git_add with the desired paths, then git_commit to commit.";
     t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},
         {"properties",
-            {{"path",
-                {{"oneOf",
-                    {{{"type", "string"},
-                      {"description",
-                          "File path or pathspec to stage. "
-                          "Must be under the safe directory."}},
-                     {{"type", "array"},
-                      {"items", {{"type", "string"}}},
-                      {"description",
-                          "Array of file paths to stage. "
-                          "Each must be under the safe directory."}}}},
+            {{"paths",
+                {{"type", "array"},
+                 {"items", {{"type", "string"}}},
                  {"description",
-                     "File path, pathspec, or array of paths to stage. "
-                     "Defaults to '.' (current directory)."}}},
-             {"all",
-                {{"type", "boolean"},
-                    {"description",
-                        "If true, stage all changes (added, modified, deleted). "
-                        "Like 'git add -A'. Default false."}}}}},
+                     "Array of file paths to stage. "
+                     "Each must be under the safe directory. "
+                     "Use git_status first to see the available paths."}}}}},
         {"required", json::array()}};
 
     t.execute = [safe_dir_ptr](const json& args) -> Result<std::string> {
@@ -486,8 +471,6 @@ Tool make_git_add_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout) {
         auto repo_cleanup = std::unique_ptr<git_repository, decltype(&git_repository_free)>(
             repo, git_repository_free);
 
-        bool all = args.value("all", false);
-
         // Get the repository's index
         git_index* index = nullptr;
         int err = git_repository_index(&index, repo);
@@ -499,108 +482,69 @@ Tool make_git_add_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout) {
         auto index_cleanup = std::unique_ptr<git_index, decltype(&git_index_free)>(
             index, git_index_free);
 
-        if (all) {
-            // Stage all changes (git add -A)
-            // Use NULL pathspec to cover the entire working tree
-            err = git_index_add_all(index, nullptr, GIT_INDEX_ADD_DEFAULT, nullptr, nullptr);
-            if (err) {
-                const git_error* e = git_error_last();
-                return std::unexpected("git_add error staging all changes: " +
-                    (e ? std::string(e->message) : std::string("unknown error")));
+        // Helper lambda to resolve a path and stage it via git_index_add_bypath
+        auto stage_single = [&](const std::string& path_str) -> Result<void> {
+            auto resolved = resolve_path(path_str, *safe_dir_ptr);
+            if (!resolved) {
+                return std::unexpected(resolved.error());
             }
-        } else {
-            // Helper lambda to resolve a path and stage it via git_index_add_bypath
-            auto stage_single = [&](const std::string& path_str) -> Result<void> {
-                auto resolved = resolve_path(path_str, *safe_dir_ptr);
-                if (!resolved) {
-                    return std::unexpected(resolved.error());
+
+            // Convert the absolute resolved path to a path relative to the
+            // repository's working directory, as required by git_index_add_bypath.
+            const char* workdir_raw = git_repository_workdir(repo);
+            if (!workdir_raw) {
+                return std::unexpected("git_add: repository has no working directory");
+            }
+            std::string workdir(workdir_raw);
+            // Normalize: ensure trailing slash for prefix matching
+            if (!workdir.empty() && workdir.back() != '/') workdir += '/';
+
+            std::string abs_path = *resolved;
+            if (abs_path.size() > workdir.size() &&
+                abs_path.compare(0, workdir.size(), workdir) == 0) {
+                // Path is under workdir — make relative
+                std::string rel_path = abs_path.substr(workdir.size());
+                if (rel_path.empty()) {
+                    return std::unexpected("git_add: cannot stage the repository root");
                 }
 
-                // Convert the absolute resolved path to a path relative to the
-                // repository's working directory, as required by git_index_add_bypath.
-                const char* workdir_raw = git_repository_workdir(repo);
-                if (!workdir_raw) {
-                    return std::unexpected("git_add: repository has no working directory");
-                }
-                std::string workdir(workdir_raw);
-                // Normalize: ensure trailing slash for prefix matching
-                if (!workdir.empty() && workdir.back() != '/') workdir += '/';
-
-                std::string abs_path = *resolved;
-                if (abs_path.size() > workdir.size() &&
-                    abs_path.compare(0, workdir.size(), workdir) == 0) {
-                    // Path is under workdir — make relative
-                    std::string rel_path = abs_path.substr(workdir.size());
-                    if (rel_path.empty()) {
-                        return std::unexpected("git_add: cannot stage the repository root");
-                    }
-
-                    err = git_index_add_bypath(index, rel_path.c_str());
-                    if (err) {
-                        const git_error* e = git_error_last();
-                        return std::unexpected("git_add error staging '" + rel_path + "': " +
-                            (e ? std::string(e->message) : std::string("unknown error")));
-                    }
-                    return {};
-                } else {
-                    return std::unexpected("git_add: path is outside the repository working directory");
-                }
-            };
-
-            // Accept path as either a single string or an array of strings
-            auto path_it = args.find("path");
-            if (path_it != args.end() && path_it->is_array()) {
-                // Array of paths
-                std::vector<std::string> staged;
-                for (const auto& p : *path_it) {
-                    if (!p.is_string()) {
-                        return std::unexpected("git_add: each path in the array must be a string");
-                    }
-                    auto result = stage_single(p.get<std::string>());
-                    if (!result) {
-                        return std::unexpected(result.error());
-                    }
-                    staged.push_back(p.get<std::string>());
-                }
-                if (staged.empty()) {
-                    return std::unexpected("git_add: path array is empty");
-                }
-                // Write the index after the last addition
-                err = git_index_write(index);
+                err = git_index_add_bypath(index, rel_path.c_str());
                 if (err) {
                     const git_error* e = git_error_last();
-                    return std::unexpected("git_add error writing index: " +
+                    return std::unexpected("git_add error staging '" + rel_path + "': " +
                         (e ? std::string(e->message) : std::string("unknown error")));
                 }
-
-                std::string msg = "ok (staged " + std::to_string(staged.size()) + " files: ";
-                for (size_t i = 0; i < staged.size(); i++) {
-                    if (i > 0) msg += ", ";
-                    msg += staged[i];
-                }
-                msg += ")";
-                return msg;
+                return {};
             } else {
-                // Single path (default to ".")
-                std::string path = args.value("path", std::string("."));
-                auto result = stage_single(path);
-                if (!result) {
-                    return std::unexpected(result.error());
-                }
-
-                // Write the index to persist changes
-                err = git_index_write(index);
-                if (err) {
-                    const git_error* e = git_error_last();
-                    return std::unexpected("git_add error writing index: " +
-                        (e ? std::string(e->message) : std::string("unknown error")));
-                }
-
-                return std::string("ok (staged " + path + ")");
+                return std::unexpected("git_add: path is outside the repository working directory");
             }
+        };
+
+        // Validate and extract the paths array
+        auto paths_it = args.find("paths");
+        if (paths_it == args.end() || !paths_it->is_array()) {
+            return std::unexpected(
+                "git_add: 'paths' is required and must be an array of strings");
+        }
+        const auto& paths = *paths_it;
+        if (paths.empty()) {
+            return std::unexpected("git_add: 'paths' array must not be empty");
         }
 
-        // Write the index to persist changes (all: true path)
+        // Stage each path
+        std::vector<std::string> staged;
+        for (const auto& p : paths) {
+            if (!p.is_string()) {
+                return std::unexpected("git_add: each element in 'paths' must be a string");
+            }
+            auto result = stage_single(p.get<std::string>());
+            if (!result) {
+                return std::unexpected(result.error());
+            }
+            staged.push_back(p.get<std::string>());
+        }
+
+        // Write the index to persist changes
         err = git_index_write(index);
         if (err) {
             const git_error* e = git_error_last();
@@ -608,7 +552,15 @@ Tool make_git_add_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout) {
                 (e ? std::string(e->message) : std::string("unknown error")));
         }
 
-        return std::string("ok (staged all changes)");
+        // Build result message
+        std::string msg = "ok (staged " + std::to_string(staged.size()) + " file" +
+            (staged.size() == 1 ? "" : "s") + ": ";
+        for (size_t i = 0; i < staged.size(); i++) {
+            if (i > 0) msg += ", ";
+            msg += staged[i];
+        }
+        msg += ")";
+        return msg;
     };
     return t;
 }
