@@ -28,7 +28,7 @@ void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
 
     // ── Read-only tools (receive whitelist for extra path access) ──
     {
-        auto t = make_run_bwrap_tool(config, safe_dir_ptr, config.bash_timeout, cancelled_, /*read_only=*/true);
+        auto t = make_run_bwrap_tool(config, safe_dir_ptr, kDefaultBashTimeout, cancelled_, /*read_only=*/true);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
@@ -38,22 +38,22 @@ void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
         add(std::move(t));
     }
     {
-        auto t = make_grep_files_tool(config, safe_dir_ptr, read_only_paths, config.grep_timeout, cancelled_);
+        auto t = make_grep_files_tool(config, safe_dir_ptr, read_only_paths, kDefaultGrepTimeout, cancelled_);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
     {
-        auto t = make_find_files_tool(config, safe_dir_ptr, read_only_paths, config.grep_timeout, cancelled_);
+        auto t = make_find_files_tool(config, safe_dir_ptr, read_only_paths, kDefaultGrepTimeout, cancelled_);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
     {
-        auto t = make_web_search_tool(config, config.web_search_timeout, cancelled_);
+        auto t = make_web_search_tool(config, kDefaultWebSearchTimeout, cancelled_);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
     {
-        auto t = make_web_fetch_tool(config, config.web_fetch_timeout, cancelled_);
+        auto t = make_web_fetch_tool(config, kDefaultWebFetchTimeout, cancelled_);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
@@ -72,7 +72,7 @@ void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
         }
 
         {
-            auto t = make_run_bwrap_tool(config, safe_dir_ptr, config.bash_timeout, cancelled_);
+            auto t = make_run_bwrap_tool(config, safe_dir_ptr, kDefaultBashTimeout, cancelled_);
             t.permission = ToolPermission::Write;
             add(std::move(t));
         }

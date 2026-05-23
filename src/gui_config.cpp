@@ -871,12 +871,12 @@ void render_config_tab(PrimaryAgent& tab) {
                     }
                 };
 
-                knob_int("Max Tool Iterations", knobs.max_tool_iterations, 100);
-                knob_int("Subagent Timeout (s)", knobs.subagent_timeout, 600);
-                knob_int("Bash Timeout (s)", knobs.bash_timeout, 30);
-                knob_int("Grep Timeout (s)", knobs.grep_timeout, 10);
-                knob_int("Web Search Timeout (s)", knobs.web_search_timeout, 15);
-                knob_int("Web Fetch Timeout (s)", knobs.web_fetch_timeout, 15);
+                knob_int("Max Tool Iterations", knobs.max_tool_iterations, kDefaultMaxToolIterations);
+                knob_int("Subagent Timeout (s)", knobs.subagent_timeout, kDefaultSubagentTimeout);
+                knob_int("Bash Timeout (s)", knobs.bash_timeout, kDefaultBashTimeout);
+                knob_int("Grep Timeout (s)", knobs.grep_timeout, kDefaultGrepTimeout);
+                knob_int("Web Search Timeout (s)", knobs.web_search_timeout, kDefaultWebSearchTimeout);
+                knob_int("Web Fetch Timeout (s)", knobs.web_fetch_timeout, kDefaultWebFetchTimeout);
 
                 if (changed) {
                     tab.session_.apply_knobs_to(*tab.session);

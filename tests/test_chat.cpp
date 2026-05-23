@@ -75,7 +75,6 @@ static TestConfig make_test_config(const std::string& base_url,
     tc.provider.model = model;
     tc.provider.reasoning_effort = reasoning_effort;
     tc.provider.context_limit = context_limit;
-    tc.cfg.max_tool_iterations = 100;
     return tc;
 }
 
@@ -201,9 +200,9 @@ TEST_CASE("ChatSession max tool iterations", "[chat]") {
         true);
 
     auto tc = make_test_config(server.base_url(), "test", "high", 300000);
-    tc.cfg.max_tool_iterations = 10;
 
     ChatSession session(tc.cfg, tc.provider);
+    session.set_max_iterations(10); // override for test
     auto result = session.run_once("List files forever");
     CHECK(result);
     CHECK(result->content.find("Tool call budget exhausted") !=

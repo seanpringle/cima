@@ -156,7 +156,7 @@ class ChatSession {
     /// the tool description with available names.
     void register_call_subagent_tool(
         PrimaryAgent& primary, const std::vector<SubagentConfig>& subagent_configs = {}) {
-        tools_.add(make_call_subagent_tool(primary, subagent_configs, cfg.subagent_timeout));
+        tools_.add(make_call_subagent_tool(primary, subagent_configs, kDefaultSubagentTimeout));
     }
 
     /// Override the max tool iterations (session knob).
@@ -210,7 +210,7 @@ class ChatSession {
     std::shared_ptr<std::string> safe_dir_;
     std::string api_base_;     // API base URL (for creating temp clients)
     std::string api_key_;      // API key for authentication
-    int max_iterations_ = 100; // overridden by config.max_tool_iterations
+    int max_iterations_ = kDefaultMaxToolIterations; // overridden by session knob
     std::shared_ptr<FileModifiedCallback> file_modified_cb_;
     std::string system_prompt_;
     Conversation conversation_;

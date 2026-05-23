@@ -16,7 +16,6 @@ TEST_CASE("Config defaults", "[config]") {
     // providers is empty by default (load() populates it)
     REQUIRE(cfg.providers.empty());
     REQUIRE(cfg.SYSTEM_PROMPT.find("AI coding assistant") != std::string::npos);
-    REQUIRE(cfg.max_tool_iterations == 100);
     // read_only_paths is empty until load() adds defaults
     REQUIRE(cfg.read_only_paths.empty());
 }
@@ -36,13 +35,10 @@ TEST_CASE("Config to_json / round-trip", "[config]") {
     cfg.providers.push_back(p);
 
     cfg.read_only_paths = {"/custom/path"};
-    cfg.max_tool_iterations = 50;
 
     auto j = cfg.to_json();
     // SYSTEM_PROMPT must NOT be in JSON
     REQUIRE_FALSE(j.contains("SYSTEM_PROMPT"));
-    // Knob fields must NOT be in cima.json (per-session overrides now)
-    REQUIRE_FALSE(j.contains("max_tool_iterations"));
 
     // Now simulate what load() does: parse JSON and overlay on a fresh Config
     Config loaded;
@@ -70,8 +66,6 @@ TEST_CASE("Config to_json / round-trip", "[config]") {
         for (const auto& p : j["read_only_paths"])
             loaded.read_only_paths.push_back(p.get<std::string>());
     }
-    if (j.contains("max_tool_iterations") && j["max_tool_iterations"].is_number_integer())
-        loaded.max_tool_iterations = j["max_tool_iterations"].get<int>();
 
     REQUIRE(loaded.providers.size() == 1);
     REQUIRE(loaded.providers[0].name == "test-provider");
@@ -87,8 +81,6 @@ TEST_CASE("Config to_json / round-trip", "[config]") {
     // manual overlay didn't — just check the JSON value was read
     REQUIRE(loaded.read_only_paths.size() == 1);
     REQUIRE(loaded.read_only_paths[0] == "/custom/path");
-    // max_tool_iterations is no longer in cima.json; falls back to code default
-    REQUIRE(loaded.max_tool_iterations == 100);
 }
 
 TEST_CASE("Config read_only_paths defaults added if missing", "[config]") {
@@ -625,30 +617,11 @@ TEST_CASE("SubagentConfig read_only true from JSON", "[config][subagent]") {
     CHECK(loaded[0].read_only == true);
 }
 
-TEST_CASE("subagent_timeout top-level field no longer in cima.json", "[config][subagent_timeout]") {
-    // Knob fields were removed from cima.json; they use code defaults (600).
-    Config cfg;
-    CHECK(cfg.subagent_timeout == 600);
-
-    // Setting a value should NOT appear in to_json().
-    cfg.subagent_timeout = 120;
-    auto j = cfg.to_json();
-    REQUIRE_FALSE(j.contains("subagent_timeout"));
-
-    // Code default remains 600 even after attempted serialization.
-    CHECK(cfg.subagent_timeout == 120); // in-memory value is unaffected
-    // Reset to verify code default
-    Config fresh;
-    CHECK(fresh.subagent_timeout == 600);
-
-    // Test that missing from JSON means code default is used.
-    // (Session-level overrides are handled by SessionData, not Config)
-    json j2 = R"({})"_json;
-    Config loaded;
-    CHECK(loaded.subagent_timeout == 600);
-
-    // Test that loading from old JSON that has subagent_timeout is ignored.
-    json j3 = R"({"subagent_timeout": 120})"_json;
-    // Config::load() no longer reads this field.
-    CHECK(loaded.subagent_timeout == 600);
+TEST_CASE("knob defaults are defined as constexpr constants", "[config][knobs]") {
+    CHECK(kDefaultMaxToolIterations == 100);
+    CHECK(kDefaultSubagentTimeout == 600);
+    CHECK(kDefaultBashTimeout == 30);
+    CHECK(kDefaultGrepTimeout == 10);
+    CHECK(kDefaultWebSearchTimeout == 15);
+    CHECK(kDefaultWebFetchTimeout == 15);
 }

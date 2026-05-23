@@ -24,6 +24,14 @@ inline CancellationToken make_cancellation_token() {
 
 template <typename T> using Result = std::expected<T, std::string>;
 
+// ── Default knob values (can be overridden per-session via SessionData) ──
+inline constexpr int kDefaultMaxToolIterations = 100;
+inline constexpr int kDefaultSubagentTimeout  = 600;
+inline constexpr int kDefaultBashTimeout      = 30;
+inline constexpr int kDefaultGrepTimeout      = 10;
+inline constexpr int kDefaultWebSearchTimeout = 15;
+inline constexpr int kDefaultWebFetchTimeout  = 15;
+
 /// A single MCP endpoint definition from cima.json.
 struct McpEndpoint {
     std::string name;                // unique id, e.g. "my-filesystem-server"
@@ -67,17 +75,9 @@ struct Config {
     std::vector<Provider> providers;
     std::vector<McpEndpoint> mcp_servers; // MCP endpoint definitions
     std::vector<std::string> read_only_paths;
-    int max_tool_iterations = 100;
     int context_limit = 300000;                  // model context window (tokens)
     std::map<std::string, std::string> snippets; // from cima.json
     std::vector<SubagentConfig> subagents;       // from cima.json
-
-    // Tool timeouts (seconds, 0 = no timeout)
-    int subagent_timeout = 600;
-    int bash_timeout = 30;
-    int grep_timeout = 10;
-    int web_search_timeout = 15;
-    int web_fetch_timeout = 15;
 
     // Font settings (empty paths = auto-detect via fontconfig)
     std::string font_sans; // path to sans-serif font file

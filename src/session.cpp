@@ -162,12 +162,12 @@ void Session::set_web_fetch_timeout(int v) { session_data_.web_fetch_timeout = v
 
 void Session::apply_knobs_to(ChatSession& session) const {
     // Effective values: knob override > 0 ? knob : cfg default
-    const int mi = max_tool_iterations() > 0 ? max_tool_iterations() : cfg.max_tool_iterations;
-    const int sa = subagent_timeout() > 0 ? subagent_timeout() : cfg.subagent_timeout;
-    const int bt = bash_timeout() > 0 ? bash_timeout() : cfg.bash_timeout;
-    const int gt = grep_timeout() > 0 ? grep_timeout() : cfg.grep_timeout;
-    const int wst = web_search_timeout() > 0 ? web_search_timeout() : cfg.web_search_timeout;
-    const int wft = web_fetch_timeout() > 0 ? web_fetch_timeout() : cfg.web_fetch_timeout;
+    const int mi = max_tool_iterations() > 0 ? max_tool_iterations() : kDefaultMaxToolIterations;
+    const int sa = subagent_timeout() > 0 ? subagent_timeout() : kDefaultSubagentTimeout;
+    const int bt = bash_timeout() > 0 ? bash_timeout() : kDefaultBashTimeout;
+    const int gt = grep_timeout() > 0 ? grep_timeout() : kDefaultGrepTimeout;
+    const int wst = web_search_timeout() > 0 ? web_search_timeout() : kDefaultWebSearchTimeout;
+    const int wft = web_fetch_timeout() > 0 ? web_fetch_timeout() : kDefaultWebFetchTimeout;
 
     session.set_max_iterations(mi);
 
