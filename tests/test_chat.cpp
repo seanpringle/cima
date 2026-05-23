@@ -660,3 +660,50 @@ TEST_CASE("ChatSession MCP server start error", "[chat][mcp]") {
     REQUIRE(run_result.has_value());
     CHECK(run_result->content == "Hello!");
 }
+
+// ===================================================================
+// Tool gate access check — disabled tools are rejected at execution
+// ===================================================================
+
+TEST_CASE("ChatSession disabled tool is not executed", "[chat][gates]") {
+    int call_count = 0;
+    MockServer server(
+        [&](const std::string& req) -> std::string {
+            call_count++;
+            // Request 1: GET /v1/models (model discovery) — return empty JSON object
+            if (call_count == 1)
+                return "{\"object\":\"list\",\"data\":[]}";
+            // Request 2: first chat completion — return a tool call for "list_path"
+            if (call_count == 2)
+                return make_tool_call_sse("list_path", R"({"path": "."})");
+            // Subsequent requests: just return content
+            return make_content_sse("done");
+        },
+        true);
+
+    auto tc = make_test_config(server.base_url(), "test", "high", 1000);
+    ChatSession session(tc.cfg, tc.provider);
+
+    // Disable the tool the LLM is about to call
+    session.set_tool_enabled("list_path", false);
+
+    auto result = session.run_once("List files");
+    REQUIRE(result);
+
+    // Find the assistant message with the tool call and check its result.
+    bool found_disabled = false;
+    for (const auto& msg : session.conversation().messages()) {
+        for (const auto& tc : msg.tool_calls) {
+            if (tc.name == "list_path" && tc.result.find("disabled") != std::string::npos) {
+                found_disabled = true;
+            }
+        }
+    }
+    CHECK(found_disabled);
+
+    // The mock should have been called three times:
+    // 1. model discovery
+    // 2. original tool call request
+    // 3. follow-up after tool "result" (the disabled error)
+    CHECK(call_count == 3);
+}

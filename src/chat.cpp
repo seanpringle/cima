@@ -185,29 +185,32 @@ std::string ChatSession::build_effective_prompt() const {
     return prompt;
 }
 
+bool ChatSession::is_tool_allowed(const std::string& name) const {
+    // CMake tools: require cmake_enabled AND CMakeLists.txt
+    if (cmake_tool_names.count(name) && (!gates_->cmake_enabled || !has_cmake_project()))
+        return false;
+    // Bash: gated by bash_enabled
+    if (name == "run_bash" && !gates_->bash_enabled)
+        return false;
+    // Custom cmd_* tools: each gated individually by gates_->custom_tools.
+    if (name.rfind("cmd_", 0) == 0) {
+        auto it = gates_->custom_tools.find(name);
+        if (it == gates_->custom_tools.end() || !it->second)
+            return false;
+    }
+    // Generic per-tool gate from tool_gates map.
+    {
+        auto it = gates_->tool_gates.find(name);
+        if (it != gates_->tool_gates.end() && !it->second)
+            return false;
+    }
+    return true;
+}
+
 std::set<std::string> ChatSession::filter_allowed_tools() const {
     std::set<std::string> allowed;
     for (const auto& t : tools_.tools()) {
-        bool include = true;
-        // CMake tools: require cmake_enabled AND CMakeLists.txt
-        if (cmake_tool_names.count(t.name) && (!gates_->cmake_enabled || !has_cmake_project()))
-            include = false;
-        // Bash: gated by bash_enabled
-        if (t.name == "run_bash" && !gates_->bash_enabled)
-            include = false;
-        // Custom cmd_* tools: each gated individually by gates_->custom_tools.
-        if (t.name.rfind("cmd_", 0) == 0) {
-            auto it = gates_->custom_tools.find(t.name);
-            if (it == gates_->custom_tools.end() || !it->second)
-                include = false;
-        }
-        // Generic per-tool gate from tool_gates map.
-        if (include) {
-            auto it = gates_->tool_gates.find(t.name);
-            if (it != gates_->tool_gates.end() && !it->second)
-                include = false;
-        }
-        if (include)
+        if (is_tool_allowed(t.name))
             allowed.insert(t.name);
     }
     return allowed;
@@ -306,6 +309,11 @@ Result<void> ChatSession::execute_tool_calls(
         }
     }
 
+    // Helper: produce an error result for a disabled tool
+    auto disabled = [&](const ToolCall& call) -> Result<std::string> {
+        return std::unexpected("tool '" + call.name + "' is disabled");
+    };
+
     if (calls.size() <= 1) {
         // Single call — simple execution
         for (const auto& call : calls) {
@@ -317,10 +325,14 @@ Result<void> ChatSession::execute_tool_calls(
                     OutputType::ToolInvocation);
             }
             Result<std::string> tr;
-            try {
-                tr = tools_.execute(call.name, call.arguments);
-            } catch (const std::exception& e) {
-                tr = std::unexpected(std::string(e.what()));
+            if (!is_tool_allowed(call.name)) {
+                tr = disabled(call);
+            } else {
+                try {
+                    tr = tools_.execute(call.name, call.arguments);
+                } catch (const std::exception& e) {
+                    tr = std::unexpected(std::string(e.what()));
+                }
             }
             conversation_.add_tool(msg_id, call.id, tr ? *tr : tr.error());
             if (output_cb_) {
@@ -339,10 +351,14 @@ Result<void> ChatSession::execute_tool_calls(
                     OutputType::ToolInvocation);
             }
             Result<std::string> tr;
-            try {
-                tr = tools_.execute(call.name, call.arguments);
-            } catch (const std::exception& e) {
-                tr = std::unexpected(std::string(e.what()));
+            if (!is_tool_allowed(call.name)) {
+                tr = disabled(call);
+            } else {
+                try {
+                    tr = tools_.execute(call.name, call.arguments);
+                } catch (const std::exception& e) {
+                    tr = std::unexpected(std::string(e.what()));
+                }
             }
             conversation_.add_tool(msg_id, call.id, tr ? *tr : tr.error());
             if (output_cb_) {
@@ -357,8 +373,15 @@ Result<void> ChatSession::execute_tool_calls(
         std::vector<std::future<Result<std::string>>> futures;
         futures.reserve(calls.size());
         for (size_t i = 0; i < calls.size(); i++) {
+            // Capture by value to avoid dangling references in the async thread.
+            std::string tool_name = calls[i].name;
+            std::string tool_args = calls[i].arguments;
             futures.push_back(std::async(std::launch::async,
-                [&, i] { return tools_.execute(calls[i].name, calls[i].arguments); }));
+                [this, tool_name, tool_args] {
+                    if (!this->is_tool_allowed(tool_name))
+                        return Result<std::string>(std::unexpected("tool '" + tool_name + "' is disabled"));
+                    return this->tools_.execute(tool_name, tool_args);
+                }));
         }
 
         std::vector<Result<std::string>> results;

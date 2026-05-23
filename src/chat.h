@@ -221,6 +221,10 @@ class ChatSession {
     /// Return tool names permitted for this iteration (CMake/bash conditional).
     std::set<std::string> filter_allowed_tools() const;
 
+    /// Check whether a single tool is allowed by the current gates.
+    /// Reuses the same logic as filter_allowed_tools().
+    bool is_tool_allowed(const std::string& name) const;
+
     /// Assemble the OpenAI-compatible request payload.
     json build_payload(const std::set<std::string>& allowed_tools) const;
 
