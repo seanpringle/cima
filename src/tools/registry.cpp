@@ -43,6 +43,11 @@ void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
         add(std::move(t));
     }
     {
+        auto t = make_find_files_tool(config, safe_dir_ptr, read_only_paths, config.grep_timeout, cancelled_);
+        t.permission = ToolPermission::ReadOnly;
+        add(std::move(t));
+    }
+    {
         auto t = make_web_search_tool(config, config.web_search_timeout, cancelled_);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));

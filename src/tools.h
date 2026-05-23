@@ -172,6 +172,10 @@ Tool make_grep_files_tool(const Config& config, std::shared_ptr<std::string> saf
     const std::vector<std::string>& read_only_paths,
     int timeout,
     CancellationToken cancelled = nullptr);
+Tool make_find_files_tool(const Config& config, std::shared_ptr<std::string> safe_dir_ptr,
+    const std::vector<std::string>& read_only_paths,
+    int timeout,
+    CancellationToken cancelled = nullptr);
 Tool make_write_file_tool(
     std::shared_ptr<std::string> safe_dir_ptr, FileModifiedCallback on_file_modified = nullptr);
 Tool make_edit_file_tool(

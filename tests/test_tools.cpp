@@ -114,7 +114,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
 
     json tools = reg.to_openai_tools();
     REQUIRE(tools.is_array());
-    REQUIRE(tools.size() == 8);
+    REQUIRE(tools.size() == 9);
 
     // Check structure of first tool
     CHECK(tools[0]["type"] == "function");
@@ -131,7 +131,8 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
     }
     CHECK(names == std::set<std::string>{
                        "read_file",
-                       "grep_files", "write_file",
+                       "grep_files", "find_files",
+                       "write_file",
                        "edit_file",
                        "run_bwrap", "run_bwrap_ro", "web_search", "web_fetch",
                        });
@@ -143,7 +144,7 @@ TEST_CASE("ToolRegistry without write tools (Planner-style)", "[tools][registry]
 
     json tools = reg.to_openai_tools();
     REQUIRE(tools.is_array());
-    REQUIRE(tools.size() == 5);
+    REQUIRE(tools.size() == 6);
 
     // No write tools should be present
     std::set<std::string> names;
@@ -157,6 +158,7 @@ TEST_CASE("ToolRegistry without write tools (Planner-style)", "[tools][registry]
     // Read-only tools should be present
     CHECK(names.find("read_file") != names.end());
     CHECK(names.find("grep_files") != names.end());
+    CHECK(names.find("find_files") != names.end());
     CHECK(names.find("web_search") != names.end());
     CHECK(names.find("web_fetch") != names.end());
     CHECK(names.find("run_bwrap_ro") != names.end());
@@ -468,6 +470,203 @@ TEST_CASE("grep_files without gitignore still works", "[tools][grep_files]") {
     REQUIRE(result);
     CHECK(result->find("hello.txt") != std::string::npos);
     CHECK(result->find("trace.log") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+// ===================================================================
+// grep_files depth limit
+// ===================================================================
+
+TEST_CASE("grep_files depth limit", "[tools][grep_files]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    // Create nested structure:
+    //   root.txt         — contains "data"
+    //   sub/             — directory
+    //     sub.txt        — contains "data"
+    //     deep/          — directory
+    //       deep.txt     — contains "data"
+    std::ofstream(sd + "/root.txt") << "data\n";
+    fs::create_directory(sd + "/sub");
+    std::ofstream(sd + "/sub/sub.txt") << "data\n";
+    fs::create_directory(sd + "/sub/deep");
+    std::ofstream(sd + "/sub/deep/deep.txt") << "data\n";
+
+    // depth=0: only root.txt
+    auto r0 = reg.execute("grep_files", R"({"pattern": "data", "path": ".", "depth": 0})");
+    REQUIRE(r0);
+    CHECK(r0->find("root.txt") != std::string::npos);
+    CHECK(r0->find("sub.txt") == std::string::npos);
+    CHECK(r0->find("deep.txt") == std::string::npos);
+
+    // depth=1: root.txt + sub/sub.txt
+    auto r1 = reg.execute("grep_files", R"({"pattern": "data", "path": ".", "depth": 1})");
+    REQUIRE(r1);
+    CHECK(r1->find("root.txt") != std::string::npos);
+    CHECK(r1->find("sub/sub.txt") != std::string::npos);
+    CHECK(r1->find("deep.txt") == std::string::npos);
+
+    // depth=2: all three
+    auto r2 = reg.execute("grep_files", R"({"pattern": "data", "path": ".", "depth": 2})");
+    REQUIRE(r2);
+    CHECK(r2->find("root.txt") != std::string::npos);
+    CHECK(r2->find("sub/sub.txt") != std::string::npos);
+    CHECK(r2->find("sub/deep/deep.txt") != std::string::npos);
+
+    // depth=-1 (default): all three
+    auto r_all = reg.execute("grep_files", R"({"pattern": "data", "path": "."})");
+    REQUIRE(r_all);
+    CHECK(r_all->find("root.txt") != std::string::npos);
+    CHECK(r_all->find("sub/sub.txt") != std::string::npos);
+    CHECK(r_all->find("sub/deep/deep.txt") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+// ===================================================================
+// find_files
+// ===================================================================
+
+TEST_CASE("find_files basic", "[tools][find_files]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    std::ofstream(sd + "/hello.txt") << "hello\n";
+    std::ofstream(sd + "/world.txt") << "world\n";
+    std::ofstream(sd + "/data.log") << "log\n";
+    fs::create_directory(sd + "/subdir");
+
+    // Match .txt files (subdir doesn't match .txt pattern, so it won't appear)
+    auto result = reg.execute("find_files", R"({"pattern": "\\.txt$", "path": "."})");
+    REQUIRE(result);
+    CHECK(result->find("hello.txt") != std::string::npos);
+    CHECK(result->find("world.txt") != std::string::npos);
+    CHECK(result->find("data.log") == std::string::npos);
+    CHECK(result->find("subdir") == std::string::npos); // dir doesn't match \.txt$
+
+    // Match pattern that includes both files and directories
+    result = reg.execute("find_files", R"({"pattern": "subdir|hello", "path": "."})");
+    REQUIRE(result);
+    CHECK(result->find("hello.txt") != std::string::npos);
+    CHECK(result->find("subdir/") != std::string::npos); // dirs get / suffix
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("find_files with depth", "[tools][find_files]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    fs::create_directory(sd + "/sub");
+    fs::create_directory(sd + "/sub/deep");
+    std::ofstream(sd + "/root.txt") << "data\n";
+    std::ofstream(sd + "/sub/sub.txt") << "data\n";
+    std::ofstream(sd + "/sub/deep/deep.txt") << "data\n";
+
+    // depth=0: only root
+    auto r0 = reg.execute("find_files", R"({"pattern": "\\.txt$", "path": ".", "depth": 0})");
+    REQUIRE(r0);
+    CHECK(r0->find("root.txt") != std::string::npos);
+    CHECK(r0->find("sub/sub.txt") == std::string::npos);
+    CHECK(r0->find("sub/deep/deep.txt") == std::string::npos);
+
+    // depth=1: root + sub/
+    auto r1 = reg.execute("find_files", R"({"pattern": "\\.txt$", "path": ".", "depth": 1})");
+    REQUIRE(r1);
+    CHECK(r1->find("root.txt") != std::string::npos);
+    CHECK(r1->find("sub/sub.txt") != std::string::npos);
+    CHECK(r1->find("sub/deep/deep.txt") == std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("find_files directories get trailing slash", "[tools][find_files]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    fs::create_directory(sd + "/mydir");
+    std::ofstream(sd + "/mydir/note.txt") << "data\n";
+
+    auto result = reg.execute("find_files", R"({"pattern": "mydir", "path": "."})");
+    REQUIRE(result);
+    CHECK(result->find("mydir/") != std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("find_files respects gitignore", "[tools][find_files]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    // Set up git repo
+    auto r = reg.execute("run_bwrap", R"({"command": "git init"})");
+    REQUIRE(r);
+    reg.execute("run_bwrap", R"({"command": "git config user.email test@test.com"})");
+    reg.execute("run_bwrap", R"({"command": "git config user.name Test"})");
+    std::ofstream(sd + "/README.md") << "# Test\n";
+    reg.execute("run_bwrap", R"({"command": "git add -A"})");
+    reg.execute("run_bwrap", R"({"command": "git commit -m 'initial commit'"})");
+
+    // Add .gitignore
+    std::ofstream(sd + "/.gitignore") << "*.log\ncache/\n";
+
+    // Create files
+    std::ofstream(sd + "/hello.txt") << "hello\n";
+    std::ofstream(sd + "/trace.log") << "log\n";
+    fs::create_directory(sd + "/cache");
+    std::ofstream(sd + "/cache/out.o") << "binary\n";
+
+    // Should find hello.txt but not trace.log or cache/
+    auto result = reg.execute("find_files", R"({"pattern": "trace", "path": "."})");
+    REQUIRE(result);
+    CHECK(result->find("trace.log") == std::string::npos);
+
+    result = reg.execute("find_files", R"({"pattern": "hello", "path": "."})");
+    REQUIRE(result);
+    CHECK(result->find("hello.txt") != std::string::npos);
+
+    // cache/ directory should be excluded
+    result = reg.execute("find_files", R"({"pattern": "cache", "path": "."})");
+    REQUIRE(result);
+    CHECK(result->find("cache/") == std::string::npos);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("find_files path traversal rejected", "[tools][find_files]") {
+    ToolRegistry reg;
+    reg.add_defaults("/tmp", Config{});
+
+    auto result = reg.execute("find_files", R"({"pattern": "x", "path": "../../etc"})");
+    REQUIRE_FALSE(result);
+    CHECK(result.error().find("must be under") != std::string::npos);
+}
+
+TEST_CASE("find_files empty pattern rejected", "[tools][find_files]") {
+    ToolRegistry reg;
+    reg.add_defaults("/tmp", Config{});
+
+    auto result = reg.execute("find_files", R"({"pattern": "", "path": "."})");
+    REQUIRE_FALSE(result);
+}
+
+TEST_CASE("find_files no matches", "[tools][find_files]") {
+    auto sd = make_temp_dir();
+    ToolRegistry reg;
+    reg.add_defaults(sd, Config{});
+
+    std::ofstream(sd + "/hello.txt") << "hello\n";
+
+    auto result = reg.execute("find_files", R"({"pattern": "zzzz_nonexistent", "path": "."})");
+    REQUIRE(result);
+    CHECK(*result == "(no matches)");
 
     fs::remove_all(sd);
 }
