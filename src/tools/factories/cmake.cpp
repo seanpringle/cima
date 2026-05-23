@@ -144,7 +144,7 @@ Tool make_cmake_configure_tool(const Config& config, std::shared_ptr<std::string
         "Run `cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON` "
         "to configure the project into a build/ folder and enable "
         "generating compile commands.\n"
-        "Returns raw combined stdout/stderr.\n"
+        "Output is redirected to the tool log when >100 lines or >4K chars.\n"
         "Use `flags` array for additional cmake -D flags, "
         "e.g. flags=[\"-DCMAKE_BUILD_TYPE=Debug\", \"-DBUILD_TESTS=OFF\"]. " + config.TOOL_LOG_NOTE;
     t.permission = ToolPermission::Write;
@@ -196,7 +196,7 @@ Tool make_cmake_build_tool(const Config& config, std::shared_ptr<std::string> sa
     t.name = "cmake_build";
     t.description =
         "Run `cmake --build build/ -j$(nproc)` to build the project.\n"
-        "Returns raw combined stdout/stderr.\n"
+        "Output is redirected to the tool log when >100 lines or >4K chars.\n"
         "Use `target` to build only a specific target, "
         "e.g. target=\"test_tools\".\n"
         "Use `clean` to clean before building, "
@@ -261,7 +261,7 @@ Tool make_cmake_ctest_tool(const Config& config, std::shared_ptr<std::string> sa
     t.description =
         "Run `ctest --test-dir build --output-on-failure -j$(nproc)` "
         "to run the test suite.\n"
-        "Returns raw combined stdout/stderr.\n"
+        "Output is redirected to the tool log when >100 lines or >4K chars.\n"
         "Use `test_regex` to filter which tests run. "
         "This is passed directly to `ctest -R` as a regex "
         "(see `man ctest` for regex rules).\n"

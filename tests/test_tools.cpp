@@ -1,9 +1,13 @@
 #include "tools.h"
 #include <catch2/catch_test_macros.hpp>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <set>
 #include <thread>
+
+// Direct include for text_file_detector (not exported from tools.h)
+#include "tools/text_file_detector.h"
 
 namespace fs = std::filesystem;
 
@@ -2438,3 +2442,141 @@ TEST_CASE("git_show root commit", "[tools][git_show]") {
     fs::remove_all(sd);
 }
 
+// ===================================================================
+// text_file_detector
+// ===================================================================
+
+TEST_CASE("text_file_detector empty file returns Text", "[tools][text_file_detector]") {
+    auto sd = make_temp_dir();
+    auto path = sd + "/empty.txt";
+    std::ofstream(path).close(); // create empty file
+
+    CHECK(detect_text_file(path) == FileKind::Text);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("text_file_detector plain ASCII text returns Text", "[tools][text_file_detector]") {
+    auto sd = make_temp_dir();
+    auto path = sd + "/hello.txt";
+    std::ofstream(path) << "Hello, world!\n";
+
+    CHECK(detect_text_file(path) == FileKind::Text);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("text_file_detector binary file with NUL bytes returns Binary", "[tools][text_file_detector]") {
+    auto sd = make_temp_dir();
+    auto path = sd + "/binary.bin";
+    std::vector<unsigned char> data(1024);
+    for (size_t i = 0; i < data.size(); ++i) {
+        data[i] = static_cast<unsigned char>(i & 0xFF);
+    }
+    // Force some NUL bytes at known positions
+    data[500] = 0;
+    data[700] = 0;
+    std::ofstream(path, std::ios::binary).write(
+        reinterpret_cast<const char*>(data.data()), data.size());
+
+    CHECK(detect_text_file(path) == FileKind::Binary);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("text_file_detector UTF-8 BOM returns Text", "[tools][text_file_detector]") {
+    auto sd = make_temp_dir();
+    auto path = sd + "/utf8_bom.txt";
+    // UTF-8 BOM followed by text (no NUL bytes)
+    std::vector<unsigned char> data = {0xEF, 0xBB, 0xBF};
+    for (int i = 0; i < 100; ++i) data.push_back('a' + (i % 26));
+    std::ofstream(path, std::ios::binary).write(
+        reinterpret_cast<const char*>(data.data()), data.size());
+
+    CHECK(detect_text_file(path) == FileKind::Text);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("text_file_detector UTF-16LE BOM returns Text", "[tools][text_file_detector]") {
+    auto sd = make_temp_dir();
+    auto path = sd + "/utf16le.txt";
+    std::vector<unsigned char> data = {0xFF, 0xFE}; // UTF-16LE BOM
+    for (int i = 0; i < 50; ++i) {
+        data.push_back('a' + i); data.push_back(0); // UTF-16LE encoding
+    }
+    std::ofstream(path, std::ios::binary).write(
+        reinterpret_cast<const char*>(data.data()), data.size());
+
+    CHECK(detect_text_file(path) == FileKind::Text);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("text_file_detector UTF-16BE BOM returns Text", "[tools][text_file_detector]") {
+    auto sd = make_temp_dir();
+    auto path = sd + "/utf16be.txt";
+    std::vector<unsigned char> data = {0xFE, 0xFF}; // UTF-16BE BOM
+    for (int i = 0; i < 50; ++i) {
+        data.push_back(0); data.push_back('a' + i); // UTF-16BE encoding
+    }
+    std::ofstream(path, std::ios::binary).write(
+        reinterpret_cast<const char*>(data.data()), data.size());
+
+    CHECK(detect_text_file(path) == FileKind::Text);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("text_file_detector UTF-32LE BOM returns Text", "[tools][text_file_detector]") {
+    auto sd = make_temp_dir();
+    auto path = sd + "/utf32le.txt";
+    std::vector<unsigned char> data = {0xFF, 0xFE, 0x00, 0x00}; // UTF-32LE BOM
+    for (int i = 0; i < 25; ++i) {
+        data.push_back('a' + i); data.push_back(0); data.push_back(0); data.push_back(0);
+    }
+    std::ofstream(path, std::ios::binary).write(
+        reinterpret_cast<const char*>(data.data()), data.size());
+
+    CHECK(detect_text_file(path) == FileKind::Text);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("text_file_detector UTF-32BE BOM returns Text", "[tools][text_file_detector]") {
+    auto sd = make_temp_dir();
+    auto path = sd + "/utf32be.txt";
+    std::vector<unsigned char> data = {0x00, 0x00, 0xFE, 0xFF}; // UTF-32BE BOM
+    for (int i = 0; i < 25; ++i) {
+        data.push_back(0); data.push_back(0); data.push_back('a' + i); data.push_back(0);
+    }
+    std::ofstream(path, std::ios::binary).write(
+        reinterpret_cast<const char*>(data.data()), data.size());
+
+    CHECK(detect_text_file(path) == FileKind::Text);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("text_file_detector NUL at byte 8193 returns Text", "[tools][text_file_detector]") {
+    auto sd = make_temp_dir();
+    auto path = sd + "/boundary.txt";
+    std::vector<unsigned char> data(8192, 'a'); // fill first 8KB with no NUL
+    data.push_back(0); // NUL at byte 8193 — just past the scan boundary
+    std::ofstream(path, std::ios::binary).write(
+        reinterpret_cast<const char*>(data.data()), data.size());
+
+    CHECK(detect_text_file(path) == FileKind::Text);
+
+    fs::remove_all(sd);
+}
+
+TEST_CASE("text_file_detector unreadable file returns Text (graceful fallback)", "[tools][text_file_detector]") {
+    auto sd = make_temp_dir();
+    auto path = sd + "/noexist.txt";
+    // File does not exist — should gracefully return Text
+
+    CHECK(detect_text_file(path) == FileKind::Text);
+
+    fs::remove_all(sd);
+}

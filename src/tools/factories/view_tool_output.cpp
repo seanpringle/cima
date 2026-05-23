@@ -8,6 +8,8 @@ Tool make_view_tool_output_tool(
     Tool t;
     t.name = "view_tool_output";
     
+    // NOTE: view_tool_output does NOT append TOOL_LOG_NOTE — it is itself
+    // the viewer for tool-log output, so its results are never redirected.
     t.description =
         "View the output of a previously executed tool that produced a large result."
         " Use the `id` from the long-output reference message."

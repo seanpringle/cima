@@ -15,7 +15,8 @@ std::string spill_long_output(std::string output,
     for (char c : output)
         if (c == '\n') nl++;
 
-    if (nl > 100 || output.size() > 4096) {
+    auto char_count = output.size(); // capture before move below
+    if (nl > 100 || char_count > 4096) {
         size_t id = tool_logs->size() + 1;
         tool_logs->push_back(std::move(output));
         return "\u26a0 Tool log (" + std::to_string(nl) + " lines, " +
