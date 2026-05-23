@@ -488,10 +488,20 @@ Result<void> ChatSession::compact() {
     // ── Truncate older tool results to prevent unbounded prompt growth ──
     // Keep full results for recent exchanges; mark older ones as truncated.
     size_t max_tool_results = 10;
+
+    // First pass: count total tool calls so we know which are "recent"
+    size_t total_tool_calls = 0;
+    for (auto& msg : msgs) {
+        total_tool_calls += msg.tool_calls.size();
+    }
+
+    // Second pass: truncate tool results older than the last max_tool_results
     size_t result_count = 0;
+    size_t truncate_before = (total_tool_calls > max_tool_results)
+        ? (total_tool_calls - max_tool_results) : 0;
     for (auto& msg : msgs) {
         for (auto& tc : msg.tool_calls) {
-            if (result_count >= max_tool_results && tc.result.size() > 500) {
+            if (result_count < truncate_before && tc.result.size() > 500) {
                 tc.result = "(truncated — see earlier in conversation)";
             }
             result_count++;
@@ -522,7 +532,7 @@ Result<void> ChatSession::compact() {
             // Simple user/assistant message
             json m{{"role", msg.role}};
             if (msg.content.has_value() && !msg.content->empty()) {
-                m["content"] = msg.content.value_or("");
+                m["content"] = *msg.content;
             }
             if (msg.role == "assistant" && !msg.reasoning_content.empty()) {
                 m["reasoning_content"] = msg.reasoning_content;
@@ -531,8 +541,8 @@ Result<void> ChatSession::compact() {
         } else {
             // Assistant with tool calls — expand to proper API structure
             json assistant_msg{{"role", "assistant"}};
-            if (!msg.content.value_or("").empty()) {
-                assistant_msg["content"] = msg.content.value_or("");
+            if (msg.content.has_value() && !msg.content->empty()) {
+                assistant_msg["content"] = *msg.content;
             }
             if (!msg.reasoning_content.empty()) {
                 assistant_msg["reasoning_content"] = msg.reasoning_content;
@@ -692,7 +702,7 @@ void ChatSession::register_custom_command(const std::string& name,
     // Remove config version if exists (session masks config)
     tools_.remove(tool_name);
     // Register session version
-     tools_.add(
+    tools_.add(
         make_cmd_tool(config_, name, description, command, safe_dir_, timeout_sec, cancelled_, tool_logs_));
     // Default to enabled
     set_custom_tool_enabled(tool_name, true);

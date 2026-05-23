@@ -2426,7 +2426,7 @@ TEST_CASE("git_show invalid revision", "[tools][git_show]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
     reg.add_defaults(sd, Config{});
-      reg.add(make_git_show_tool(Config{}, std::make_shared<std::string>(sd), 10));
+    reg.add(make_git_show_tool(Config{}, std::make_shared<std::string>(sd), 10));
 
     auto result = reg.execute("git_show",
         R"({"revision": "nonexistent_branch_xyz"})");

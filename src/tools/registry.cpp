@@ -45,12 +45,12 @@ void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
         add(std::move(t));
     }
     {
-         auto t = make_web_search_tool(config, config.web_search_timeout, cancelled_);
+        auto t = make_web_search_tool(config, config.web_search_timeout, cancelled_);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
     {
-         auto t = make_web_fetch_tool(config, config.web_fetch_timeout, cancelled_, tool_logs);
+        auto t = make_web_fetch_tool(config, config.web_fetch_timeout, cancelled_, tool_logs);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
