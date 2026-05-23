@@ -114,7 +114,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
 
     json tools = reg.to_openai_tools();
     REQUIRE(tools.is_array());
-    REQUIRE(tools.size() == 17);
+    REQUIRE(tools.size() == 18);
 
     // Check structure of first tool
     CHECK(tools[0]["type"] == "function");
@@ -133,7 +133,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
                        "list_path", "read_file",
                        "grep_files", "write_file",
                        "edit_file",
-                       "run_bash", "web_search", "web_fetch",
+                       "run_bash", "run_bwrap", "web_search", "web_fetch",
                        "git_status", "git_diff", "git_log",
                        "git_add", "git_commit",
                        "git_restore", "git_show",

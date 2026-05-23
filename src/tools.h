@@ -191,6 +191,10 @@ Tool make_run_bash_tool(const Config& config, std::shared_ptr<std::string> safe_
     int timeout,
     CancellationToken cancelled = nullptr,
     std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
+Tool make_run_bwrap_tool(const Config& config, std::shared_ptr<std::string> safe_dir_ptr,
+    int timeout,
+    CancellationToken cancelled = nullptr,
+    std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
 Tool make_web_search_tool(const Config& config, int timeout, CancellationToken cancelled = nullptr);
 Tool make_web_fetch_tool(const Config& config, int timeout, CancellationToken cancelled = nullptr, std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
 Tool make_git_status_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout);

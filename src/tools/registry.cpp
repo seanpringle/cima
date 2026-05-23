@@ -94,6 +94,11 @@ void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
             add(std::move(t));
         }
         {
+            auto t = make_run_bwrap_tool(config, safe_dir_ptr, config.bash_timeout, cancelled_, tool_logs);
+            t.permission = ToolPermission::Write;
+            add(std::move(t));
+        }
+        {
             auto t = make_git_add_tool(safe_dir_ptr, config.git_add_timeout);
             t.permission = ToolPermission::Write;
             add(std::move(t));
