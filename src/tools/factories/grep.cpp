@@ -1,4 +1,5 @@
 #include "tools.h"
+#include "tools/text_file_detector.h"
 
 #include <filesystem>
 #include <fstream>
@@ -86,7 +87,9 @@ Tool make_grep_files_tool(std::shared_ptr<std::string> safe_dir_ptr,
 
         if (std::filesystem::is_regular_file(status)) {
             if (!repo || !is_gitignored(repo, *resolved, repo_workdir)) {
-                search_file(*resolved);
+                if (detect_text_file(*resolved) == FileKind::Text) {
+                    search_file(*resolved);
+                }
             }
         } else if (std::filesystem::is_directory(status)) {
             auto it = std::filesystem::recursive_directory_iterator(
@@ -109,7 +112,9 @@ Tool make_grep_files_tool(std::shared_ptr<std::string> safe_dir_ptr,
                     continue;
                 }
                 if (it->is_regular_file()) {
-                    search_file(it->path());
+                    if (detect_text_file(it->path()) == FileKind::Text) {
+                        search_file(it->path());
+                    }
                 }
             }
         } else {
