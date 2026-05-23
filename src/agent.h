@@ -55,16 +55,6 @@ struct SnippetEditState {
     std::string error;                  // validation error to display
 };
 
-/// Editing state for the session custom commands CRUD UI (Config tab).
-struct CmdEditState {
-    bool active = false;                // true when editing/add is open
-    std::string original_name;          // empty = new, non-empty = editing existing
-    std::array<char, 100> name_buf;     // name input buffer
-    std::array<char, 1000> desc_buf;    // description input buffer
-    std::array<char, 1000> command_buf; // command input buffer
-    std::string error;                  // validation error to display
-};
-
 /// Editing state for the session custom MCP servers CRUD UI.
 struct McpServerEditState {
     bool active = false;       // true when editing/add is open
@@ -82,13 +72,9 @@ struct McpServerEditState {
 
 struct PrimaryAgent : Agent {
     SnippetEditState snippet_edit; // session snippets CRUD editing state
-    CmdEditState cmd_edit;         // session custom commands CRUD editing state
 
     // MCP: per-server enabled state (persisted in assistant_data.json)
     std::map<std::string, bool> mcp_enabled;
-
-    // Custom cmd_tools: per-tool enabled state (persisted)
-    std::map<std::string, bool> cmd_tools_enabled;
 
     // Per-tool gate overrides (persisted): tool name -> enabled
     std::map<std::string, bool> tool_gates;

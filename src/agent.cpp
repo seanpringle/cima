@@ -98,7 +98,6 @@ PrimaryAgent::~PrimaryAgent() {
     session_data.chat_log = std::move(log_arr);
     session_data.plan = session->plan().to_json();
     session_data.mcp_enabled = mcp_enabled;
-    session_data.cmd_tools_enabled = cmd_tools_enabled;
     session_data.tool_gates = tool_gates;
     session_data.rw_subagent_tool_gates = rw_subagent_tool_gates;
     session_data.ro_subagent_tool_gates = ro_subagent_tool_gates;
@@ -221,35 +220,6 @@ void PrimaryAgent::restore_session_data() {
     // Override with persisted values.
     for (const auto& [name, enabled] : session_data.ro_subagent_tool_gates) {
         ro_subagent_tool_gates[name] = enabled;
-    }
-
-    // Restore cmd_tools_enabled, keeping entries for config commands AND
-    // session custom commands (silently dropping truly stale entries).
-    cmd_tools_enabled = session_data.cmd_tools_enabled;
-    for (auto it = cmd_tools_enabled.begin(); it != cmd_tools_enabled.end();) {
-        bool in_config = false;
-        for (const auto& ct : cfg.cmd_tools) {
-            if (ct.name == it->first) {
-                in_config = true;
-                break;
-            }
-        }
-        bool in_session = session_data.custom_commands.count(it->first) > 0;
-        if (!in_config && !in_session) {
-            it = cmd_tools_enabled.erase(it);
-        } else {
-            ++it;
-        }
-    }
-
-    // Register session custom commands (masks config commands with same name).
-    for (const auto& [name, cmd] : session_data.custom_commands) {
-        session->register_custom_command(name, cmd.description, cmd.command, cfg.bash_timeout);
-    }
-
-    // Apply enabled state to all cmd_tools (config + session).
-    for (const auto& [name, enabled] : cmd_tools_enabled) {
-        session->set_custom_tool_enabled("cmd_" + name, enabled);
     }
 
     // Restore custom MCP servers: start any that were previously enabled.

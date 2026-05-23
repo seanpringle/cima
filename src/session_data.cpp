@@ -26,13 +26,6 @@ json SessionData::to_json() const {
     }
     j["mcp_enabled"] = std::move(mcp);
 
-    // Serialise cmd_tools_enabled map
-    json cte = json::object();
-    for (const auto& [name, enabled] : cmd_tools_enabled) {
-        cte[name] = enabled;
-    }
-    j["cmd_tools_enabled"] = std::move(cte);
-
     // Serialise tool_gates map
     json tg = json::object();
     for (const auto& [name, enabled] : tool_gates) {
@@ -60,16 +53,6 @@ json SessionData::to_json() const {
         snip[name] = content;
     }
     j["snippets"] = std::move(snip);
-
-    // Serialise custom_commands map
-    json cc = json::object();
-    for (const auto& [name, cmd] : custom_commands) {
-        json entry;
-        entry["description"] = cmd.description;
-        entry["command"] = cmd.command;
-        cc[name] = std::move(entry);
-    }
-    j["custom_commands"] = std::move(cc);
 
     // Serialise custom_mcp_servers vector
     json mcp_arr = json::array();
@@ -122,16 +105,6 @@ void SessionData::from_json(const json& j) {
         }
     }
 
-    // Deserialise cmd_tools_enabled map
-    cmd_tools_enabled.clear();
-    if (j.contains("cmd_tools_enabled") && j["cmd_tools_enabled"].is_object()) {
-        for (auto it = j["cmd_tools_enabled"].begin(); it != j["cmd_tools_enabled"].end(); ++it) {
-            if (it.value().is_boolean()) {
-                cmd_tools_enabled[it.key()] = it.value().get<bool>();
-            }
-        }
-    }
-
     // Deserialise tool_gates map
     tool_gates.clear();
     if (j.contains("tool_gates") && j["tool_gates"].is_object()) {
@@ -170,22 +143,6 @@ void SessionData::from_json(const json& j) {
         for (auto it = j["snippets"].begin(); it != j["snippets"].end(); ++it) {
             if (it.value().is_string()) {
                 snippets[it.key()] = it.value().get<std::string>();
-            }
-        }
-    }
-
-    // Deserialise custom_commands map
-    custom_commands.clear();
-    if (j.contains("custom_commands") && j["custom_commands"].is_object()) {
-        for (auto it = j["custom_commands"].begin(); it != j["custom_commands"].end(); ++it) {
-            if (it.value().is_object()) {
-                CmdToolConfig cmd;
-                cmd.name = it.key();
-                cmd.description = it.value().value("description", std::string());
-                cmd.command = it.value().value("command", std::string());
-                if (!cmd.name.empty() && !cmd.command.empty()) {
-                    custom_commands[it.key()] = std::move(cmd);
-                }
             }
         }
     }

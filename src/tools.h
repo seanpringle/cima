@@ -191,9 +191,6 @@ Tool make_web_fetch_tool(const Config& config, int timeout, CancellationToken ca
 
 class ChatSession; // forward decl for SubagentLookup
 
-// ── Custom command tool ──
-Tool make_cmd_tool(const Config& config, const std::string& name, const std::string& description, const std::string& command, std::shared_ptr<std::string> safe_dir_ptr, int timeout, CancellationToken cancelled = nullptr, std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
-
 // ── View tool output ──
 Tool make_view_tool_output_tool(std::shared_ptr<std::vector<std::string>> tool_logs);
 

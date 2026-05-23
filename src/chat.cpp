@@ -35,11 +35,6 @@ ChatSession::ChatSession(const Config& config,
     tools_.add(make_write_plan_tool(::plan));
     tools_.add(make_read_plan_tool(::plan));
 
-    // Custom cmd_tools — registered from config.
-    for (const auto& ct : config.cmd_tools) {
-        tools_.add(make_cmd_tool(config, ct.name, ct.description, ct.command, safe_dir_, config.bash_timeout, cancelled_, tool_logs_));
-    }
-
     // view_tool_output — always available to all agents
     tools_.add(make_view_tool_output_tool(tool_logs_));
 }
@@ -145,12 +140,6 @@ std::string ChatSession::build_effective_prompt() const {
 }
 
 bool ChatSession::is_tool_allowed(const std::string& name) const {
-    // Custom cmd_* tools: each gated individually by gates_->custom_tools.
-    if (name.rfind("cmd_", 0) == 0) {
-        auto it = gates_->custom_tools.find(name);
-        if (it == gates_->custom_tools.end() || !it->second)
-            return false;
-    }
     // Generic per-tool gate from tool_gates map.
     {
         auto it = gates_->tool_gates.find(name);
@@ -666,32 +655,4 @@ void ChatSession::clear() {
     last_usage_ = Usage{}; // reset so context pct falls back to estimate(0)
 }
 
-// ===================================================================
-// Session custom command registration
-// ===================================================================
 
-void ChatSession::register_custom_command(const std::string& name,
-    const std::string& description,
-    const std::string& command,
-    int timeout_sec) {
-    std::string tool_name = "cmd_" + name;
-    // Remove config version if exists (session masks config)
-    tools_.remove(tool_name);
-    // Register session version
-    tools_.add(
-        make_cmd_tool(config_, name, description, command, safe_dir_, timeout_sec, cancelled_, tool_logs_));
-    // Default to enabled
-    set_custom_tool_enabled(tool_name, true);
-}
-
-void ChatSession::unregister_custom_command(const std::string& name) {
-    std::string tool_name = "cmd_" + name;
-    tools_.remove(tool_name);
-    // Re-register config version if it exists
-    for (const auto& ct : config_.cmd_tools) {
-        if (ct.name == name) {
-            tools_.add(make_cmd_tool(config_, ct.name, ct.description, ct.command, safe_dir_, config_.bash_timeout, cancelled_, tool_logs_));
-            break;
-        }
-    }
-}

@@ -20,8 +20,6 @@ using json = nlohmann::json;
 /// Read-write subagents share the primary agent's GatingState via shared_ptr,
 /// so gate changes propagate automatically.
 struct GatingState {
-    std::map<std::string, bool> custom_tools; // cmd_<name> -> enabled
-
     // Per-tool gates: maps tool name -> enabled.
     // A tool with no entry is unconditionally allowed (backward compatible).
     // A tool with an entry set to false is denied in filter_allowed_tools().
@@ -109,18 +107,6 @@ class ChatSession {
     /// Access the shared gating state (for propagating gates to subagents).
     std::shared_ptr<GatingState> gates() const { return gates_; }
 
-    /// Enable/disable a custom cmd_* tool by its full name (e.g. "cmd_lint").
-    void set_custom_tool_enabled(const std::string& name, bool v) {
-        if (v)
-            gates_->custom_tools[name] = true;
-        else
-            gates_->custom_tools.erase(name);
-    }
-    bool custom_tool_enabled(const std::string& name) const {
-        auto it = gates_->custom_tools.find(name);
-        return it != gates_->custom_tools.end() && it->second;
-    }
-
     /// Enable/disable any tool by name via tool_gates.
     /// When disabled, an entry tool_gates[name]=false is created.
     /// When enabled, the entry is removed (restoring default-allow).
@@ -172,18 +158,6 @@ class ChatSession {
         PrimaryAgent& primary, const std::vector<SubagentConfig>& subagent_configs = {}) {
         tools_.add(make_call_subagent_tool(primary, subagent_configs, cfg.subagent_timeout));
     }
-
-    /// Register a session custom command tool. If a tool with the same
-    /// cmd_<name> already exists (from config), it is removed first
-    /// (session masks config).
-    void register_custom_command(const std::string& name,
-        const std::string& description,
-        const std::string& command,
-        int timeout_sec);
-
-    /// Unregister a session custom command tool by name. If a config version
-    /// exists with the same name, it is re-registered (config reappears).
-    void unregister_custom_command(const std::string& name);
 
     /// Access the tool registry (for testing and GUI).
     ToolRegistry& tools_for_testing() { return tools_; }
