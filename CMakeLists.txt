@@ -119,7 +119,6 @@ add_library(cima_core
     src/tools/factories/filesystem.cpp
     src/tools/factories/file_io.cpp
     src/tools/factories/grep.cpp
-    src/tools/factories/bash.cpp
     src/tools/factories/bwrap.cpp
     src/tools/factories/cmake.cpp
     src/tools/factories/cmd_tool.cpp

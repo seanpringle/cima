@@ -81,7 +81,6 @@ struct McpServerEditState {
 };
 
 struct PrimaryAgent : Agent {
-    bool bash_enabled = false;     // run_bash tool enabled for this tab
     bool cmake_enabled = false;    // cmake tools enabled for this tab
     SnippetEditState snippet_edit; // session snippets CRUD editing state
     CmdEditState cmd_edit;         // session custom commands CRUD editing state

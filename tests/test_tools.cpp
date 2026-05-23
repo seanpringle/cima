@@ -114,7 +114,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
 
     json tools = reg.to_openai_tools();
     REQUIRE(tools.is_array());
-    REQUIRE(tools.size() == 18);
+    REQUIRE(tools.size() == 17);
 
     // Check structure of first tool
     CHECK(tools[0]["type"] == "function");
@@ -133,7 +133,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
                        "list_path", "read_file",
                        "grep_files", "write_file",
                        "edit_file",
-                       "run_bash", "run_bwrap", "web_search", "web_fetch",
+                       "run_bwrap", "web_search", "web_fetch",
                        "git_status", "git_diff", "git_log",
                        "git_add", "git_commit",
                        "git_restore", "git_show",
@@ -158,7 +158,7 @@ TEST_CASE("ToolRegistry without write tools (Planner-style)", "[tools][registry]
     }
     CHECK(names.find("write_file") == names.end());
     CHECK(names.find("edit_file") == names.end());
-    CHECK(names.find("run_bash") == names.end());
+    CHECK(names.find("run_bwrap") == names.end());
     CHECK(names.find("git_add") == names.end());
     CHECK(names.find("git_commit") == names.end());
     CHECK(names.find("delete_path") == names.end());
@@ -330,17 +330,17 @@ static std::string make_git_repo() {
     ToolRegistry reg;
     reg.add_defaults(sd, Config{});
 
-    auto r = reg.execute("run_bash", R"({"command": "git init"})");
+    auto r = reg.execute("run_bwrap", R"({"command": "git init"})");
     REQUIRE(r);
 
-    reg.execute("run_bash",
+    reg.execute("run_bwrap",
         R"({"command": "git config user.email test@test.com"})");
-    reg.execute("run_bash",
+    reg.execute("run_bwrap",
         R"({"command": "git config user.name Test"})");
 
     std::ofstream(sd + "/README.md") << "# Test\n";
-    reg.execute("run_bash", R"({"command": "git add -A"})");
-    reg.execute("run_bash", R"({"command": "git commit -m 'initial commit'"})");
+    reg.execute("run_bwrap", R"({"command": "git add -A"})");
+    reg.execute("run_bwrap", R"({"command": "git commit -m 'initial commit'"})");
     return sd;
 }
 
@@ -378,7 +378,7 @@ TEST_CASE("git_status staged add", "[tools][git_status]") {
 
     // Create a new file and stage it
     std::ofstream(sd + "/newfile.txt") << "new\n";
-    reg.execute("run_bash", R"({"command": "git add newfile.txt"})");
+    reg.execute("run_bwrap", R"({"command": "git add newfile.txt"})");
 
     auto result = reg.execute("git_status", "{}");
     REQUIRE(result);
@@ -392,7 +392,7 @@ TEST_CASE("git_status staged delete", "[tools][git_status]") {
     ToolRegistry reg;
     reg.add_defaults(sd, Config{});
 
-    reg.execute("run_bash", R"({"command": "git rm README.md"})");
+    reg.execute("run_bwrap", R"({"command": "git rm README.md"})");
 
     auto result = reg.execute("git_status", "{}");
     REQUIRE(result);
@@ -422,7 +422,7 @@ TEST_CASE("git_status mixed staged and unstaged", "[tools][git_status]") {
 
     // Stage a modification, then modify again without staging
     std::ofstream(sd + "/README.md") << "# Modified\n";
-    reg.execute("run_bash", R"({"command": "git add README.md"})");
+    reg.execute("run_bwrap", R"({"command": "git add README.md"})");
     std::ofstream(sd + "/README.md") << "# Modified again\n";
 
     auto result = reg.execute("git_status", "{}");
@@ -490,7 +490,7 @@ TEST_CASE("git_diff staged changes", "[tools][git_diff]") {
 
     // Modify and stage
     std::ofstream(sd + "/README.md") << "# Staged change\n";
-    reg.execute("run_bash", R"({"command": "git add README.md"})");
+    reg.execute("run_bwrap", R"({"command": "git add README.md"})");
 
     auto result = reg.execute("git_diff", R"({"staged": true})");
     REQUIRE(result);
@@ -533,7 +533,7 @@ TEST_CASE("git_diff with path filter", "[tools][git_diff]") {
 
     // Create a second tracked file
     std::ofstream(sd + "/other.txt") << "original\n";
-    reg.execute("run_bash", R"({"command": "git add other.txt && git commit -m 'add other'"})");
+    reg.execute("run_bwrap", R"({"command": "git add other.txt && git commit -m 'add other'"})");
 
     // Modify both tracked files
     std::ofstream(sd + "/README.md") << "# README changed\n";
@@ -603,7 +603,7 @@ TEST_CASE("git_diff output truncation", "[tools][git_diff]") {
 
     // Create a tracked file with a single line
     std::ofstream(sd + "/bigfile.txt") << "original line\n";
-    reg.execute("run_bash", R"({"command": "git add bigfile.txt && git commit -m 'add bigfile'"})");
+    reg.execute("run_bwrap", R"({"command": "git add bigfile.txt && git commit -m 'add bigfile'"})");
 
     // Now overwrite with many lines (each line ~15 chars, total > 500 lines)
     std::ofstream ofs2(sd + "/bigfile.txt");
@@ -631,9 +631,9 @@ TEST_CASE("git_log basic", "[tools][git_log]") {
 
     // Add a couple more commits
     std::ofstream(sd + "/a.txt") << "hello\n";
-    reg.execute("run_bash", R"({"command": "git add a.txt && git commit -m 'add a.txt'"})");
+    reg.execute("run_bwrap", R"({"command": "git add a.txt && git commit -m 'add a.txt'"})");
     std::ofstream(sd + "/b.txt") << "world\n";
-    reg.execute("run_bash", R"({"command": "git add b.txt && git commit -m 'add b.txt'"})");
+    reg.execute("run_bwrap", R"({"command": "git add b.txt && git commit -m 'add b.txt'"})");
 
     auto result = reg.execute("git_log", "{}");
     REQUIRE(result);
@@ -656,9 +656,9 @@ TEST_CASE("git_log max_count", "[tools][git_log]") {
 
     // Add 2 more commits
     std::ofstream(sd + "/a.txt") << "hello\n";
-    reg.execute("run_bash", R"({"command": "git add a.txt && git commit -m 'add a.txt'"})");
+    reg.execute("run_bwrap", R"({"command": "git add a.txt && git commit -m 'add a.txt'"})");
     std::ofstream(sd + "/b.txt") << "world\n";
-    reg.execute("run_bash", R"({"command": "git add b.txt && git commit -m 'add b.txt'"})");
+    reg.execute("run_bwrap", R"({"command": "git add b.txt && git commit -m 'add b.txt'"})");
 
     // Request only 1 commit
     auto result = reg.execute("git_log", R"({"max_count": 1})");
@@ -677,7 +677,7 @@ TEST_CASE("git_log format oneline", "[tools][git_log]") {
     reg.add_defaults(sd, Config{});
 
     std::ofstream(sd + "/a.txt") << "hello\n";
-    reg.execute("run_bash", R"({"command": "git add a.txt && git commit -m 'add a.txt'"})");
+    reg.execute("run_bwrap", R"({"command": "git add a.txt && git commit -m 'add a.txt'"})");
 
     auto result = reg.execute("git_log", R"({"format": "oneline"})");
     REQUIRE(result);
@@ -698,7 +698,7 @@ TEST_CASE("git_log format full", "[tools][git_log]") {
     reg.add_defaults(sd, Config{});
 
     // Commit with a multi-line message (-m for subject, -m for body)
-    auto r = reg.execute("run_bash",
+    auto r = reg.execute("run_bwrap",
         R"({"command": "echo hello > new.txt && git add new.txt && git commit -m 'add new.txt' -m 'This is the second paragraph.'"})");
     REQUIRE(r);
 
@@ -721,7 +721,7 @@ TEST_CASE("git_log max_count cap", "[tools][git_log]") {
     // Add 55 commits (more than the max of 50)
     for (int i = 0; i < 55; i++) {
         std::ofstream(sd + "/f" + std::to_string(i) + ".txt") << std::to_string(i) << "\n";
-        auto r = reg.execute("run_bash",
+        auto r = reg.execute("run_bwrap",
             R"({"command": "git add f)" + std::to_string(i) +
                 R"(.txt && git commit -m 'commit )" + std::to_string(i) + R"('"})");
         REQUIRE(r);
@@ -751,7 +751,7 @@ TEST_CASE("git_log empty repo", "[tools][git_log]") {
     reg.add_defaults(sd, Config{});
 
     // Init but no commits
-    reg.execute("run_bash", R"({"command": "git init"})");
+    reg.execute("run_bwrap", R"({"command": "git init"})");
 
     auto result = reg.execute("git_log", "{}");
     CHECK_FALSE(result);
@@ -807,9 +807,9 @@ TEST_CASE("git_log custom branch", "[tools][git_log]") {
 
     // Add 2 commits
     std::ofstream(sd + "/a.txt") << "hello\n";
-    reg.execute("run_bash", R"({"command": "git add a.txt && git commit -m 'add a.txt'"})");
+    reg.execute("run_bwrap", R"({"command": "git add a.txt && git commit -m 'add a.txt'"})");
     std::ofstream(sd + "/b.txt") << "world\n";
-    reg.execute("run_bash", R"({"command": "git add b.txt && git commit -m 'add b.txt'"})");
+    reg.execute("run_bwrap", R"({"command": "git add b.txt && git commit -m 'add b.txt'"})");
 
     // Start from HEAD~1 (skip the latest commit)
     auto result = reg.execute("git_log", R"({"branch": "HEAD~1"})");
@@ -1325,15 +1325,15 @@ TEST_CASE("grep_files ignores gitignored files", "[tools][grep_files]") {
     reg.add_defaults(sd, Config{});
 
     // Create a git repo and an initial commit (required for gitignore to work)
-    auto r = reg.execute("run_bash", R"({"command": "git init"})");
+    auto r = reg.execute("run_bwrap", R"({"command": "git init"})");
     REQUIRE(r);
-    reg.execute("run_bash",
+    reg.execute("run_bwrap",
         R"({"command": "git config user.email test@test.com"})");
-    reg.execute("run_bash",
+    reg.execute("run_bwrap",
         R"({"command": "git config user.name Test"})");
     std::ofstream(sd + "/README.md") << "# Test\n";
-    reg.execute("run_bash", R"({"command": "git add -A"})");
-    reg.execute("run_bash", R"({"command": "git commit -m 'initial commit'"})");
+    reg.execute("run_bwrap", R"({"command": "git add -A"})");
+    reg.execute("run_bwrap", R"({"command": "git commit -m 'initial commit'"})");
 
     // Create .gitignore that ignores *.log and build/
     std::ofstream(sd + "/.gitignore") << "*.log\nbuild/\n";
@@ -1373,113 +1373,6 @@ TEST_CASE("grep_files without gitignore still works", "[tools][grep_files]") {
     fs::remove_all(sd);
 }
 
-// ===================================================================
-// run_bash
-// ===================================================================
-
-TEST_CASE("run_bash basic command", "[tools][run_bash]") {
-    auto sd = make_temp_dir();
-    ToolRegistry reg;
-    reg.add_defaults(sd, Config{});
-
-    std::ofstream(sd + "/hello.txt") << "world\n";
-
-    auto result = reg.execute("run_bash", R"({"command": "cat hello.txt"})");
-    REQUIRE(result);
-    CHECK(result->find("world") != std::string::npos);
-
-    fs::remove_all(sd);
-}
-
-TEST_CASE("run_bash command failure returns stderr", "[tools][run_bash]") {
-    auto sd = make_temp_dir();
-    ToolRegistry reg;
-    reg.add_defaults(sd, Config{});
-
-    auto result =
-        reg.execute("run_bash", R"({"command": "ls nonexistent_file"})");
-    REQUIRE(result);
-    // Should contain error, not just empty
-    CHECK_FALSE(result->empty());
-
-    fs::remove_all(sd);
-}
-
-TEST_CASE("run_bash timeout kills process", "[tools][run_bash]") {
-    auto sd = make_temp_dir();
-    Config cfg;
-    cfg.bash_timeout = 2; // 2 second timeout
-    ToolRegistry reg;
-    reg.add_defaults(sd, cfg);
-
-    auto start = std::chrono::steady_clock::now();
-    auto result = reg.execute("run_bash",
-                              R"({"command": "sleep 10 && echo done"})");
-    auto elapsed = std::chrono::steady_clock::now() - start;
-
-    REQUIRE(result);
-    // Should NOT take 10 seconds — the 2s timeout should kill the process
-    CHECK(elapsed < std::chrono::seconds(5));
-    // Partial output may be empty (sleep produces no output before SIGKILL),
-    // but the tool should append "(timed out)" to indicate the failure.
-    CHECK(result->find("timed out") != std::string::npos);
-
-    fs::remove_all(sd);
-}
-
-TEST_CASE("run_bash no line truncation", "[tools][run_bash]") {
-    auto sd = make_temp_dir();
-    ToolRegistry reg;
-    reg.add_defaults(sd, Config{});
-
-    // Generate 600 lines (would have been truncated to 500 before)
-    auto result = reg.execute(
-        "run_bash", R"({"command": "for i in $(seq 1 600); do echo line $i; done"})");
-    REQUIRE(result);
-
-    // Count lines in output — all 600 should be present (truncation removed)
-    int nl = 0;
-    for (char c : *result)
-        if (c == '\n')
-            nl++;
-    CHECK(nl == 600);
-
-    fs::remove_all(sd);
-}
-
-TEST_CASE("run_bash no size truncation", "[tools][run_bash]") {
-    auto sd = make_temp_dir();
-    ToolRegistry reg;
-    reg.add_defaults(sd, Config{});
-
-    // Generate output larger than 16000 chars
-    auto result = reg.execute(
-        "run_bash",
-        R"({"command": "python3 -c 'print(\"x\" * 20000)'"})");
-    REQUIRE(result);
-    // Should contain at least 20000 chars (truncation removed)
-    CHECK(result->size() >= 20000);
-
-    fs::remove_all(sd);
-}
-
-TEST_CASE("run_bash path traversal rejected", "[tools][run_bash]") {
-    auto sd = make_temp_dir();
-    ToolRegistry reg;
-    reg.add_defaults(sd, Config{});
-
-    auto result = reg.execute(
-        "run_bash", R"({"command": "cat ../../etc/passwd"})");
-    // run_bash does not sandbox the command itself; the shell runs in safe_dir
-    // So cat ../../etc/passwd will fail because we're already in /tmp/... and
-    // going up goes to /tmp/etc which doesn't exist or isn't accessible
-    // Actually it might succeed if /tmp/etc/passwd exists, but it won't.
-    // We just check that it runs (returns success) - the sandbox is about the
-    // cwd, not about restricting commands.
-    REQUIRE(result);
-
-    fs::remove_all(sd);
-}
 
 // ===================================================================
 // Mock HTTP server for web_search tests
@@ -2189,25 +2082,6 @@ TEST_CASE("list_path interrupted by cancelled token", "[tools][cancellation]") {
     CHECK(result->find("(interrupted)") != std::string::npos);
 
     fs::remove_all(sd);
-}
-
-TEST_CASE("run_bash chdir failure is caught", "[tools][run_bash][sandbox]") {
-    // Use a non-existent directory as safe_dir — chdir in the child will fail.
-    ToolRegistry reg;
-    reg.add_defaults("/nonexistent_safe_dir_12345", Config{});
-
-    // If chdir fails, the child should _exit(1) before executing the command.
-    // The error message "error: chdir() to safe directory failed\n" will be
-    // written to the pipe (which is connected to stdout/stderr) before _exit(1).
-    // The parent reads the pipe and returns the captured output (it does not
-    // check the child's exit status), so the result will contain the error msg.
-    auto result = reg.execute("run_bash", R"({"command": "echo should_not_run"})");
-    // The result should still be "successful" (the tool itself didn't throw),
-    // but the output should contain the chdir error message.
-    CHECK(result);
-    if (result) {
-        CHECK(result->find("chdir()") != std::string::npos);
-    }
 }
 
 // ===================================================================

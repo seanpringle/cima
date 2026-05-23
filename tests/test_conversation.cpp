@@ -115,7 +115,7 @@ TEST_CASE("Conversation empty tool result is still emitted", "[conversation]") {
 
     ToolCall tc;
     tc.id = "call_empty";
-    tc.name = "run_bash";
+    tc.name = "run_bwrap";
     tc.arguments = R"({"command": "true"})";
     auto mid = conv.add_assistant("", "", {tc});
     conv.add_tool(mid, "call_empty", "");  // empty result
@@ -138,7 +138,7 @@ TEST_CASE("Conversation mixed empty and non-empty tool results", "[conversation]
 
     ToolCall tc1;
     tc1.id = "empty_call";
-    tc1.name = "run_bash";
+    tc1.name = "run_bwrap";
     tc1.arguments = R"({"command": "true"})";
     ToolCall tc2;
     tc2.id = "full_call";

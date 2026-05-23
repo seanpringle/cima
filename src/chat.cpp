@@ -81,9 +81,7 @@ std::unique_ptr<ChatSession> ChatSession::create_subagent(const Config& config,
     session->system_prompt_ = std::move(sp);
     session->is_read_only_ = read_only;
 
-    // Remove bash and write_plan tools (read_plan is kept for subagents).
-    // Lua tool is never registered for subagents — it's owned by PrimaryAgent.
-    session->tools_.remove("run_bash");
+    // Remove write_plan tool (read_plan is kept for subagents).
     session->tools_.remove("write_plan");
 
     if (read_only) {
@@ -188,9 +186,6 @@ std::string ChatSession::build_effective_prompt() const {
 bool ChatSession::is_tool_allowed(const std::string& name) const {
     // CMake tools: require cmake_enabled AND CMakeLists.txt
     if (cmake_tool_names.count(name) && (!gates_->cmake_enabled || !has_cmake_project()))
-        return false;
-    // Bash: gated by bash_enabled
-    if (name == "run_bash" && !gates_->bash_enabled)
         return false;
     // Custom cmd_* tools: each gated individually by gates_->custom_tools.
     if (name.rfind("cmd_", 0) == 0) {

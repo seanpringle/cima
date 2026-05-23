@@ -20,7 +20,6 @@ using json = nlohmann::json;
 /// Read-write subagents share the primary agent's GatingState via shared_ptr,
 /// so gate changes propagate automatically.
 struct GatingState {
-    bool bash_enabled = false;
     bool cmake_enabled = false;
     std::map<std::string, bool> custom_tools; // cmd_<name> -> enabled
 
@@ -107,10 +106,6 @@ class ChatSession {
 
     /// True when a CMakeLists.txt exists in the workspace directory.
     bool has_cmake_project() const;
-
-    /// Enable/disable the run_bash tool for this session.
-    void set_bash_enabled(bool v) { gates_->bash_enabled = v; }
-    bool bash_enabled() const { return gates_->bash_enabled; }
 
     /// Enable/disable the cmake tools for this session.
     void set_cmake_enabled(bool v) { gates_->cmake_enabled = v; }

@@ -89,11 +89,6 @@ void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
         }
 
         {
-            auto t = make_run_bash_tool(config, safe_dir_ptr, config.bash_timeout, cancelled_, tool_logs);
-            t.permission = ToolPermission::Write;
-            add(std::move(t));
-        }
-        {
             auto t = make_run_bwrap_tool(config, safe_dir_ptr, config.bash_timeout, cancelled_, tool_logs);
             t.permission = ToolPermission::Write;
             add(std::move(t));

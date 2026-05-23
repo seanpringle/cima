@@ -239,7 +239,7 @@ void render_config_tab(PrimaryAgent& tab) {
                         if (name == "cmake_configure" || name == "cmake_build" ||
                             name == "cmake_ctest")
                             return "Cmake";
-                        if (name == "run_bash" || name == "run_bwrap" || name == "call_subagent")
+                        if (name == "run_bwrap" || name == "call_subagent")
                             return "Execution";
                         return "Other";
                     };
@@ -318,10 +318,7 @@ void render_config_tab(PrimaryAgent& tab) {
                             if (Checkbox("", &enabled)) {
                                 tab.tool_gates[name] = enabled;
                                 session.set_tool_enabled(name, enabled);
-                                if (name == "run_bash") {
-                                    tab.bash_enabled = enabled;
-                                    session.set_bash_enabled(enabled);
-                                } else if (name == "cmake_configure" || name == "cmake_build" ||
+                                if (name == "cmake_configure" || name == "cmake_build" ||
                                     name == "cmake_ctest") {
                                     tab.cmake_enabled = enabled;
                                     session.set_cmake_enabled(enabled);
