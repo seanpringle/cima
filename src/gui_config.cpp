@@ -12,8 +12,42 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <filesystem>
 #include <map>
 #include <string>
+
+// ---------------------------------------------------------------------------
+// Check whether a binary is available on the system PATH.
+// ---------------------------------------------------------------------------
+static bool binary_available(const std::string& name) {
+    // Quick check common locations first.
+    static const std::vector<std::string> prefixes = {
+        "/usr/bin/", "/usr/sbin/", "/usr/local/bin/", "/bin/", "/sbin/"
+    };
+    for (const auto& prefix : prefixes) {
+        if (std::filesystem::exists(prefix + name))
+            return true;
+    }
+    // Fall back to searching PATH via access().
+    const char* path_env = std::getenv("PATH");
+    if (!path_env)
+        return false;
+    std::string path(path_env);
+    size_t start = 0;
+    while (true) {
+        auto colon = path.find(':', start);
+        std::string dir = (colon == std::string::npos) ? path.substr(start) : path.substr(start, colon - start);
+        if (!dir.empty()) {
+            std::string full = dir + "/" + name;
+            if (std::filesystem::exists(full))
+                return true;
+        }
+        if (colon == std::string::npos)
+            break;
+        start = colon + 1;
+    }
+    return false;
+}
 
 using namespace ImGui;
 using std::string;
@@ -205,7 +239,7 @@ void render_config_tab(PrimaryAgent& tab) {
                         if (name == "cmake_configure" || name == "cmake_build" ||
                             name == "cmake_ctest")
                             return "Cmake";
-                        if (name == "run_bash" || name == "call_subagent")
+                        if (name == "run_bash" || name == "run_bwrap" || name == "call_subagent")
                             return "Execution";
                         return "Other";
                     };
@@ -264,6 +298,12 @@ void render_config_tab(PrimaryAgent& tab) {
                         // Tool name
                         TableNextColumn();
                         TextUnformatted(name.c_str());
+                        if (name == "run_bwrap" && !binary_available("bwrap")) {
+                            SameLine();
+                            PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
+                            TextUnformatted("(not installed)");
+                            PopStyleColor();
+                        }
                         if (IsItemHovered()) {
                             BeginTooltip();
                             TextUnformatted(name.c_str());
