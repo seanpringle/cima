@@ -429,7 +429,6 @@ std::optional<Result<void>> Agent::poll_compact() {
     if (chat_state->compact_running && chat_state->compact_future.valid() &&
         chat_state->compact_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         chat_state->compact_running = false;
-        ui.entries.clear();
         try {
             auto result = chat_state->compact_future.get();
             if (result) {
