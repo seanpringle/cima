@@ -35,6 +35,11 @@ void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
         add(std::move(t));
     }
     {
+        auto t = make_run_bwrap_tool(config, safe_dir_ptr, config.bash_timeout, cancelled_, tool_logs, /*read_only=*/true);
+        t.permission = ToolPermission::ReadOnly;
+        add(std::move(t));
+    }
+    {
         auto t = make_read_file_tool(safe_dir_ptr, read_only_paths, tool_logs);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));

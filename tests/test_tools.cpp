@@ -114,7 +114,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
 
     json tools = reg.to_openai_tools();
     REQUIRE(tools.is_array());
-    REQUIRE(tools.size() == 17);
+    REQUIRE(tools.size() == 18);
 
     // Check structure of first tool
     CHECK(tools[0]["type"] == "function");
@@ -133,7 +133,7 @@ TEST_CASE("ToolRegistry to_openai_tools format", "[tools][registry]") {
                        "list_path", "read_file",
                        "grep_files", "write_file",
                        "edit_file",
-                       "run_bwrap", "web_search", "web_fetch",
+                       "run_bwrap", "run_bwrap_ro", "web_search", "web_fetch",
                        "git_status", "git_diff", "git_log",
                        "git_add", "git_commit",
                        "git_restore", "git_show",
@@ -149,7 +149,10 @@ TEST_CASE("ToolRegistry without write tools (Planner-style)", "[tools][registry]
     REQUIRE(tools.is_array());
     // 9 read-only tools: list_path, read_file, grep_files,
     // web_search, web_fetch, git_status, git_diff, git_log, git_show
-    REQUIRE(tools.size() == 9);
+    // 10 read-only tools: list_path, read_file, grep_files,
+    // web_search, web_fetch, git_status, git_diff, git_log, git_show,
+    // run_bwrap_ro
+    REQUIRE(tools.size() == 10);
 
     // No write tools should be present
     std::set<std::string> names;
@@ -158,7 +161,7 @@ TEST_CASE("ToolRegistry without write tools (Planner-style)", "[tools][registry]
     }
     CHECK(names.find("write_file") == names.end());
     CHECK(names.find("edit_file") == names.end());
-    CHECK(names.find("run_bwrap") == names.end());
+    CHECK(names.find("run_bwrap") == names.end()); // write variant
     CHECK(names.find("git_add") == names.end());
     CHECK(names.find("git_commit") == names.end());
     CHECK(names.find("delete_path") == names.end());
@@ -173,6 +176,7 @@ TEST_CASE("ToolRegistry without write tools (Planner-style)", "[tools][registry]
     CHECK(names.find("git_status") != names.end());
     CHECK(names.find("git_diff") != names.end());
     CHECK(names.find("git_log") != names.end());
+    CHECK(names.find("run_bwrap_ro") != names.end());
 }
 
 // ===================================================================

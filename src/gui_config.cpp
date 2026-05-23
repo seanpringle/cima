@@ -239,7 +239,7 @@ void render_config_tab(PrimaryAgent& tab) {
                         if (name == "cmake_configure" || name == "cmake_build" ||
                             name == "cmake_ctest")
                             return "Cmake";
-                        if (name == "run_bwrap" || name == "call_subagent")
+                        if (name == "run_bwrap" || name == "run_bwrap_ro" || name == "call_subagent")
                             return "Execution";
                         return "Other";
                     };
