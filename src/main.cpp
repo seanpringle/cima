@@ -1,10 +1,12 @@
 #include "config.h"
 #include "gui_app.h"
+#include "plan.h"
 
 #include <curl/curl.h>
 #include <cstdlib>
 #include <ctime>
 #include <iostream>
+#include <memory>
 #include <signal.h>
 #include <string>
 
@@ -34,9 +36,6 @@ int main(int argc, char* argv[]) {
 
     std::string session_name;
 
-    // Load config from file first
-    cfg = Config::load();
-
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
         if (arg == "--help" || arg == "-h") {
@@ -61,9 +60,12 @@ int main(int argc, char* argv[]) {
         session_name = "default";
     }
 
+    auto cfg = std::make_shared<Config>(Config::load());
+    auto plan = std::make_shared<PlanBoard>();
+
     int exit_code = 0;
     try {
-        exit_code = gui_main(session_name);
+        exit_code = gui_main(session_name, std::move(cfg), std::move(plan));
     } catch (const std::exception& e) {
         std::cerr << "fatal: " << e.what() << std::endl;
         exit_code = 1;

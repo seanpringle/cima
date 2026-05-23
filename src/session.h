@@ -1,6 +1,7 @@
 #pragma once
 
 #include "session_data.h"
+#include "plan.h"
 
 #include <filesystem>
 #include <string>
@@ -17,7 +18,7 @@ class Session {
   public:
     /// Construct/resume or create a new session.
     /// @param name   User-chosen session name (used as <session>.json filename)
-    Session(const std::string& name);
+    Session(const std::string& name, ConfigPtr cfg, PlanBoardPtr plan);
     ~Session();
 
     Session(const Session&) = delete;
@@ -44,6 +45,13 @@ class Session {
 
     SessionData& session_data() { return session_data_; }
     const SessionData& session_data() const { return session_data_; }
+
+    /// Access the config.
+    ConfigPtr config() const { return cfg_; }
+
+    /// Access the plan board.
+    PlanBoard& plan() { return *plan_; }
+    const PlanBoard& plan() const { return *plan_; }
 
     // ── Metadata ──
 
@@ -82,4 +90,6 @@ class Session {
     std::string last_cwd_;
     bool is_new_ = false;
     SessionData session_data_;
+    ConfigPtr cfg_;
+    PlanBoardPtr plan_;
 };

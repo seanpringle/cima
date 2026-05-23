@@ -67,4 +67,4 @@ struct ChatUIState {
     // (workspace_path_buf removed — safe_dir locked to cwd)
 };
 
-int gui_main(const std::string& session_name);
+int gui_main(const std::string& session_name, ConfigPtr cfg, PlanBoardPtr plan);

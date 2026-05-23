@@ -98,4 +98,4 @@ struct Config {
     json to_json() const;
 };
 
-extern Config cfg;
+using ConfigPtr = std::shared_ptr<Config>;

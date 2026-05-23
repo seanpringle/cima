@@ -36,7 +36,8 @@ std::filesystem::path Session::sessions_base_dir() {
 // Constructor
 // -----------------------------------------------------------------------
 
-Session::Session(const std::string& name) : session_name_{name} {
+Session::Session(const std::string& name, ConfigPtr cfg, PlanBoardPtr plan)
+    : session_name_{name}, cfg_{std::move(cfg)}, plan_{std::move(plan)} {
     if (name.empty()) {
         throw std::invalid_argument("session name must not be empty");
     }
@@ -161,6 +162,7 @@ void Session::set_web_fetch_timeout(int v) { session_data_.web_fetch_timeout = v
 // ===================================================================
 
 void Session::apply_knobs_to(ChatSession& session) const {
+    const auto& cfg = *cfg_;
     // Effective values: knob override > 0 ? knob : cfg default
     const int mi = max_tool_iterations() > 0 ? max_tool_iterations() : kDefaultMaxToolIterations;
     const int sa = subagent_timeout() > 0 ? subagent_timeout() : kDefaultSubagentTimeout;

@@ -9,16 +9,17 @@
 #include <unordered_map>
 #include <unordered_set>
 
-ChatSession::ChatSession(const Config& config,
+ChatSession::ChatSession(ConfigPtr config,
     const Provider& provider,
     CancellationToken cancelled,
-    std::shared_ptr<GatingState> gates)
-    : config_(config), model_(provider.model), reasoning_effort_(provider.reasoning_effort),
+    std::shared_ptr<GatingState> gates,
+    PlanBoard* plan)
+    : config_(std::move(config)), plan_(plan ? PlanBoardPtr(plan, [](PlanBoard*){}) : std::make_shared<PlanBoard>()), model_(provider.model), reasoning_effort_(provider.reasoning_effort),
       provider_name_(provider.name),
       safe_dir_(std::make_shared<std::string>(std::filesystem::current_path().string())),
       api_base_(provider.api_base), api_key_(provider.api_key),
       max_iterations_(kDefaultMaxToolIterations), context_limit_(provider.context_limit),
-      system_prompt_(config.SYSTEM_PROMPT), client_(provider.api_base, provider.api_key),
+      system_prompt_(config_->SYSTEM_PROMPT), client_(provider.api_base, provider.api_key),
       file_modified_cb_(std::make_shared<FileModifiedCallback>()),
       cancelled_(cancelled ? std::move(cancelled) : make_cancellation_token()),
       gates_(gates ? std::move(gates) : std::make_shared<GatingState>()) {
@@ -26,22 +27,23 @@ ChatSession::ChatSession(const Config& config,
     tools_.set_cancelled(cancelled_);
     client_.set_cancelled(cancelled_);
 
-    tools_.add_defaults(safe_dir_, config, /*include_write=*/true, *file_modified_cb_);
+    tools_.add_defaults(safe_dir_, *config_, /*include_write=*/true, *file_modified_cb_);
 
     // Each session gets its own plan tools tied to its PlanBoard
-    tools_.add(make_write_plan_tool(::plan));
-    tools_.add(make_read_plan_tool(::plan));
+    tools_.add(make_write_plan_tool(*plan_));
+    tools_.add(make_read_plan_tool(*plan_));
 }
 
 // ===================================================================
 // Subagent factory
 // ===================================================================
 
-std::unique_ptr<ChatSession> ChatSession::create_subagent(const Config& config,
+std::unique_ptr<ChatSession> ChatSession::create_subagent(ConfigPtr config,
     const Provider& provider,
     bool read_only,
     CancellationToken cancelled,
-    std::shared_ptr<GatingState> gates) {
+    std::shared_ptr<GatingState> gates,
+    PlanBoard* plan) {
     // Build a simpler system prompt for subagents
     std::string sp = Config::SUBAGENT_SYSTEM_PROMPT;
 
@@ -51,7 +53,7 @@ std::unique_ptr<ChatSession> ChatSession::create_subagent(const Config& config,
 
     // Create the session with the given gates (nullptr = fresh default).
     auto session =
-        std::make_unique<ChatSession>(config, provider, std::move(cancelled), std::move(gates));
+        std::make_unique<ChatSession>(config, provider, std::move(cancelled), std::move(gates), plan);
     session->system_prompt_ = std::move(sp);
     session->is_read_only_ = read_only;
 

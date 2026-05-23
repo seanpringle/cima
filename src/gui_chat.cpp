@@ -58,7 +58,8 @@ void render_history_tab(PrimaryAgent& tab) {
 // Expands !snippetname to the full snippet content.  Non-matching tags are left as-is.
 // Session snippets take precedence over config snippets when names collide.
 static std::string expand_tags(
-    std::string input, const std::map<std::string, std::string>& session_snippets) {
+    std::string input, const std::map<std::string, std::string>& session_snippets,
+    const std::map<std::string, std::string>& config_snippets) {
     std::string result;
     size_t i = 0;
     while (i < input.size()) {
@@ -77,8 +78,8 @@ static std::string expand_tags(
                     continue;
                 }
                 // Fall back to config/file-based snippets
-                it = cfg.snippets.find(name);
-                if (it != cfg.snippets.end()) {
+                it = config_snippets.find(name);
+                if (it != config_snippets.end()) {
                     result += it->second;
                     i = end;
                     continue;
@@ -97,9 +98,9 @@ void render_subagent_tab(SubAgent& tab) {
 
     // ── Provider combo ──
     {
-        string label = tab.provider_name.empty() ? cfg.providers[0].name : tab.provider_name;
+        string label = tab.provider_name.empty() ? tab.cfg_->providers[0].name : tab.provider_name;
         if (BeginCombo("Provider", label.c_str())) {
-            for (const auto& p : cfg.providers) {
+            for (const auto& p : tab.cfg_->providers) {
                 bool is_selected = (p.name == tab.provider_name);
                 if (Selectable(p.name.c_str(), is_selected)) {
                     if (p.name != tab.provider_name) {
@@ -170,7 +171,7 @@ void render_subagent_tab(SubAgent& tab) {
             tab.reasoning_effort.empty() ? session.reasoning_effort() : tab.reasoning_effort;
 
         std::vector<std::string> efforts;
-        for (const auto& p : cfg.providers) {
+        for (const auto& p : tab.cfg_->providers) {
             if (p.name == tab.provider_name) {
                 efforts = p.reasoning_efforts;
                 break;
@@ -369,7 +370,7 @@ void render_chat_ui(PrimaryAgent& tab, bool& done) {
             ui.push_entry(EntryType::UserText, input, false);
             // Expand !snippet-name tags before sending to the agent
             // Session snippets take precedence over config snippets.
-            string expanded = expand_tags(input, tab.session_.session_data().snippets);
+            string expanded = expand_tags(input, tab.session_.session_data().snippets, tab.cfg_->snippets);
             tab.start_chat(expanded);
             for (auto it = history.begin(); it != history.end();
                 it = *it == input ? history.erase(it) : ++it)

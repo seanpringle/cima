@@ -37,10 +37,11 @@ using OutputCallback = std::function<void(const std::string& text, OutputType ty
 
 class ChatSession {
   public:
-    explicit ChatSession(const Config& config,
+    explicit ChatSession(ConfigPtr config,
         const Provider& provider,
         CancellationToken cancelled = nullptr,
-        std::shared_ptr<GatingState> gates = nullptr);
+        std::shared_ptr<GatingState> gates = nullptr,
+        PlanBoard* plan = nullptr);
 
     ChatSession(const ChatSession&) = delete;
     ChatSession& operator=(const ChatSession&) = delete;
@@ -52,11 +53,12 @@ class ChatSession {
     /// If gates is non-null, the subagent shares the primary's GatingState
     /// (read-write subagents).  If null, a fresh default GatingState is used
     /// (read-only subagents — both gates false).
-    static std::unique_ptr<ChatSession> create_subagent(const Config& config,
+    static std::unique_ptr<ChatSession> create_subagent(ConfigPtr config,
         const Provider& provider,
         bool read_only,
         CancellationToken cancelled,
-        std::shared_ptr<GatingState> gates = nullptr);
+        std::shared_ptr<GatingState> gates = nullptr,
+        PlanBoard* plan = nullptr);
 
     Result<ChatResult> run_once(const std::string& user_input);
     void set_model(const std::string& m) { model_ = m; }
@@ -66,9 +68,9 @@ class ChatSession {
     void set_output_callback(OutputCallback cb) { output_cb_ = std::move(cb); }
     const Usage& last_usage() const { return last_usage_; }
 
-    /// Access the global PlanBoard (shared across all sessions).
-    PlanBoard& plan() { return ::plan; }
-    const PlanBoard& plan() const { return ::plan; }
+    /// Access the PlanBoard.
+    PlanBoard& plan() { return *plan_; }
+    const PlanBoard& plan() const { return *plan_; }
 
     // API connection info (for creating temporary clients in background tasks).
     const std::string& api_base() const { return api_base_; }
@@ -202,7 +204,8 @@ class ChatSession {
     /// Returns an error only if the user cancels (caller should rollback).
     Result<void> execute_tool_calls(
         int64_t msg_id, const std::vector<ToolCall>& calls, int remaining_iters);
-    const Config& config_;
+    ConfigPtr config_;
+    PlanBoardPtr plan_;
     std::string model_;
     std::string reasoning_effort_;
     std::string agent_name_;

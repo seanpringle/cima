@@ -55,7 +55,7 @@ static std::string find_system_font(const std::string& pattern_str) {
     return path;
 }
 
-static bool find_font_pair(std::string& out_sans, std::string& out_mono) {
+static bool find_font_pair(std::string& out_sans, std::string& out_mono, const Config& cfg) {
     FcInit();
 
     if (!cfg.font_sans.empty())
@@ -95,7 +95,7 @@ static bool find_font_pair(std::string& out_sans, std::string& out_mono) {
 
 ImFont* mono_font = nullptr;
 
-void load_fonts(SDL_Window* window) {
+void load_fonts(SDL_Window* window, const Config& cfg) {
     float display_scale = SDL_GetWindowDisplayScale(window);
     if (display_scale <= 0.0f)
         display_scale = 1.0f;
@@ -107,7 +107,7 @@ void load_fonts(SDL_Window* window) {
     float fs = static_cast<float>(cfg.font_size) * scale;
 
     std::string sans_path, mono_path;
-    if (find_font_pair(sans_path, mono_path)) {
+    if (find_font_pair(sans_path, mono_path, cfg)) {
         ImGui::GetIO().Fonts->Clear();
         ImGui::GetIO().Fonts->AddFontFromFileTTF(sans_path.c_str(), fs, &font_cfg);
         mono_font = ImGui::GetIO().Fonts->AddFontFromFileTTF(mono_path.c_str(), fs, &font_cfg);
@@ -125,7 +125,7 @@ struct GuiBootstrap {
     SDL_Renderer* renderer = nullptr;
     int result_code = 0;
 
-    GuiBootstrap(const std::string& session_name) {
+    GuiBootstrap(const std::string& session_name, const Config& cfg) {
         if (!SDL_Init(SDL_INIT_VIDEO)) {
             SDL_Log("SDL_Init error: %s", SDL_GetError());
             result_code = 1;
@@ -156,7 +156,7 @@ struct GuiBootstrap {
         io.IniFilename = NULL;
         ImGui::StyleColorsDark();
 
-        load_fonts(window);
+        load_fonts(window, cfg);
 
         ImGui_ImplSDL3_InitForSDLRenderer(window, renderer);
         ImGui_ImplSDLRenderer3_Init(renderer);
@@ -199,7 +199,7 @@ static bool handle_sdl_events() {
 // Frame rendering
 // ═══════════════════════════════════════════════════════════════════
 
-static void render_frame(PrimaryAgent& primary, bool& done) {
+static void render_frame(PrimaryAgent& primary, bool& done, PlanBoard& plan) {
     SetNextWindowPos(ImVec2(0, 0));
     SetNextWindowSize(GetIO().DisplaySize);
     Begin("cima",
@@ -231,11 +231,11 @@ static void render_frame(PrimaryAgent& primary, bool& done) {
             if (BeginTabItem("   Plan   ")) {
                 // ── Clear Plan button ──
                 {
-                    auto plan_result = ::plan.read_plan();
+                    auto plan_result = plan.read_plan();
                     bool has_plan = plan_result && *plan_result != "(empty plan)";
                     if (has_plan) {
                         if (Button("Clear Plan")) {
-                            ::plan.write_plan("");
+                            plan.write_plan("");
                         }
                     } else {
                         TextDisabled("No plan to clear");
@@ -292,18 +292,18 @@ static void render_frame(PrimaryAgent& primary, bool& done) {
 // gui_main — application entry point (orchestrator)
 // ═══════════════════════════════════════════════════════════════════
 
-int gui_main(const std::string& session_name) {
-    GuiBootstrap gfx(session_name);
+int gui_main(const std::string& session_name, ConfigPtr cfg_ptr, PlanBoardPtr plan_ptr) {
+    GuiBootstrap gfx(session_name, *cfg_ptr);
     if (gfx.result_code)
         return gfx.result_code;
 
-    Session session(session_name);
+    Session session(session_name, cfg_ptr, plan_ptr);
     session.print_welcome();
 
-    PrimaryAgent primary(session);
+    PrimaryAgent primary(session, cfg_ptr);
 
     // ── Kick off async model fetch for every provider ──
-    for (const auto& provider : cfg.providers) {
+    for (const auto& provider : cfg_ptr->providers) {
         auto& entry = g_provider_models[provider.name];
         std::string api_base = provider.api_base;
         std::string api_key = provider.api_key;
@@ -334,7 +334,7 @@ int gui_main(const std::string& session_name) {
         ImGui::NewFrame();
 
         PushStyleColor(ImGuiCol_ScrollbarBg, IM_COL32(40,40,40,255));
-        render_frame(primary, done);
+        render_frame(primary, done, *plan_ptr);
         PopStyleColor();
 
         ImGui::Render();

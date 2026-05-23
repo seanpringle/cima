@@ -45,7 +45,8 @@ void PrimaryAgent::cancel_running_chats() {
     }
 }
 
-PrimaryAgent::PrimaryAgent(Session& session) : session_{session} {
+PrimaryAgent::PrimaryAgent(Session& session, ConfigPtr cfg) : session_{session} {
+    cfg_ = std::move(cfg);
     init_defaults();
     create_chat_session();
     restore_session_data();
@@ -113,22 +114,22 @@ void PrimaryAgent::init_defaults() {
     id = 1;
     title = "Assistant";
 
-    if (cfg.providers.empty())
+    if (cfg_->providers.empty())
         throw std::runtime_error("No providers configured");
 
-    const auto& provider = cfg.providers[0];
+    const auto& provider = cfg_->providers[0];
     provider_name = provider.name;
     model_name = provider.model;
     reasoning_effort = provider.reasoning_effort;
 }
 
 void PrimaryAgent::create_chat_session() {
-    if (cfg.providers.empty())
+    if (cfg_->providers.empty())
         throw std::runtime_error("No providers configured");
-    const auto& provider = cfg.providers[0];
+    const auto& provider = cfg_->providers[0];
 
     chat_state = std::make_unique<AsyncChatState>();
-    session = std::make_unique<ChatSession>(cfg, provider, chat_state->cancelled);
+    session = std::make_unique<ChatSession>(cfg_, provider, chat_state->cancelled, nullptr, &session_.plan());
     session->set_agent_name("Assistant");
     session->set_output_callback([cs = chat_state.get()](const std::string& text, OutputType type) {
         std::lock_guard<std::mutex> lock(cs->mutex);
@@ -140,7 +141,7 @@ void PrimaryAgent::restore_session_data() {
     auto& sd = session_.session_data();
     if (!sd.provider_name.empty()) {
         provider_name = sd.provider_name;
-        for (const auto& p : cfg.providers) {
+        for (const auto& p : cfg_->providers) {
             if (p.name == sd.provider_name) {
                 session->set_provider(p);
                 break;
@@ -244,16 +245,17 @@ void PrimaryAgent::restore_session_data() {
 void PrimaryAgent::create_subagents() {
     int next_id = 2;
 
-    for (const auto& sa : cfg.subagents) {
-        if (cfg.providers.empty())
+    for (const auto& sa : cfg_->subagents) {
+        if (cfg_->providers.empty())
             throw std::runtime_error("No providers configured");
-        const auto& provider = cfg.providers[0];
+        const auto& provider = cfg_->providers[0];
 
         auto& sub_agent = subagents.emplace_back();
         sub_agent.id = next_id++;
         sub_agent.subagent_name = sa.name;
         sub_agent.title = sa.name;
         sub_agent.read_only_tools = sa.read_only;
+        sub_agent.cfg_ = cfg_;
         sub_agent.provider_name = provider.name;
         sub_agent.model_name = provider.model;
         sub_agent.reasoning_effort = provider.reasoning_effort;
@@ -262,7 +264,7 @@ void PrimaryAgent::create_subagents() {
         // Each subagent gets its own GatingState (independent from primary)
         // so gate toggles in the Tool Calls table affect each mode separately.
         sub_agent.session = ChatSession::create_subagent(
-            cfg, provider, sa.read_only, sub_agent.chat_state->cancelled, nullptr);
+            cfg_, provider, sa.read_only, sub_agent.chat_state->cancelled, nullptr, &session_.plan());
         sub_agent.session->set_agent_name(sa.name);
         sub_agent.session->set_output_callback(
             [cs = sub_agent.chat_state.get()](const std::string& text, OutputType type) {
@@ -287,7 +289,7 @@ Result<SubAgent*> PrimaryAgent::subagent_by_name(const std::string& name) {
 
 void PrimaryAgent::register_subagent_tools() {
     session->register_call_subagent_tool(
-        *this, cfg.subagents); // uses cfg.subagent_timeout internally
+        *this, cfg_->subagents);
 }
 
 // ── ChatUIState methods ─────────────────────────────────────────────────────

@@ -61,9 +61,9 @@ void render_config_tab(PrimaryAgent& tab) {
 
     // ── Provider combo ──
     {
-        string label = tab.provider_name.empty() ? cfg.providers[0].name : tab.provider_name;
+        string label = tab.provider_name.empty() ? tab.cfg_->providers[0].name : tab.provider_name;
         if (BeginCombo("Provider", label.c_str())) {
-            for (const auto& p : cfg.providers) {
+            for (const auto& p : tab.cfg_->providers) {
                 bool is_selected = (p.name == tab.provider_name);
                 if (Selectable(p.name.c_str(), is_selected)) {
                     if (p.name != tab.provider_name) {
@@ -139,7 +139,7 @@ void render_config_tab(PrimaryAgent& tab) {
 
         // Find which provider this tab uses so we can get its reasoning_efforts list
         std::vector<std::string> efforts;
-        for (const auto& p : cfg.providers) {
+        for (const auto& p : tab.cfg_->providers) {
             if (p.name == tab.provider_name) {
                 efforts = p.reasoning_efforts;
                 break;
@@ -369,9 +369,9 @@ void render_config_tab(PrimaryAgent& tab) {
 
             // ── MCP Servers sub-tab ──
             if (BeginTabItem("  MCP Servers  ")) {
-                if (!cfg.mcp_servers.empty()) {
+                if (!tab.cfg_->mcp_servers.empty()) {
                     TextDisabled("Configured servers:");
-                    for (const auto& mcp : cfg.mcp_servers) {
+                    for (const auto& mcp : tab.cfg_->mcp_servers) {
                         bool enabled = tab.mcp_enabled[mcp.name];
                         bool changed = Checkbox(mcp.name.c_str(), &enabled);
                         if (changed) {
@@ -431,7 +431,7 @@ void render_config_tab(PrimaryAgent& tab) {
 
                 // Check if name conflicts with any config server
                 auto is_config_server = [&tab](const std::string& name) -> bool {
-                    for (const auto& m : cfg.mcp_servers) {
+                    for (const auto& m : tab.cfg_->mcp_servers) {
                         if (m.name == name)
                             return true;
                     }

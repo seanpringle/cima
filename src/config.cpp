@@ -5,8 +5,6 @@
 #include <set>
 #include <string>
 
-Config cfg;
-
 std::string Config::SYSTEM_PROMPT =
     "You are an AI coding assistant.\n"
     "Use markdown with a neat, clear and concise layout for all output.\n"

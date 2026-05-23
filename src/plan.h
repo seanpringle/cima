@@ -1,6 +1,7 @@
 #pragma once
 
 #include "tools.h"
+#include <memory>
 #include <string>
 
 // PlanBoard — per-session plan document storage.
@@ -33,7 +34,7 @@ class PlanBoard {
     std::string plan_;
 };
 
-extern PlanBoard plan;
+using PlanBoardPtr = std::shared_ptr<PlanBoard>;
 
 // Tool factory declarations — each takes a PlanBoard reference to operate on.
 Tool make_write_plan_tool(PlanBoard& board);

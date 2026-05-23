@@ -101,7 +101,7 @@ TEST_CASE("ChatSession simple Q&A", "[chat]") {
         true);
 
     auto tc = make_test_config(server.base_url());
-    ChatSession session(tc.cfg, tc.provider);
+    ChatSession session(std::make_shared<Config>(tc.cfg), tc.provider);
     auto result = session.run_once("Say hi");
     REQUIRE(result);
     CHECK(result->content == "Hello, World!");
@@ -125,7 +125,7 @@ TEST_CASE("ChatSession payload includes reasoning_effort", "[chat]") {
     tc.provider.reasoning_effort = "high";
     tc.provider.context_limit = 1000;  // avoid model discovery request
 
-    ChatSession session(tc.cfg, tc.provider);
+    ChatSession session(std::make_shared<Config>(tc.cfg), tc.provider);
     auto result = session.run_once("Say hi");
     REQUIRE(result);
 
@@ -148,7 +148,7 @@ TEST_CASE("ChatSession omits reasoning_effort when empty", "[chat]") {
     tc.provider.reasoning_effort = "";   // empty — should omit
     tc.provider.context_limit = 1000;    // avoid model discovery request
 
-    ChatSession session(tc.cfg, tc.provider);
+    ChatSession session(std::make_shared<Config>(tc.cfg), tc.provider);
     auto result = session.run_once("Say hi");
     REQUIRE(result);
 
@@ -177,7 +177,7 @@ TEST_CASE("ChatSession tool call then content", "[chat]") {
         true);
 
     auto tc = make_test_config(server.base_url(), "test");
-    ChatSession session(tc.cfg, tc.provider);
+    ChatSession session(std::make_shared<Config>(tc.cfg), tc.provider);
     auto result = session.run_once("List files");
     REQUIRE(result);
     CHECK(result->content == "I found some files.");
@@ -201,7 +201,7 @@ TEST_CASE("ChatSession max tool iterations", "[chat]") {
 
     auto tc = make_test_config(server.base_url(), "test", "high", 300000);
 
-    ChatSession session(tc.cfg, tc.provider);
+    ChatSession session(std::make_shared<Config>(tc.cfg), tc.provider);
     session.set_max_iterations(10); // override for test
     auto result = session.run_once("List files forever");
     CHECK(result);
@@ -224,7 +224,7 @@ TEST_CASE("ChatSession reasoning content preserved", "[chat]") {
         true);
 
     auto tc = make_test_config(server.base_url(), "test");
-    ChatSession session(tc.cfg, tc.provider);
+    ChatSession session(std::make_shared<Config>(tc.cfg), tc.provider);
     auto result = session.run_once("What is 6*7?");
     REQUIRE(result);
     CHECK(result->content == "The answer is 42.");
@@ -263,7 +263,7 @@ TEST_CASE("ChatSession reasoning with tool calls", "[chat]") {
         true);
 
     auto tc = make_test_config(server.base_url(), "test");
-    ChatSession session(tc.cfg, tc.provider);
+    ChatSession session(std::make_shared<Config>(tc.cfg), tc.provider);
     auto result = session.run_once("Check files");
     REQUIRE(result);
     CHECK(result->content == "Here is what I found.");
@@ -303,7 +303,7 @@ TEST_CASE("ChatSession multi-chunk tool call args", "[chat]") {
         true);
 
     auto tc = make_test_config(server.base_url(), "test");
-    ChatSession session(tc.cfg, tc.provider);
+    ChatSession session(std::make_shared<Config>(tc.cfg), tc.provider);
     auto result = session.run_once("Read file");
     REQUIRE(result);
     CHECK(result->content == "Read the file.");
@@ -326,7 +326,7 @@ TEST_CASE("ChatSession cancelled token aborts request", "[chat]") {
 
     auto tc = make_test_config(server.base_url(), "test");
 
-    ChatSession session(tc.cfg, tc.provider, token);
+    ChatSession session(std::make_shared<Config>(tc.cfg), tc.provider, token);
     auto result = session.run_once("Say hi");
     CHECK_FALSE(result);
     // curl should abort the request because the progress callback sees the
@@ -418,7 +418,7 @@ TEST_CASE("ChatSession start_mcp_server registers tools", "[chat][mcp]") {
         true);
 
     auto tc = make_test_config(llm.base_url(), "test", "high", 300000);
-    ChatSession session(tc.cfg, tc.provider);
+    ChatSession session(std::make_shared<Config>(tc.cfg), tc.provider);
 
     // Start the MCP server.
     McpEndpoint ep = make_http_endpoint("test-srv", mcp.base_url);
@@ -450,7 +450,7 @@ TEST_CASE("ChatSession stop_mcp_server unregisters tools", "[chat][mcp]") {
         true);
 
     auto tc = make_test_config(llm.base_url(), "test", "high", 300000);
-    ChatSession session(tc.cfg, tc.provider);
+    ChatSession session(std::make_shared<Config>(tc.cfg), tc.provider);
 
     McpEndpoint ep = make_http_endpoint("srv", mcp.base_url);
     auto result = session.start_mcp_server(ep);
@@ -487,7 +487,7 @@ TEST_CASE("ChatSession MCP system prompt included when servers running", "[chat]
         true);
 
     auto tc = make_test_config(llm.base_url(), "test", "high", 300000);
-    ChatSession session(tc.cfg, tc.provider);
+    ChatSession session(std::make_shared<Config>(tc.cfg), tc.provider);
 
     // Without MCP servers — snippet should be absent.
     auto body = parse_request_body(last_request);
@@ -539,7 +539,7 @@ TEST_CASE("ChatSession MCP system prompt excluded when no servers", "[chat][mcp]
         true);
 
     auto tc = make_test_config(llm.base_url(), "test", "high", 300000);
-    ChatSession session(tc.cfg, tc.provider);
+    ChatSession session(std::make_shared<Config>(tc.cfg), tc.provider);
 
     // Run once without any MCP servers.
     auto run_result = session.run_once("Test");
@@ -586,7 +586,7 @@ TEST_CASE("ChatSession MCP tool execution through run_once", "[chat][mcp]") {
         true);
 
     auto tc = make_test_config(llm.base_url(), "test", "high", 300000);
-    ChatSession session(tc.cfg, tc.provider);
+    ChatSession session(std::make_shared<Config>(tc.cfg), tc.provider);
 
     McpEndpoint ep = make_http_endpoint("calc-srv", mcp.base_url);
     auto result = session.start_mcp_server(ep);
@@ -616,7 +616,7 @@ TEST_CASE("ChatSession multiple MCP servers", "[chat][mcp]") {
         true);
 
     auto tc = make_test_config(llm.base_url(), "test", "high", 300000);
-    ChatSession session(tc.cfg, tc.provider);
+    ChatSession session(std::make_shared<Config>(tc.cfg), tc.provider);
 
     McpEndpoint ep1 = make_http_endpoint("server-a", mcp1.base_url);
     auto r1 = session.start_mcp_server(ep1);
@@ -652,7 +652,7 @@ TEST_CASE("ChatSession MCP server start error", "[chat][mcp]") {
         true);
 
     auto tc = make_test_config(llm.base_url(), "test", "high", 300000);
-    ChatSession session(tc.cfg, tc.provider);
+    ChatSession session(std::make_shared<Config>(tc.cfg), tc.provider);
 
     auto result = session.start_mcp_server(ep);
     CHECK_FALSE(result.has_value());
@@ -685,7 +685,7 @@ TEST_CASE("ChatSession disabled tool is not executed", "[chat][gates]") {
         true);
 
     auto tc = make_test_config(server.base_url(), "test", "high", 1000);
-    ChatSession session(tc.cfg, tc.provider);
+    ChatSession session(std::make_shared<Config>(tc.cfg), tc.provider);
 
     // Disable the tool the LLM is about to call
     session.set_tool_enabled("read_file", false);

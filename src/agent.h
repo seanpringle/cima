@@ -6,6 +6,7 @@
 #include <memory>
 
 struct Agent {
+    ConfigPtr cfg_;
     std::unique_ptr<ChatSession> session;
     std::unique_ptr<AsyncChatState> chat_state;
     ChatUIState ui_state;
@@ -93,7 +94,7 @@ struct PrimaryAgent : Agent {
 
     Session& session_;
 
-    PrimaryAgent(Session&);
+    PrimaryAgent(Session& session, ConfigPtr cfg);
     ~PrimaryAgent();
 
     Result<SubAgent*> subagent_by_name(const std::string& name);
