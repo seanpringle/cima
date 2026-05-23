@@ -11,17 +11,11 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-Tool make_cmd_tool(const std::string& name,
-    const std::string& description,
-    const std::string& command,
-    std::shared_ptr<std::string> safe_dir_ptr,
-    int timeout,
-    CancellationToken cancelled,
-    std::shared_ptr<std::vector<std::string>> tool_logs) {
+Tool make_cmd_tool(const Config& config, const std::string& name, const std::string& description, const std::string& command, std::shared_ptr<std::string> safe_dir_ptr, int timeout, CancellationToken cancelled, std::shared_ptr<std::vector<std::string>> tool_logs) {
     Tool t;
     // Use "cmd_<name>" as the tool name visible to the model
     t.name = "cmd_" + name;
-    t.description = description;
+    t.description = description + " " + config.TOOL_LOG_NOTE;
     t.permission = ToolPermission::Write;
     t.timeout_sec = 0; // internal timeout via fork/exec loop
     // Empty parameters ensures the model sends {} not null

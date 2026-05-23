@@ -18,9 +18,9 @@ std::string spill_long_output(std::string output,
     if (nl > 100 || output.size() > 4096) {
         size_t id = tool_logs->size() + 1;
         tool_logs->push_back(std::move(output));
-        return "(long tool output: " + std::to_string(nl) + " lines, " +
-               std::to_string(tool_logs->back().size()) + " chars. "
-               "Use view_tool_output(id=" + std::to_string(id) + ") to read it)";
+        return "\u26a0 Tool log (" + std::to_string(nl) + " lines, " +
+               std::to_string(tool_logs->back().size()) + " chars): "
+               "call view_tool_output(id=" + std::to_string(id) + ") to see full output.";
     }
 
     return output;

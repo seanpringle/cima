@@ -14,7 +14,7 @@ using namespace std::chrono_literals;
 // web_search — single backend: DuckDuckGo HTML interface
 // ===================================================================
 
-Tool make_web_search_tool(int timeout, CancellationToken cancelled) {
+Tool make_web_search_tool(const Config& config, int timeout, CancellationToken cancelled) {
     Tool t;
     t.name = "web_search";
     t.description =
@@ -23,7 +23,7 @@ Tool make_web_search_tool(int timeout, CancellationToken cancelled) {
         "No API key required. "
         "DuckDuckGo aggressively rate-limits requests; at least 3 seconds "
         "must elapse between successive calls. If you need multiple searches, "
-        "space them out — parallel calls are serialized with enforced delays.";
+        "space them out — parallel calls are serialized with enforced delays. " + config.TOOL_LOG_NOTE;
     t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},
         {"properties",
@@ -72,7 +72,7 @@ Tool make_web_search_tool(int timeout, CancellationToken cancelled) {
     return t;
 }
 
-Tool make_web_fetch_tool(int timeout, CancellationToken cancelled,
+Tool make_web_fetch_tool(const Config& config, int timeout, CancellationToken cancelled,
     std::shared_ptr<std::vector<std::string>> tool_logs) {
     Tool t;
     t.name = "web_fetch";
@@ -80,7 +80,7 @@ Tool make_web_fetch_tool(int timeout, CancellationToken cancelled,
         "Fetch the content of a URL. Returns the response body as text. "
         "HTML pages are automatically converted to clean Markdown. "
         "Use this to read documentation, API references, or web pages. "
-        "For search results use web_search.";
+        "For search results use web_search. " + config.TOOL_LOG_NOTE;
     t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},
         {"properties",

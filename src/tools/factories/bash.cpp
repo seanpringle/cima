@@ -11,14 +11,12 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-Tool make_run_bash_tool(std::shared_ptr<std::string> safe_dir_ptr,
+Tool make_run_bash_tool(const Config& config, std::shared_ptr<std::string> safe_dir_ptr,
     int timeout, CancellationToken cancelled,
     std::shared_ptr<std::vector<std::string>> tool_logs) {
     Tool t;
     t.name = "run_bash";
-    t.description = "Run a bash command in the project directory "
-                    "(e.g. build, test, lint). "
-                    "Long output (>100 lines or 4K chars) is redirected to the tool log.";
+    t.description = "Run a bash command in the project directory (e.g. build, test, lint). " + config.TOOL_LOG_NOTE;
     t.timeout_sec = 0; // bash manages its own timeout internally
     t.parameters = {{"type", "object"},
         {"properties",

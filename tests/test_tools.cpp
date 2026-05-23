@@ -2340,7 +2340,7 @@ TEST_CASE("git_show HEAD shows commit metadata and diff", "[tools][git_show]") {
     r = reg.execute("git_commit", R"({"message": "add newfile", "all": true})");
     REQUIRE(r);
 
-    reg.add(make_git_show_tool(std::make_shared<std::string>(sd), 10));
+    reg.add(make_git_show_tool(Config{}, std::make_shared<std::string>(sd), 10));
 
     auto result = reg.execute("git_show", "{}");
     REQUIRE(result);
@@ -2378,7 +2378,7 @@ TEST_CASE("git_show specific revision", "[tools][git_show]") {
     r = reg.execute("git_commit", R"({"message": "third commit", "all": true})");
     REQUIRE(r);
 
-    reg.add(make_git_show_tool(std::make_shared<std::string>(sd), 10));
+    reg.add(make_git_show_tool(Config{}, std::make_shared<std::string>(sd), 10));
 
     // Show HEAD~1 (the second commit)
     auto result = reg.execute("git_show",
@@ -2397,7 +2397,7 @@ TEST_CASE("git_show invalid revision", "[tools][git_show]") {
     auto sd = make_git_repo();
     ToolRegistry reg;
     reg.add_defaults(sd, Config{});
-    reg.add(make_git_show_tool(std::make_shared<std::string>(sd), 10));
+      reg.add(make_git_show_tool(Config{}, std::make_shared<std::string>(sd), 10));
 
     auto result = reg.execute("git_show",
         R"({"revision": "nonexistent_branch_xyz"})");
@@ -2410,7 +2410,7 @@ TEST_CASE("git_show not a git repo", "[tools][git_show]") {
     auto sd = make_temp_dir();
     ToolRegistry reg;
     reg.add_defaults(sd, Config{});
-    reg.add(make_git_show_tool(std::make_shared<std::string>(sd), 10));
+    reg.add(make_git_show_tool(Config{}, std::make_shared<std::string>(sd), 10));
 
     auto result = reg.execute("git_show", "{}");
     REQUIRE_FALSE(result);
@@ -2425,7 +2425,7 @@ TEST_CASE("git_show root commit", "[tools][git_show]") {
     reg.add_defaults(sd, Config{});
 
     // make_git_repo already has one commit (the initial commit)
-    reg.add(make_git_show_tool(std::make_shared<std::string>(sd), 10));
+    reg.add(make_git_show_tool(Config{}, std::make_shared<std::string>(sd), 10));
 
     // Show HEAD (the initial/root commit)
     auto result = reg.execute("git_show", "{}");

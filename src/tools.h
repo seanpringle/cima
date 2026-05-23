@@ -168,7 +168,7 @@ std::string extract_uddg_url(const std::string& ddg_url);
 // ---------------------------------------------------------------------------
 // Tool factory declarations (used by ToolRegistry::add_defaults)
 // ---------------------------------------------------------------------------
-Tool make_list_path_tool(std::shared_ptr<std::string> safe_dir_ptr,
+Tool make_list_path_tool(const Config& config, std::shared_ptr<std::string> safe_dir_ptr,
     const std::vector<std::string>& read_only_paths,
     int timeout,
     CancellationToken cancelled = nullptr,
@@ -178,7 +178,7 @@ Tool make_delete_path_tool(std::shared_ptr<std::string> safe_dir_ptr);
 Tool make_read_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
     const std::vector<std::string>& read_only_paths,
     std::shared_ptr<std::vector<std::string>> tool_logs);
-Tool make_grep_files_tool(std::shared_ptr<std::string> safe_dir_ptr,
+Tool make_grep_files_tool(const Config& config, std::shared_ptr<std::string> safe_dir_ptr,
     const std::vector<std::string>& read_only_paths,
     int timeout,
     CancellationToken cancelled = nullptr,
@@ -187,56 +187,33 @@ Tool make_write_file_tool(
     std::shared_ptr<std::string> safe_dir_ptr, FileModifiedCallback on_file_modified = nullptr);
 Tool make_edit_file_tool(
     std::shared_ptr<std::string> safe_dir_ptr, FileModifiedCallback on_file_modified = nullptr);
-Tool make_run_bash_tool(std::shared_ptr<std::string> safe_dir_ptr,
+Tool make_run_bash_tool(const Config& config, std::shared_ptr<std::string> safe_dir_ptr,
     int timeout,
     CancellationToken cancelled = nullptr,
     std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
-Tool make_web_search_tool(int timeout, CancellationToken cancelled = nullptr);
-Tool make_web_fetch_tool(int timeout,
-    CancellationToken cancelled = nullptr,
-    std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
+Tool make_web_search_tool(const Config& config, int timeout, CancellationToken cancelled = nullptr);
+Tool make_web_fetch_tool(const Config& config, int timeout, CancellationToken cancelled = nullptr, std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
 Tool make_git_status_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout);
-Tool make_git_diff_tool(std::shared_ptr<std::string> safe_dir_ptr,
-    int timeout,
-    std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
-Tool make_git_log_tool(std::shared_ptr<std::string> safe_dir_ptr,
-    int timeout,
-    std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
+Tool make_git_diff_tool(const Config& config, std::shared_ptr<std::string> safe_dir_ptr, int timeout, std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
+Tool make_git_log_tool(const Config& config, std::shared_ptr<std::string> safe_dir_ptr, int timeout, std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
 Tool make_git_add_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout);
 Tool make_git_commit_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout);
 Tool make_git_restore_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout);
-Tool make_git_show_tool(std::shared_ptr<std::string> safe_dir_ptr,
-    int timeout,
-    std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
+Tool make_git_show_tool(const Config& config, std::shared_ptr<std::string> safe_dir_ptr, int timeout, std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
 Tool make_move_file_tool(std::shared_ptr<std::string> safe_dir_ptr);
 
 class ChatSession; // forward decl for SubagentLookup
 
 // ── Custom command tool ──
-Tool make_cmd_tool(const std::string& name,
-    const std::string& description,
-    const std::string& command,
-    std::shared_ptr<std::string> safe_dir_ptr,
-    int timeout,
-    CancellationToken cancelled,
-    std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
+Tool make_cmd_tool(const Config& config, const std::string& name, const std::string& description, const std::string& command, std::shared_ptr<std::string> safe_dir_ptr, int timeout, CancellationToken cancelled = nullptr, std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
 
 // ── View tool output ──
 Tool make_view_tool_output_tool(std::shared_ptr<std::vector<std::string>> tool_logs);
 
 // ── CMake tools ──
-Tool make_cmake_configure_tool(std::shared_ptr<std::string> safe_dir_ptr,
-    int timeout,
-    CancellationToken cancelled,
-    std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
-Tool make_cmake_build_tool(std::shared_ptr<std::string> safe_dir_ptr,
-    int timeout,
-    CancellationToken cancelled,
-    std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
-Tool make_cmake_ctest_tool(std::shared_ptr<std::string> safe_dir_ptr,
-    int timeout,
-    CancellationToken cancelled,
-    std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
+Tool make_cmake_configure_tool(const Config& config, std::shared_ptr<std::string> safe_dir_ptr, int timeout, CancellationToken cancelled = nullptr, std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
+Tool make_cmake_build_tool(const Config& config, std::shared_ptr<std::string> safe_dir_ptr, int timeout, CancellationToken cancelled = nullptr, std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
+Tool make_cmake_ctest_tool(const Config& config, std::shared_ptr<std::string> safe_dir_ptr, int timeout, CancellationToken cancelled = nullptr, std::shared_ptr<std::vector<std::string>> tool_logs = nullptr);
 
 // ── Utility: spill long output to tool_logs ──
 std::string spill_long_output(

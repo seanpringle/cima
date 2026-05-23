@@ -137,9 +137,7 @@ static Result<std::string> run_cmake_command(
 // cmake_configure
 // ===================================================================
 
-Tool make_cmake_configure_tool(std::shared_ptr<std::string> safe_dir_ptr,
-    int timeout, CancellationToken cancelled,
-    std::shared_ptr<std::vector<std::string>> tool_logs) {
+Tool make_cmake_configure_tool(const Config& config, std::shared_ptr<std::string> safe_dir_ptr, int timeout, CancellationToken cancelled, std::shared_ptr<std::vector<std::string>> tool_logs) {
     Tool t;
     t.name = "cmake_configure";
     t.description =
@@ -148,7 +146,7 @@ Tool make_cmake_configure_tool(std::shared_ptr<std::string> safe_dir_ptr,
         "generating compile commands.\n"
         "Returns raw combined stdout/stderr.\n"
         "Use `flags` array for additional cmake -D flags, "
-        "e.g. flags=[\"-DCMAKE_BUILD_TYPE=Debug\", \"-DBUILD_TESTS=OFF\"].";
+        "e.g. flags=[\"-DCMAKE_BUILD_TYPE=Debug\", \"-DBUILD_TESTS=OFF\"]. " + config.TOOL_LOG_NOTE;
     t.permission = ToolPermission::Write;
     t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},
@@ -193,9 +191,7 @@ Tool make_cmake_configure_tool(std::shared_ptr<std::string> safe_dir_ptr,
 // cmake_build
 // ===================================================================
 
-Tool make_cmake_build_tool(std::shared_ptr<std::string> safe_dir_ptr,
-    int timeout, CancellationToken cancelled,
-    std::shared_ptr<std::vector<std::string>> tool_logs) {
+Tool make_cmake_build_tool(const Config& config, std::shared_ptr<std::string> safe_dir_ptr, int timeout, CancellationToken cancelled, std::shared_ptr<std::vector<std::string>> tool_logs) {
     Tool t;
     t.name = "cmake_build";
     t.description =
@@ -204,7 +200,7 @@ Tool make_cmake_build_tool(std::shared_ptr<std::string> safe_dir_ptr,
         "Use `target` to build only a specific target, "
         "e.g. target=\"test_tools\".\n"
         "Use `clean` to clean before building, "
-        "e.g. clean=true (implies rebuild).";
+        "e.g. clean=true (implies rebuild). " + config.TOOL_LOG_NOTE;
     t.permission = ToolPermission::Write;
     t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},
@@ -259,9 +255,7 @@ Tool make_cmake_build_tool(std::shared_ptr<std::string> safe_dir_ptr,
 // cmake_ctest
 // ===================================================================
 
-Tool make_cmake_ctest_tool(std::shared_ptr<std::string> safe_dir_ptr,
-    int timeout, CancellationToken cancelled,
-    std::shared_ptr<std::vector<std::string>> tool_logs) {
+Tool make_cmake_ctest_tool(const Config& config, std::shared_ptr<std::string> safe_dir_ptr, int timeout, CancellationToken cancelled, std::shared_ptr<std::vector<std::string>> tool_logs) {
     Tool t;
     t.name = "cmake_ctest";
     t.description =
@@ -278,7 +272,7 @@ Tool make_cmake_ctest_tool(std::shared_ptr<std::string> safe_dir_ptr,
         "Use `|` for multiple patterns, "
         "e.g. test_regex=\"Config|SSEParser\" "
         "runs all Config and SSEParser tests.\n"
-        "Example: test_regex=\"Config\" runs all config tests.";
+        "Example: test_regex=\"Config\" runs all config tests. " + config.TOOL_LOG_NOTE;
     t.permission = ToolPermission::ReadOnly;
     t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},

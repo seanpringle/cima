@@ -44,22 +44,13 @@ ChatSession::ChatSession(const Config& config,
     tools_.add(make_read_plan_tool(::plan));
 
     // CMake tools — always registered; conditionally published in run_once().
-    tools_.add(make_cmake_configure_tool(
-        safe_dir_, config.cmake_configure_timeout, cancelled_, tool_logs_));
-    tools_.add(
-        make_cmake_build_tool(safe_dir_, config.cmake_build_timeout, cancelled_, tool_logs_));
-    tools_.add(
-        make_cmake_ctest_tool(safe_dir_, config.cmake_ctest_timeout, cancelled_, tool_logs_));
+    tools_.add(make_cmake_configure_tool(config, safe_dir_, config.cmake_configure_timeout, cancelled_, tool_logs_));
+    tools_.add(make_cmake_build_tool(config, safe_dir_, config.cmake_build_timeout, cancelled_, tool_logs_));
+    tools_.add(make_cmake_ctest_tool(config, safe_dir_, config.cmake_ctest_timeout, cancelled_, tool_logs_));
 
     // Custom cmd_tools — registered from config.
     for (const auto& ct : config.cmd_tools) {
-        tools_.add(make_cmd_tool(ct.name,
-            ct.description,
-            ct.command,
-            safe_dir_,
-            config.bash_timeout,
-            cancelled_,
-            tool_logs_));
+        tools_.add(make_cmd_tool(config, ct.name, ct.description, ct.command, safe_dir_, config.bash_timeout, cancelled_, tool_logs_));
     }
 
     // view_tool_output — always available to all agents
@@ -647,8 +638,8 @@ void ChatSession::register_custom_command(const std::string& name,
     // Remove config version if exists (session masks config)
     tools_.remove(tool_name);
     // Register session version
-    tools_.add(
-        make_cmd_tool(name, description, command, safe_dir_, timeout_sec, cancelled_, tool_logs_));
+     tools_.add(
+        make_cmd_tool(config_, name, description, command, safe_dir_, timeout_sec, cancelled_, tool_logs_));
     // Default to enabled
     set_custom_tool_enabled(tool_name, true);
 }
@@ -659,13 +650,7 @@ void ChatSession::unregister_custom_command(const std::string& name) {
     // Re-register config version if it exists
     for (const auto& ct : config_.cmd_tools) {
         if (ct.name == name) {
-            tools_.add(make_cmd_tool(ct.name,
-                ct.description,
-                ct.command,
-                safe_dir_,
-                config_.bash_timeout,
-                cancelled_,
-                tool_logs_));
+            tools_.add(make_cmd_tool(config_, ct.name, ct.description, ct.command, safe_dir_, config_.bash_timeout, cancelled_, tool_logs_));
             break;
         }
     }

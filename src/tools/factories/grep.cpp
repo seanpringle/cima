@@ -11,15 +11,10 @@
 // grep_files
 // ===================================================================
 
-Tool make_grep_files_tool(std::shared_ptr<std::string> safe_dir_ptr,
-    const std::vector<std::string>& read_only_paths,
-    int timeout,
-    CancellationToken cancelled,
-    std::shared_ptr<std::vector<std::string>> tool_logs) {
+Tool make_grep_files_tool(const Config& config, std::shared_ptr<std::string> safe_dir_ptr, const std::vector<std::string>& read_only_paths, int timeout, CancellationToken cancelled, std::shared_ptr<std::vector<std::string>> tool_logs) {
     Tool t;
     t.name = "grep_files";
-    t.description = "Search file contents using a regex pattern. "
-                    "Long output (>100 lines or 4K chars) is redirected to the tool log.";
+    t.description = "Search file contents using a regex pattern. " + config.TOOL_LOG_NOTE;
     t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},
         {"properties",

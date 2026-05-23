@@ -9,7 +9,8 @@
 
 // ── list_path ─────────────────────────────────────────────────────
 
-Tool make_list_path_tool(std::shared_ptr<std::string> safe_dir_ptr,
+Tool make_list_path_tool(const Config& config,
+    std::shared_ptr<std::string> safe_dir_ptr,
     const std::vector<std::string>& read_only_paths,
     int timeout,
     CancellationToken cancelled,
@@ -20,7 +21,7 @@ Tool make_list_path_tool(std::shared_ptr<std::string> safe_dir_ptr,
         "List files and directories in a given path, "
         "recursing up to max_depth (default 1). "
         "Use max_depth > 1 to see nested contents "
-        "instead of calling list_path repeatedly.";
+        "instead of calling list_path repeatedly. " + config.TOOL_LOG_NOTE;
     t.timeout_sec = timeout;
     t.parameters = {
         {"type", "object"},

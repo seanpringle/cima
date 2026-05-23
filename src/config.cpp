@@ -27,9 +27,14 @@ std::string Config::SYSTEM_PROMPT =
     "\n"
     "## Long tool output\n"
     "\n"
-    "Tool output > 100 lines or 4K chars may be placed into the tool log."
-    " The output will be a message with a log entry ID."
-    " Use view_tool_output(ID=?) to retrieve it.\n"
+    "When a tool produces >100 lines or >4K chars of output, the result is placed\n"
+    "into a tool log and replaced by a reference message like:\n"
+    "\n"
+    "  \u26a0 Tool log (NNN lines, NNN chars): call view_tool_output(id=NNN) to see full output.\n"
+    "\n"
+    "**You must check the tool log whenever you see this message.** Never proceed\n"
+    "with incomplete results — use `view_tool_output(ID=?)` to retrieve the full\n"
+    "output before making decisions based on the result.\n"
     "\n";
 
 std::string Config::SUBAGENT_SYSTEM_PROMPT =
@@ -42,7 +47,12 @@ std::string Config::CMAKE_PROMPT_SNIPPET =
     "`cmake_configure()` configures the project (generates compile_commands.json).\n"
     "`cmake_build()` builds the project.\n"
     "`cmake_ctest()` runs the test suite.\n"
-    "All return raw output with optional head/tail trimming.\n";
+    "Output is redirected to the tool log when >100 lines or >4K chars. "
+    "Use `view_tool_output(id=?)` to retrieve.\n";
+
+std::string Config::TOOL_LOG_NOTE =
+    "Long output (>100 lines or >4K chars) is redirected to the tool log. "
+    "Use `view_tool_output` to retrieve.";
 
 // ---------------------------------------------------------------------------
 // Config file path

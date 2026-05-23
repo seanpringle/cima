@@ -88,7 +88,7 @@ Tool make_git_status_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout
     return t;
 }
 
-Tool make_git_diff_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout,
+Tool make_git_diff_tool(const Config& config, std::shared_ptr<std::string> safe_dir_ptr, int timeout,
     std::shared_ptr<std::vector<std::string>> tool_logs) {
     Tool t;
     t.name = "git_diff";
@@ -98,7 +98,7 @@ Tool make_git_diff_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout,
         "then git_diff to inspect the actual changes.\n"
         "If 'staged' is true, shows the diff that would be committed "
         "(index vs HEAD). If false (default), shows unstaged changes "
-        "(working tree vs index).";
+        "(working tree vs index). " + config.TOOL_LOG_NOTE;
     t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},
         {"properties",
@@ -213,7 +213,7 @@ Tool make_git_diff_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout,
     return t;
 }
 
-Tool make_git_log_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout,
+Tool make_git_log_tool(const Config& config, std::shared_ptr<std::string> safe_dir_ptr, int timeout,
     std::shared_ptr<std::vector<std::string>> tool_logs) {
     Tool t;
     t.name = "git_log";
@@ -224,7 +224,7 @@ Tool make_git_log_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout,
         "  'oneline': <hash_prefix> <subject>\n"
         "  'full': commit hash, author, date, and full message body\n"
         "Use 'branch' to specify a revision (branch, tag, commit hash, HEAD~N, etc.).\n"
-        "Defaults to HEAD (current branch tip).";
+        "Defaults to HEAD (current branch tip). " + config.TOOL_LOG_NOTE;
     t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},
         {"properties",
@@ -992,7 +992,7 @@ Tool make_git_restore_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeou
 // git_show
 // ===================================================================
 
-Tool make_git_show_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout,
+Tool make_git_show_tool(const Config& config, std::shared_ptr<std::string> safe_dir_ptr, int timeout,
     std::shared_ptr<std::vector<std::string>> tool_logs) {
     Tool t;
     t.name = "git_show";
@@ -1003,7 +1003,7 @@ Tool make_git_show_tool(std::shared_ptr<std::string> safe_dir_ptr, int timeout,
         "and unified diff of changes introduced by that commit.\n"
         "Use 'revision' to specify a commit "
         "(hash, branch name, HEAD~N, tag, etc.).\n"
-        "Defaults to HEAD.";
+        "Defaults to HEAD. " + config.TOOL_LOG_NOTE;
     t.permission = ToolPermission::ReadOnly;
     t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},
