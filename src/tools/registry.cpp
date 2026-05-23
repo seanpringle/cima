@@ -16,31 +16,29 @@ void ToolRegistry::add(Tool tool) {
 void ToolRegistry::add_defaults(const std::string& safe_dir,
     const Config& config,
     bool include_write,
-    FileModifiedCallback on_file_modified,
-    std::shared_ptr<std::vector<std::string>> tool_logs) {
-    add_defaults(std::make_shared<std::string>(safe_dir), config, include_write, std::move(on_file_modified), std::move(tool_logs));
+    FileModifiedCallback on_file_modified) {
+    add_defaults(std::make_shared<std::string>(safe_dir), config, include_write, std::move(on_file_modified));
 }
 
 void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
     const Config& config,
     bool include_write,
-    FileModifiedCallback on_file_modified,
-    std::shared_ptr<std::vector<std::string>> tool_logs) {
+    FileModifiedCallback on_file_modified) {
     const auto& read_only_paths = config.read_only_paths;
 
     // ── Read-only tools (receive whitelist for extra path access) ──
     {
-        auto t = make_run_bwrap_tool(config, safe_dir_ptr, config.bash_timeout, cancelled_, tool_logs, /*read_only=*/true);
+        auto t = make_run_bwrap_tool(config, safe_dir_ptr, config.bash_timeout, cancelled_, /*read_only=*/true);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
     {
-        auto t = make_read_file_tool(safe_dir_ptr, read_only_paths, tool_logs);
+        auto t = make_read_file_tool(safe_dir_ptr, read_only_paths);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
     {
-        auto t = make_grep_files_tool(config, safe_dir_ptr, read_only_paths, config.grep_timeout, cancelled_, tool_logs);
+        auto t = make_grep_files_tool(config, safe_dir_ptr, read_only_paths, config.grep_timeout, cancelled_);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
@@ -50,11 +48,10 @@ void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
         add(std::move(t));
     }
     {
-        auto t = make_web_fetch_tool(config, config.web_fetch_timeout, cancelled_, tool_logs);
+        auto t = make_web_fetch_tool(config, config.web_fetch_timeout, cancelled_);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
-
 
     // ── Write tools ──
     if (include_write) {
@@ -70,13 +67,11 @@ void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
         }
 
         {
-            auto t = make_run_bwrap_tool(config, safe_dir_ptr, config.bash_timeout, cancelled_, tool_logs);
+            auto t = make_run_bwrap_tool(config, safe_dir_ptr, config.bash_timeout, cancelled_);
             t.permission = ToolPermission::Write;
             add(std::move(t));
         }
-
     }
-
 }
 
 json ToolRegistry::to_openai_tools() const {

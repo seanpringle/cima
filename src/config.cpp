@@ -24,27 +24,12 @@ std::string Config::SYSTEM_PROMPT =
     "Call subagents with `call_subagent()`."
     " See tool description for available subagents.\n"
     " Subagents can read your Plan but not write to it.\n"
-    "\n"
-    "## Long tool output\n"
-    "\n"
-    "When a tool produces >100 lines or >4K chars of output, the result is placed\n"
-    "into a tool log and replaced by a reference message like:\n"
-    "\n"
-    "  \u26a0 Tool log (NNN lines, NNN chars): call view_tool_output(id=NNN) to see full output.\n"
-    "\n"
-    "**You must check the tool log whenever you see this message.** Never proceed\n"
-    "with incomplete results — use `view_tool_output(ID=?)` to retrieve the full\n"
-    "output before making decisions based on the result.\n"
     "\n";
 
 std::string Config::SUBAGENT_SYSTEM_PROMPT =
     "You are an AI coding assistant working as a subagent.\n"
     "Use markdown with a neat, clear and concise layout for all output.\n"
     "All of commonmark and github tables supported, but generally prefer lists over tables.\n";
-
-std::string Config::TOOL_LOG_NOTE =
-    "Long output (>100 lines or >4K chars) is redirected to the tool log. "
-    "Use `view_tool_output` to retrieve.";
 
 // ---------------------------------------------------------------------------
 // Config file path

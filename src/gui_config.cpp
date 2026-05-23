@@ -251,7 +251,7 @@ void render_config_tab(PrimaryAgent& tab) {
                                     names.end(),
                                     [](const std::string& name) {
                                         return name.rfind("mcp_", 0) == 0 || name == "read_plan" ||
-                                            name == "write_plan" || name == "view_tool_output";
+                                            name == "write_plan";
                                     }),
                         names.end());
                     std::sort(names.begin(),

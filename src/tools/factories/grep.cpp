@@ -11,10 +11,10 @@
 // grep_files
 // ===================================================================
 
-Tool make_grep_files_tool(const Config& config, std::shared_ptr<std::string> safe_dir_ptr, const std::vector<std::string>& read_only_paths, int timeout, CancellationToken cancelled, std::shared_ptr<std::vector<std::string>> tool_logs) {
+Tool make_grep_files_tool(const Config& config, std::shared_ptr<std::string> safe_dir_ptr, const std::vector<std::string>& read_only_paths, int timeout, CancellationToken cancelled) {
     Tool t;
     t.name = "grep_files";
-    t.description = "Search file contents using a regex pattern. " + config.TOOL_LOG_NOTE;
+    t.description = "Search file contents using a regex pattern.";
     t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},
         {"properties",
@@ -23,7 +23,7 @@ Tool make_grep_files_tool(const Config& config, std::shared_ptr<std::string> saf
                     {{"type", "string"},
                         {"description", "File or directory to search in (defaults to .)"}}}}},
         {"required", {"pattern"}}};
-    t.execute = [safe_dir_ptr, read_only_paths, cancelled, tool_logs](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr, read_only_paths, cancelled](const json& args) -> Result<std::string> {
         auto pattern = args.value("pattern", std::string());
         if (pattern.empty()) {
             return std::unexpected(std::string("pattern is required"));
@@ -120,7 +120,7 @@ Tool make_grep_files_tool(const Config& config, std::shared_ptr<std::string> saf
             result = "(no matches)";
         }
 
-        return spill_long_output(std::move(result), tool_logs);
+        return result;
     };
     return t;
 }

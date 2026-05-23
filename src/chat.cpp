@@ -26,17 +26,11 @@ ChatSession::ChatSession(const Config& config,
     tools_.set_cancelled(cancelled_);
     client_.set_cancelled(cancelled_);
 
-    // Tool log buffer for spilling large outputs
-    tool_logs_ = std::make_shared<std::vector<std::string>>();
-
-    tools_.add_defaults(safe_dir_, config, /*include_write=*/true, *file_modified_cb_, tool_logs_);
+    tools_.add_defaults(safe_dir_, config, /*include_write=*/true, *file_modified_cb_);
 
     // Each session gets its own plan tools tied to its PlanBoard
     tools_.add(make_write_plan_tool(::plan));
     tools_.add(make_read_plan_tool(::plan));
-
-    // view_tool_output — always available to all agents
-    tools_.add(make_view_tool_output_tool(tool_logs_));
 }
 
 // ===================================================================

@@ -220,6 +220,5 @@ class ChatSession {
     bool context_limit_discovered_ = false;
     std::shared_ptr<GatingState> gates_ = std::make_shared<GatingState>();
     bool is_read_only_ = false;
-    std::shared_ptr<std::vector<std::string>> tool_logs_;
     McpRegistry mcp_registry_;
 };

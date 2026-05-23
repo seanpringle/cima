@@ -119,10 +119,8 @@ add_library(cima_core
     src/tools/factories/file_io.cpp
     src/tools/factories/grep.cpp
     src/tools/factories/bwrap.cpp
-    src/tools/factories/view_tool_output.cpp
     src/tools/factories/web.cpp
     src/tools/registry.cpp
-    src/tools/spill.cpp
     src/tools/text_file_detector.cpp
     src/agent.cpp
     src/client.cpp

@@ -7,8 +7,7 @@
 #include <string>
 
 Tool make_read_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
-    const std::vector<std::string>& read_only_paths,
-    std::shared_ptr<std::vector<std::string>> tool_logs) {
+    const std::vector<std::string>& read_only_paths) {
 
     Tool t;
     t.name = "read_file";
@@ -28,7 +27,7 @@ Tool make_read_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
         {"required", {"path","start_line","end_line"}}
     };
 
-    t.execute = [safe_dir_ptr, read_only_paths, tool_logs](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr, read_only_paths](const json& args) -> Result<std::string> {
 
         for (auto& el: args.items()) {
             if (el.key() == "path") continue;
@@ -54,13 +53,31 @@ Tool make_read_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
             return std::unexpected("Failed to open file: " + *resolved);
         }
 
-        std::string result(std::istreambuf_iterator<char>{file}, {});
+        std::string content((std::istreambuf_iterator<char>{file}), {});
 
-        int start_line = args.value("start_line",1);
-        int end_line = args.value("end_line",1);
+        int start_line = args.value("start_line", 1);
+        int end_line = args.value("end_line", 1);
+
+        // Split into lines
+        std::vector<std::string> lines;
+        std::stringstream line_stream(content);
+        std::string line;
+        while (std::getline(line_stream, line)) {
+            lines.push_back(line);
+        }
+
+        start_line = std::max(1, std::min(start_line, int(lines.size())));
+        end_line = std::max(start_line, std::min(end_line, int(lines.size())));
 
         std::stringstream ss;
-        ss << "read_file " << raw << '\n' << format_line_range(result, start_line, end_line);
+        ss << "read_file " << raw << '\n'
+           << "lines " << start_line << ':' << end_line
+           << " of " << lines.size() << '\n';
+
+        for (int i = start_line; i <= end_line; i++) {
+            ss << i << ": " << lines[i-1] << '\n';
+        }
+
         return ss.str();
     };
     return t;

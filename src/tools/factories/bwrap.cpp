@@ -13,22 +13,21 @@
 
 Tool make_run_bwrap_tool(const Config& config, std::shared_ptr<std::string> safe_dir_ptr,
     int timeout, CancellationToken cancelled,
-    std::shared_ptr<std::vector<std::string>> tool_logs,
     bool read_only) {
     Tool t;
     if (read_only) {
         t.name = "run_bwrap_ro";
-        t.description = "Read-only: run a bash command in the project directory inside a bwrap sandbox (restricted filesystem, no network, no writes to project dir). " + config.TOOL_LOG_NOTE;
+        t.description = "Read-only: run a bash command in the project directory inside a bwrap sandbox (restricted filesystem, no network, no writes to project dir).";
     } else {
         t.name = "run_bwrap";
-        t.description = "Run a bash command in the project directory inside a bwrap sandbox (restricted filesystem, no network). " + config.TOOL_LOG_NOTE;
+        t.description = "Run a bash command in the project directory inside a bwrap sandbox (restricted filesystem, no network).";
     }
     t.timeout_sec = 0; // manages its own timeout internally
     t.parameters = {{"type", "object"},
         {"properties",
             {{"command", {{"type", "string"}, {"description", "Shell command to execute"}}}}},
         {"required", {"command"}}};
-    t.execute = [safe_dir_ptr, timeout, cancelled, tool_logs, read_only](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr, timeout, cancelled, read_only](const json& args) -> Result<std::string> {
         auto command = args.value("command", std::string());
         if (command.empty()) {
             return std::unexpected(std::string("command is required"));
@@ -228,7 +227,7 @@ Tool make_run_bwrap_tool(const Config& config, std::shared_ptr<std::string> safe
             output += "\n(killed by signal: " + std::to_string(sig) + ")";
         }
 
-        return spill_long_output(std::move(output), tool_logs);
+        return output;
     };
     return t;
 }

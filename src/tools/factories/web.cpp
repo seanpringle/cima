@@ -23,7 +23,7 @@ Tool make_web_search_tool(const Config& config, int timeout, CancellationToken c
         "No API key required. "
         "DuckDuckGo aggressively rate-limits requests; at least 3 seconds "
         "must elapse between successive calls. If you need multiple searches, "
-        "space them out — parallel calls are serialized with enforced delays. " + config.TOOL_LOG_NOTE;
+        "space them out — parallel calls are serialized with enforced delays.";
     t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},
         {"properties",
@@ -72,15 +72,14 @@ Tool make_web_search_tool(const Config& config, int timeout, CancellationToken c
     return t;
 }
 
-Tool make_web_fetch_tool(const Config& config, int timeout, CancellationToken cancelled,
-    std::shared_ptr<std::vector<std::string>> tool_logs) {
+Tool make_web_fetch_tool(const Config& config, int timeout, CancellationToken cancelled) {
     Tool t;
     t.name = "web_fetch";
     t.description =
         "Fetch the content of a URL. Returns the response body as text. "
         "HTML pages are automatically converted to clean Markdown. "
         "Use this to read documentation, API references, or web pages. "
-        "For search results use web_search. " + config.TOOL_LOG_NOTE;
+        "For search results use web_search.";
     t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},
         {"properties",
@@ -91,7 +90,7 @@ Tool make_web_fetch_tool(const Config& config, int timeout, CancellationToken ca
                         "Results are cached per session — re-fetching the same URL "
                         "returns the cached content."}}}}},
         {"required", {"url"}}};
-    t.execute = [cancelled, tool_logs](const json& args) -> Result<std::string> {
+    t.execute = [cancelled](const json& args) -> Result<std::string> {
         auto url = args.value("url", std::string());
         if (url.empty()) {
             return std::unexpected("url is required");
@@ -234,14 +233,13 @@ Tool make_web_fetch_tool(const Config& config, int timeout, CancellationToken ca
             body = html2md::Convert(body);
         }
 
-        // ── Cache the result (before potential move into tool_logs) ──
+        // ── Cache the result ──
         {
             std::lock_guard<std::mutex> lock(g_fetch_cache_mutex);
             g_fetch_cache[url] = body;
         }
 
-        // ── Spill to tool_logs if output exceeds threshold ──
-        return spill_long_output(std::move(body), tool_logs);
+        return body;
     };
     return t;
 }
