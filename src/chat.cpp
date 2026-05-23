@@ -472,6 +472,10 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
     return ChatResult{std::move(last_content), std::move(last_reasoning)};
 }
 
+// ===================================================================
+// Conversation compaction
+// ===================================================================
+
 Result<void> ChatSession::compact() {
     // Snapshot the current messages (skip system prompt — that's added at build time)
     auto& msgs = conversation_.messages();
@@ -481,46 +485,96 @@ Result<void> ChatSession::compact() {
         return {}; // Nothing to compact
     }
 
-    // Build a summarization prompt from the conversation
-    std::string summary_prompt =
-        "Please provide a comprehensive summary of the following conversation. "
-        "Preserve all important context, decisions, code changes, file paths, "
-        "and outstanding tasks. Be detailed enough that the conversation can "
-        "continue seamlessly from this summary.\n\n---\n";
+    // ── Truncate older tool results to prevent unbounded prompt growth ──
+    // Keep full results for recent exchanges; mark older ones as truncated.
+    size_t max_tool_results = 10;
+    size_t result_count = 0;
+    for (auto& msg : msgs) {
+        for (auto& tc : msg.tool_calls) {
+            if (result_count >= max_tool_results && tc.result.size() > 500) {
+                tc.result = "(truncated — see earlier in conversation)";
+            }
+            result_count++;
+        }
+    }
 
+    // ── Build a proper multi-message payload for the summarization request ──
+    // Instead of concatenating all messages into one flat string (which causes
+    // "lost in the middle" behavior), we send them as separate API messages.
+    json messages = json::array();
+
+    // Compaction-specific system prompt — instruct model to summarize ALL parts
+    messages.push_back({{"role", "system"},
+        {"content",
+            "You are summarizing a conversation for context retention. "
+            "Provide a comprehensive, detailed summary that preserves ALL significant "
+            "context from the entire conversation — not just the most recent exchanges. "
+            "Include important decisions, code changes, file paths, tool outputs, and "
+            "outstanding tasks. The summary must be detailed enough that another session "
+            "can continue seamlessly from this point."}});
+
+    // Expand conversation messages into proper OpenAI message format
     for (const auto& msg : msgs) {
         if (msg.role == "system")
             continue; // skip system messages
 
-        summary_prompt += "[" + msg.role + "]: ";
-        if (msg.content.has_value()) {
-            summary_prompt += *msg.content;
-        }
-        if (!msg.reasoning_content.empty()) {
-            summary_prompt += "\n[reasoning]: " + msg.reasoning_content;
-        }
-        for (const auto& tc : msg.tool_calls) {
-            summary_prompt += "\n[tool_call: " + tc.name + "(" + tc.arguments + ")]";
-            if (!tc.result.empty()) {
-                summary_prompt += "\n[tool_result: " + tc.result + "]";
+        if (msg.tool_calls.empty()) {
+            // Simple user/assistant message
+            json m{{"role", msg.role}};
+            if (msg.content.has_value() && !msg.content->empty()) {
+                m["content"] = msg.content.value_or("");
+            }
+            if (msg.role == "assistant" && !msg.reasoning_content.empty()) {
+                m["reasoning_content"] = msg.reasoning_content;
+            }
+            messages.push_back(std::move(m));
+        } else {
+            // Assistant with tool calls — expand to proper API structure
+            json assistant_msg{{"role", "assistant"}};
+            if (!msg.content.value_or("").empty()) {
+                assistant_msg["content"] = msg.content.value_or("");
+            }
+            if (!msg.reasoning_content.empty()) {
+                assistant_msg["reasoning_content"] = msg.reasoning_content;
+            }
+
+            // Build tool_calls array
+            json tc_arr = json::array();
+            for (const auto& tc : msg.tool_calls) {
+                json tc_json;
+                tc_json["id"] = tc.id;
+                tc_json["type"] = "function";
+                tc_json["function"] = {{"name", tc.name}, {"arguments", tc.arguments}};
+                tc_arr.push_back(std::move(tc_json));
+            }
+            assistant_msg["tool_calls"] = std::move(tc_arr);
+            messages.push_back(std::move(assistant_msg));
+
+            // Add tool result messages for each call
+            for (const auto& tc : msg.tool_calls) {
+                json tr;
+                tr["role"] = "tool";
+                tr["tool_call_id"] = tc.id;
+                tr["content"] = tc.result.empty() ? "(empty result)" : tc.result;
+                messages.push_back(std::move(tr));
             }
         }
-        summary_prompt += "\n";
     }
+
+    // Add the summarization request as a final user message
+    messages.push_back({{"role", "user"},
+        {"content",
+            "Please provide a comprehensive summary of the conversation above. "
+            "Preserve all important context, decisions, code changes, file paths, "
+            "and outstanding tasks. Be detailed enough that the conversation can "
+            "continue seamlessly from this summary."}});
 
     // Send to LLM via client_
     // Build the full tool list so the model sees a consistent prompt.
     // The model won't actually use tools in a summarization request,
     // but some models may behave oddly when tools are suddenly absent.
     json payload = {{"model", model_},
-        {"messages",
-            json::array(
-                {{{"role", "system"},
-                     {"content",
-                         sanitize_utf8(system_prompt_ +
-                             (has_cmake_project() ? std::string(Config::CMAKE_PROMPT_SNIPPET)
-                                                  : ""))}},
-                    {{"role", "user"}, {"content", sanitize_utf8(summary_prompt)}}})},
+        {"messages", std::move(messages)},
         {"tools", tools_.to_openai_tools()},
         {"stream", true}};
     if (!reasoning_effort_.empty())
