@@ -116,15 +116,12 @@ add_library(cima_core
     src/tools/path.cpp
     src/tools/git_helpers.cpp
     src/tools/web_helpers.cpp
-    src/tools/factories/filesystem.cpp
     src/tools/factories/file_io.cpp
     src/tools/factories/grep.cpp
     src/tools/factories/bwrap.cpp
-    src/tools/factories/cmake.cpp
     src/tools/factories/cmd_tool.cpp
     src/tools/factories/view_tool_output.cpp
     src/tools/factories/web.cpp
-    src/tools/factories/git.cpp
     src/tools/registry.cpp
     src/tools/spill.cpp
     src/tools/text_file_detector.cpp

@@ -20,7 +20,6 @@ using json = nlohmann::json;
 /// Read-write subagents share the primary agent's GatingState via shared_ptr,
 /// so gate changes propagate automatically.
 struct GatingState {
-    bool cmake_enabled = false;
     std::map<std::string, bool> custom_tools; // cmd_<name> -> enabled
 
     // Per-tool gates: maps tool name -> enabled.
@@ -103,13 +102,6 @@ class ChatSession {
     /// Set/Get the agent's Culture ship name.
     void set_agent_name(const std::string& name) { agent_name_ = name; }
     const std::string& agent_name() const { return agent_name_; }
-
-    /// True when a CMakeLists.txt exists in the workspace directory.
-    bool has_cmake_project() const;
-
-    /// Enable/disable the cmake tools for this session.
-    void set_cmake_enabled(bool v) { gates_->cmake_enabled = v; }
-    bool cmake_enabled() const { return gates_->cmake_enabled; }
 
     /// True if this session was created as a read-only subagent.
     bool is_read_only() const { return is_read_only_; }

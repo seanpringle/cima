@@ -225,20 +225,11 @@ void render_config_tab(PrimaryAgent& tab) {
 
                     // Categorisation helpers.
                     auto category_of = [](const std::string& name) -> const char* {
-                        if (name == "list_path" || name == "read_file" ||
-                            name == "grep_files" ||
-                            name == "write_file" || name == "edit_file" || name == "delete_path" ||
-                            name == "move_file")
+                        if (name == "read_file" || name == "grep_files" ||
+                            name == "write_file" || name == "edit_file")
                             return "File";
-                        if (name == "git_status" || name == "git_diff" || name == "git_log" ||
-                            name == "git_show" || name == "git_add" || name == "git_commit" ||
-                            name == "git_restore")
-                            return "Git";
                         if (name == "web_search" || name == "web_fetch")
                             return "Web";
-                        if (name == "cmake_configure" || name == "cmake_build" ||
-                            name == "cmake_ctest")
-                            return "Cmake";
                         if (name == "run_bwrap" || name == "run_bwrap_ro" || name == "call_subagent")
                             return "Execution";
                         return "Other";
@@ -248,15 +239,11 @@ void render_config_tab(PrimaryAgent& tab) {
                     auto cat_order = [](const char* cat) -> int {
                         if (!strcmp(cat, "Execution"))
                             return 0;
-                        if (!strcmp(cat, "Cmake"))
-                            return 1;
                         if (!strcmp(cat, "File"))
-                            return 2;
-                        if (!strcmp(cat, "Git"))
-                            return 3;
+                            return 1;
                         if (!strcmp(cat, "Web"))
-                            return 4;
-                        return 5;
+                            return 2;
+                        return 3;
                     };
 
                     // Filter and sort.
@@ -318,11 +305,6 @@ void render_config_tab(PrimaryAgent& tab) {
                             if (Checkbox("", &enabled)) {
                                 tab.tool_gates[name] = enabled;
                                 session.set_tool_enabled(name, enabled);
-                                if (name == "cmake_configure" || name == "cmake_build" ||
-                                    name == "cmake_ctest") {
-                                    tab.cmake_enabled = enabled;
-                                    session.set_cmake_enabled(enabled);
-                                }
                             }
                             PopID();
                         }

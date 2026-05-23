@@ -169,7 +169,8 @@ TEST_CASE("ChatSession tool call then content", "[chat]") {
             call_count++;
             if (call_count == 1) {
                 // First request: return a tool call
-                return make_tool_call_sse("list_path", R"({"path": "."})");
+                return make_tool_call_sse("read_file",
+                                          R"({"path": "test.txt", "start_line": 1, "end_line": 1})");
             }
             // Second request: return content
             return make_content_sse("I found some files.");
@@ -193,7 +194,8 @@ TEST_CASE("ChatSession max tool iterations", "[chat]") {
     MockServer server(
         [&](const std::string&) -> std::string {
             call_count++;
-            return make_tool_call_sse("list_path", R"({"path": "."})",
+            return make_tool_call_sse("read_file",
+                                      R"({"path": "test.txt", "start_line": 1, "end_line": 1})",
                                       "call_" + std::to_string(call_count));
         },
         true);
@@ -252,8 +254,9 @@ TEST_CASE("ChatSession reasoning with tool calls", "[chat]") {
                             {"id", "call_xyz"},
                             {"type", "function"},
                             {"function",
-                             {{"name", "list_path"},
-                              {"arguments", R"({"path": "."})"}}}}}}}}}}}};
+                             {{"name", "read_file"},
+                              {"arguments",
+                               R"({"path": "test.txt", "start_line": 1, "end_line": 1})"}}}}}}}}}}}};
                 return "data: " + delta.dump() + "\n\ndata: [DONE]\n\n";
             }
             return make_content_sse("Here is what I found.");
@@ -673,9 +676,10 @@ TEST_CASE("ChatSession disabled tool is not executed", "[chat][gates]") {
             // Request 1: GET /v1/models (model discovery) — return empty JSON object
             if (call_count == 1)
                 return "{\"object\":\"list\",\"data\":[]}";
-            // Request 2: first chat completion — return a tool call for "list_path"
+            // Request 2: first chat completion — return a tool call for "read_file"
             if (call_count == 2)
-                return make_tool_call_sse("list_path", R"({"path": "."})");
+                return make_tool_call_sse("read_file",
+                                          R"({"path": "test.txt", "start_line": 1, "end_line": 1})");
             // Subsequent requests: just return content
             return make_content_sse("done");
         },
@@ -685,7 +689,7 @@ TEST_CASE("ChatSession disabled tool is not executed", "[chat][gates]") {
     ChatSession session(tc.cfg, tc.provider);
 
     // Disable the tool the LLM is about to call
-    session.set_tool_enabled("list_path", false);
+    session.set_tool_enabled("read_file", false);
 
     auto result = session.run_once("List files");
     REQUIRE(result);
@@ -694,7 +698,7 @@ TEST_CASE("ChatSession disabled tool is not executed", "[chat][gates]") {
     bool found_disabled = false;
     for (const auto& msg : session.conversation().messages()) {
         for (const auto& tc : msg.tool_calls) {
-            if (tc.name == "list_path" && tc.result.find("disabled") != std::string::npos) {
+            if (tc.name == "read_file" && tc.result.find("disabled") != std::string::npos) {
                 found_disabled = true;
             }
         }

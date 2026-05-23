@@ -97,7 +97,6 @@ PrimaryAgent::~PrimaryAgent() {
     }
     session_data.chat_log = std::move(log_arr);
     session_data.plan = session->plan().to_json();
-    session_data.cmake_enabled = cmake_enabled;
     session_data.mcp_enabled = mcp_enabled;
     session_data.cmd_tools_enabled = cmd_tools_enabled;
     session_data.tool_gates = tool_gates;
@@ -188,15 +187,10 @@ void PrimaryAgent::restore_session_data() {
         session->plan().from_json(session_data.plan);
     }
 
-    cmake_enabled = session_data.cmake_enabled;
-    session->set_cmake_enabled(session_data.cmake_enabled);
     mcp_enabled = session_data.mcp_enabled;
 
-    // ── Tool gates: start with defaults for tools that start OFF ──
+    // ── Tool gates: restore from session data ──
     tool_gates.clear();
-    tool_gates["cmake_configure"] = cmake_enabled;
-    tool_gates["cmake_build"] = cmake_enabled;
-    tool_gates["cmake_ctest"] = cmake_enabled;
     // Override with persisted values from session data.
     for (const auto& [name, enabled] : session_data.tool_gates) {
         tool_gates[name] = enabled;
@@ -211,9 +205,6 @@ void PrimaryAgent::restore_session_data() {
     // (subagents must not recurse into other subagents).
     rw_subagent_tool_gates.clear();
     rw_subagent_tool_gates["call_subagent"] = false;
-    rw_subagent_tool_gates["cmake_configure"] = cmake_enabled;
-    rw_subagent_tool_gates["cmake_build"] = cmake_enabled;
-    rw_subagent_tool_gates["cmake_ctest"] = cmake_enabled;
     // Override with persisted values.
     for (const auto& [name, enabled] : session_data.rw_subagent_tool_gates) {
         rw_subagent_tool_gates[name] = enabled;
@@ -221,28 +212,16 @@ void PrimaryAgent::restore_session_data() {
 
     // ── Read-only subagent gates: only read-only tools start ON ──
     ro_subagent_tool_gates.clear();
-    ro_subagent_tool_gates["list_path"] = true;
     ro_subagent_tool_gates["read_file"] = true;
     ro_subagent_tool_gates["read_file_lines"] = true;
-
     ro_subagent_tool_gates["grep_files"] = true;
     ro_subagent_tool_gates["web_search"] = true;
     ro_subagent_tool_gates["web_fetch"] = true;
-    ro_subagent_tool_gates["git_status"] = true;
-    ro_subagent_tool_gates["git_diff"] = true;
-    ro_subagent_tool_gates["git_log"] = true;
-    ro_subagent_tool_gates["git_show"] = true;
-    // All write tools, bash, cmake, call_subagent default to false (missing = false)
+    // All write tools, bash, call_subagent default to false (missing = false)
     // Override with persisted values.
     for (const auto& [name, enabled] : session_data.ro_subagent_tool_gates) {
         ro_subagent_tool_gates[name] = enabled;
     }
-
-    // Sync legacy gates from tool_gates overrides (in case they differ
-    // from the legacy fields — e.g. from a previous session toggle).
-    cmake_enabled = session->tool_enabled("cmake_configure") ||
-        session->tool_enabled("cmake_build") || session->tool_enabled("cmake_ctest");
-    session->set_cmake_enabled(cmake_enabled);
 
     // Restore cmd_tools_enabled, keeping entries for config commands AND
     // session custom commands (silently dropping truly stale entries).

@@ -9,14 +9,6 @@
 #include <unordered_map>
 #include <unordered_set>
 
-// Names of all CMake tools — conditionally published when CMakeLists.txt
-// exists in the workspace.
-static const std::unordered_set<std::string> cmake_tool_names = {
-    "cmake_configure",
-    "cmake_build",
-    "cmake_ctest",
-};
-
 ChatSession::ChatSession(const Config& config,
     const Provider& provider,
     CancellationToken cancelled,
@@ -43,11 +35,6 @@ ChatSession::ChatSession(const Config& config,
     tools_.add(make_write_plan_tool(::plan));
     tools_.add(make_read_plan_tool(::plan));
 
-    // CMake tools — always registered; conditionally published in run_once().
-    tools_.add(make_cmake_configure_tool(config, safe_dir_, config.cmake_configure_timeout, cancelled_, tool_logs_));
-    tools_.add(make_cmake_build_tool(config, safe_dir_, config.cmake_build_timeout, cancelled_, tool_logs_));
-    tools_.add(make_cmake_ctest_tool(config, safe_dir_, config.cmake_ctest_timeout, cancelled_, tool_logs_));
-
     // Custom cmd_tools — registered from config.
     for (const auto& ct : config.cmd_tools) {
         tools_.add(make_cmd_tool(config, ct.name, ct.description, ct.command, safe_dir_, config.bash_timeout, cancelled_, tool_logs_));
@@ -72,8 +59,6 @@ std::unique_ptr<ChatSession> ChatSession::create_subagent(const Config& config,
     if (!read_only) {
         sp += "You have access to read and write file tools, and git tools.\n";
     }
-    // NOTE: CMAKE_PROMPT_SNIPPET is NOT baked here — it's added dynamically
-    // in build_effective_prompt() based on gates_->cmake_enabled.
 
     // Create the session with the given gates (nullptr = fresh default).
     auto session =
@@ -88,17 +73,6 @@ std::unique_ptr<ChatSession> ChatSession::create_subagent(const Config& config,
         // File write tools
         session->tools_.remove("write_file");
         session->tools_.remove("edit_file");
-        session->tools_.remove("delete_path");
-        session->tools_.remove("move_file");
-        // Git write tools
-        session->tools_.remove("git_add");
-        session->tools_.remove("git_commit");
-        session->tools_.remove("git_restore");
-        session->tools_.remove("git_show");
-        // CMake tools — read-only subagents never get these
-        session->tools_.remove("cmake_configure");
-        session->tools_.remove("cmake_build");
-        session->tools_.remove("cmake_ctest");
     }
 
     return session;
@@ -114,11 +88,6 @@ void ChatSession::set_provider(const Provider& provider) {
     context_limit_discovered_ = false; // will re-discover on next run
     client_.set_api_base(provider.api_base);
     client_.set_api_key(provider.api_key);
-}
-
-bool ChatSession::has_cmake_project() const {
-    std::error_code ec;
-    return std::filesystem::exists(std::filesystem::path(*safe_dir_) / "CMakeLists.txt", ec);
 }
 
 int ChatSession::context_usage_percent() const {
@@ -166,14 +135,6 @@ void ChatSession::discover_context_limit() {
 
 std::string ChatSession::build_effective_prompt() const {
     std::string prompt = system_prompt_;
-    // Dynamic snippet injection based on active gates.
-    // Read-write subagents share the primary's gates, so they get the
-    // snippet when the primary has cmake enabled. Read-only subagents
-    // never get it (their gates_ is a fresh default with cmake_enabled=false,
-    // and cmake tools were removed from their registry).
-    if (gates_->cmake_enabled && has_cmake_project()) {
-        prompt += Config::CMAKE_PROMPT_SNIPPET;
-    }
     if (mcp_registry_.has_running_servers()) {
         prompt += "\n## MCP tools\n\n"
                   "Tools from external MCP servers are available.\n"
@@ -184,9 +145,6 @@ std::string ChatSession::build_effective_prompt() const {
 }
 
 bool ChatSession::is_tool_allowed(const std::string& name) const {
-    // CMake tools: require cmake_enabled AND CMakeLists.txt
-    if (cmake_tool_names.count(name) && (!gates_->cmake_enabled || !has_cmake_project()))
-        return false;
     // Custom cmd_* tools: each gated individually by gates_->custom_tools.
     if (name.rfind("cmd_", 0) == 0) {
         auto it = gates_->custom_tools.find(name);

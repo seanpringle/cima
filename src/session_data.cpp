@@ -19,8 +19,6 @@ json SessionData::to_json() const {
     j["conversation"] = conversation;
     j["chat_log"] = chat_log;
     j["plan"] = plan;
-    j["cmake_enabled"] = cmake_enabled;
-
     // Serialise mcp_enabled map
     json mcp = json::object();
     for (const auto& [name, enabled] : mcp_enabled) {
@@ -113,7 +111,6 @@ void SessionData::from_json(const json& j) {
     conversation = j.value("conversation", json::array());
     chat_log = j.value("chat_log", json::array());
     plan = j.value("plan", json::object());
-    cmake_enabled = j.value("cmake_enabled", false);
 
     // Deserialise mcp_enabled map
     mcp_enabled.clear();

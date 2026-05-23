@@ -83,21 +83,9 @@ struct Config {
     // Tool timeouts (seconds, 0 = no timeout)
     int subagent_timeout = 600;
     int bash_timeout = 30;
-    int git_status_timeout = 10;
-    int git_diff_timeout = 10;
-    int git_log_timeout = 10;
-    int git_add_timeout = 10;
-    int git_commit_timeout = 10;
-    int git_restore_timeout = 10;
     int grep_timeout = 10;
     int web_search_timeout = 15;
     int web_fetch_timeout = 15;
-
-    // ── CMake tools ──
-    bool cmake_enabled = false;        // user-facing toggle (like bash_enabled)
-    int cmake_configure_timeout = 120; // cmake configure can be slow
-    int cmake_build_timeout = 300;     // builds can take minutes
-    int cmake_ctest_timeout = 300;     // test suites can be long
 
     // Font settings (empty paths = auto-detect via fontconfig)
     std::string font_sans; // path to sans-serif font file
@@ -106,7 +94,6 @@ struct Config {
 
     static std::string SYSTEM_PROMPT;
     static std::string SUBAGENT_SYSTEM_PROMPT;
-    static std::string CMAKE_PROMPT_SNIPPET;
     static std::string TOOL_LOG_NOTE;
 
     /// Load config from ~/.config/cima/cima.json, applying defaults for

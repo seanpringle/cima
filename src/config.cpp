@@ -42,14 +42,6 @@ std::string Config::SUBAGENT_SYSTEM_PROMPT =
     "Use markdown with a neat, clear and concise layout for all output.\n"
     "All of commonmark and github tables supported, but generally prefer lists over tables.\n";
 
-std::string Config::CMAKE_PROMPT_SNIPPET =
-    "## CMake tools\n"
-    "`cmake_configure()` configures the project (generates compile_commands.json).\n"
-    "`cmake_build()` builds the project.\n"
-    "`cmake_ctest()` runs the test suite.\n"
-    "Output is redirected to the tool log when >100 lines or >4K chars. "
-    "Use `view_tool_output(id=?)` to retrieve.\n";
-
 std::string Config::TOOL_LOG_NOTE =
     "Long output (>100 lines or >4K chars) is redirected to the tool log. "
     "Use `view_tool_output` to retrieve.";
@@ -111,16 +103,7 @@ json Config::to_json() const {
     j["snippets"] = snippets;
     j["subagent_timeout"] = subagent_timeout;
     j["bash_timeout"] = bash_timeout;
-    j["cmake_enabled"] = cmake_enabled;
-    j["cmake_configure_timeout"] = cmake_configure_timeout;
-    j["cmake_build_timeout"] = cmake_build_timeout;
-    j["cmake_ctest_timeout"] = cmake_ctest_timeout;
-    j["git_status_timeout"] = git_status_timeout;
-    j["git_diff_timeout"] = git_diff_timeout;
-    j["git_log_timeout"] = git_log_timeout;
-    j["git_add_timeout"] = git_add_timeout;
-    j["git_commit_timeout"] = git_commit_timeout;
-    j["git_restore_timeout"] = git_restore_timeout;
+
     j["grep_timeout"] = grep_timeout;
     j["web_search_timeout"] = web_search_timeout;
     j["web_fetch_timeout"] = web_fetch_timeout;
@@ -314,17 +297,6 @@ Config Config::load() {
         };
         load_timeout("subagent_timeout", cfg.subagent_timeout);
         load_timeout("bash_timeout", cfg.bash_timeout);
-        if (j.contains("cmake_enabled") && j["cmake_enabled"].is_boolean())
-            cfg.cmake_enabled = j["cmake_enabled"].get<bool>();
-        load_timeout("cmake_configure_timeout", cfg.cmake_configure_timeout);
-        load_timeout("cmake_build_timeout", cfg.cmake_build_timeout);
-        load_timeout("cmake_ctest_timeout", cfg.cmake_ctest_timeout);
-        load_timeout("git_status_timeout", cfg.git_status_timeout);
-        load_timeout("git_diff_timeout", cfg.git_diff_timeout);
-        load_timeout("git_log_timeout", cfg.git_log_timeout);
-        load_timeout("git_add_timeout", cfg.git_add_timeout);
-        load_timeout("git_commit_timeout", cfg.git_commit_timeout);
-        load_timeout("git_restore_timeout", cfg.git_restore_timeout);
         load_timeout("grep_timeout", cfg.grep_timeout);
         load_timeout("web_search_timeout", cfg.web_search_timeout);
         load_timeout("web_fetch_timeout", cfg.web_fetch_timeout);

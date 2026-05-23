@@ -30,11 +30,6 @@ void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
 
     // ── Read-only tools (receive whitelist for extra path access) ──
     {
-        auto t = make_list_path_tool(config, safe_dir_ptr, read_only_paths, config.grep_timeout, cancelled_, tool_logs);
-        t.permission = ToolPermission::ReadOnly;
-        add(std::move(t));
-    }
-    {
         auto t = make_run_bwrap_tool(config, safe_dir_ptr, config.bash_timeout, cancelled_, tool_logs, /*read_only=*/true);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
@@ -59,26 +54,7 @@ void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
-    {
-        auto t = make_git_status_tool(safe_dir_ptr, config.git_status_timeout);
-        t.permission = ToolPermission::ReadOnly;
-        add(std::move(t));
-    }
-    {
-        auto t = make_git_diff_tool(config, safe_dir_ptr, config.git_diff_timeout, tool_logs);
-        t.permission = ToolPermission::ReadOnly;
-        add(std::move(t));
-    }
-    {
-        auto t = make_git_log_tool(config, safe_dir_ptr, config.git_log_timeout, tool_logs);
-        t.permission = ToolPermission::ReadOnly;
-        add(std::move(t));
-    }
-    {
-        auto t = make_git_show_tool(config, safe_dir_ptr, config.git_log_timeout, tool_logs);
-        t.permission = ToolPermission::ReadOnly;
-        add(std::move(t));
-    }
+
 
     // ── Write tools ──
     if (include_write) {
@@ -98,31 +74,7 @@ void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
             t.permission = ToolPermission::Write;
             add(std::move(t));
         }
-        {
-            auto t = make_git_add_tool(safe_dir_ptr, config.git_add_timeout);
-            t.permission = ToolPermission::Write;
-            add(std::move(t));
-        }
-        {
-            auto t = make_git_commit_tool(safe_dir_ptr, config.git_commit_timeout);
-            t.permission = ToolPermission::Write;
-            add(std::move(t));
-        }
-        {
-            auto t = make_git_restore_tool(safe_dir_ptr, config.git_restore_timeout);
-            t.permission = ToolPermission::Write;
-            add(std::move(t));
-        }
-        {
-            auto t = make_delete_path_tool(safe_dir_ptr);
-            t.permission = ToolPermission::Write;
-            add(std::move(t));
-        }
-        {
-            auto t = make_move_file_tool(safe_dir_ptr);
-            t.permission = ToolPermission::Write;
-            add(std::move(t));
-        }
+
     }
 
 }

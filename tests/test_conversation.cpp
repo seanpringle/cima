@@ -61,8 +61,8 @@ TEST_CASE("Conversation with tool calls", "[conversation]") {
     ToolCall tc;
     tc.index = 0;
     tc.id = "call_abc123";
-    tc.name = "list_path";
-    tc.arguments = R"({"path": "/tmp"})";
+    tc.name = "read_file";
+    tc.arguments = R"({"path": "test.txt"})";
 
     auto mid = conv.add_assistant("", "Need to list /tmp contents.", {tc});
     // Every tool_call must have a corresponding tool result (even if empty).
@@ -81,8 +81,8 @@ TEST_CASE("Conversation with tool calls", "[conversation]") {
     REQUIRE(tcs.size() == 1);
     CHECK(tcs[0]["id"] == "call_abc123");
     CHECK(tcs[0]["type"] == "function");
-    CHECK(tcs[0]["function"]["name"] == "list_path");
-    CHECK(tcs[0]["function"]["arguments"] == R"({"path": "/tmp"})");
+    CHECK(tcs[0]["function"]["name"] == "read_file");
+    CHECK(tcs[0]["function"]["arguments"] == R"({"path": "test.txt"})");
 }
 
 TEST_CASE("Conversation with tool result", "[conversation]") {
@@ -94,8 +94,8 @@ TEST_CASE("Conversation with tool result", "[conversation]") {
         ToolCall tc;
         tc.index = 0;
         tc.id = "call_req1";
-        tc.name = "list_path";
-        tc.arguments = R"({"path": "."})";
+        tc.name = "read_file";
+        tc.arguments = R"({"path": "test.txt"})";
         msg_id = conv.add_assistant("", "", {tc});
     }
     conv.add_tool(msg_id, "call_req1", "file1.txt\nfile2.txt");
@@ -169,7 +169,7 @@ TEST_CASE("Conversation empty content for tool_call message is null", "[conversa
     {
         ToolCall tc;
         tc.id = "c1";
-        tc.name = "list_path";
+        tc.name = "read_file";
         tc.arguments = "{}";
         conv.add_assistant("", "thinking...", {tc});
     }
@@ -234,8 +234,8 @@ TEST_CASE("Conversation multiple tool calls in one message", "[conversation]") {
         ToolCall tc1;
         tc1.index = 0;
         tc1.id = "call_1";
-        tc1.name = "list_path";
-        tc1.arguments = R"({"path": "."})";
+        tc1.name = "read_file";
+        tc1.arguments = R"({"path": "test.txt"})";
         calls.push_back(tc1);
     }
     {
@@ -261,8 +261,8 @@ TEST_CASE("Conversation multiple tool calls in one message", "[conversation]") {
     REQUIRE(tcs.size() == 2);
 
     CHECK(tcs[0]["id"] == "call_1");
-    CHECK(tcs[0]["function"]["name"] == "list_path");
-    CHECK(tcs[0]["function"]["arguments"] == R"({"path": "."})");
+    CHECK(tcs[0]["function"]["name"] == "read_file");
+    CHECK(tcs[0]["function"]["arguments"] == R"({"path": "test.txt"})");
 
     CHECK(tcs[1]["id"] == "call_2");
     CHECK(tcs[1]["function"]["name"] == "read_file");
@@ -278,8 +278,8 @@ TEST_CASE("Conversation multiple tool results in order", "[conversation]") {
     {
         ToolCall tc1;
         tc1.id = "first";
-        tc1.name = "list_path";
-        tc1.arguments = R"({"path": "."})";
+        tc1.name = "read_file";
+        tc1.arguments = R"({"path": "test.txt"})";
         calls.push_back(tc1);
     }
     {
@@ -327,8 +327,8 @@ TEST_CASE("Conversation to_json / from_json round-trip", "[conversation]") {
 
     ToolCall tc;
     tc.id = "call_1";
-    tc.name = "list_path";
-    tc.arguments = R"({"path": "."})";
+    tc.name = "read_file";
+    tc.arguments = R"({"path": "test.txt"})";
     auto mid = conv.add_assistant("", "", {tc});
     conv.add_tool(mid, "call_1", "file1.txt");
 
