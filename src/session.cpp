@@ -1,4 +1,5 @@
 #include "session.h"
+#include "chat.h"
 
 #include <nlohmann/json.hpp>
 
@@ -135,4 +136,94 @@ void Session::print_welcome() const {
                   << "  Session file: " << session_path << "\n";
     }
     std::cout << std::flush;
+}
+
+// ===================================================================
+// Knob accessors
+// ===================================================================
+
+int Session::max_tool_iterations() const { return session_data_.max_tool_iterations; }
+int Session::subagent_timeout() const { return session_data_.subagent_timeout; }
+int Session::bash_timeout() const { return session_data_.bash_timeout; }
+int Session::grep_timeout() const { return session_data_.grep_timeout; }
+int Session::web_search_timeout() const { return session_data_.web_search_timeout; }
+int Session::web_fetch_timeout() const { return session_data_.web_fetch_timeout; }
+
+void Session::set_max_tool_iterations(int v) { session_data_.max_tool_iterations = v; }
+void Session::set_subagent_timeout(int v) { session_data_.subagent_timeout = v; }
+void Session::set_bash_timeout(int v) { session_data_.bash_timeout = v; }
+void Session::set_grep_timeout(int v) { session_data_.grep_timeout = v; }
+void Session::set_web_search_timeout(int v) { session_data_.web_search_timeout = v; }
+void Session::set_web_fetch_timeout(int v) { session_data_.web_fetch_timeout = v; }
+
+// ===================================================================
+// apply_knobs_to — apply session knob overrides to a ChatSession
+// ===================================================================
+
+void Session::apply_knobs_to(ChatSession& session) const {
+    // Effective values: knob override > 0 ? knob : cfg default
+    const int mi = max_tool_iterations() > 0 ? max_tool_iterations() : cfg.max_tool_iterations;
+    const int sa = subagent_timeout() > 0 ? subagent_timeout() : cfg.subagent_timeout;
+    const int bt = bash_timeout() > 0 ? bash_timeout() : cfg.bash_timeout;
+    const int gt = grep_timeout() > 0 ? grep_timeout() : cfg.grep_timeout;
+    const int wst = web_search_timeout() > 0 ? web_search_timeout() : cfg.web_search_timeout;
+    const int wft = web_fetch_timeout() > 0 ? web_fetch_timeout() : cfg.web_fetch_timeout;
+
+    session.set_max_iterations(mi);
+
+    // Rebuild time-sensitive tools with overridden timeouts.
+    // We must remove the existing tools first, then re-add them with
+    // the effective timeout values.
+    // Note: we keep read-only-path-aware tools and plan tools intact.
+
+    // Remove existing time-sensitive tools
+    session.tools_for_testing().remove("run_bwrap");
+    session.tools_for_testing().remove("run_bwrap_ro");
+    session.tools_for_testing().remove("grep_files");
+    session.tools_for_testing().remove("find_files");
+    session.tools_for_testing().remove("web_search");
+    session.tools_for_testing().remove("web_fetch");
+
+    // Re-add with effective timeout values
+    auto& tools = session.tools_for_testing();
+    const auto& ro_paths = cfg.read_only_paths;
+    auto safe_dir = std::make_shared<std::string>(session.safe_dir());
+    auto cancelled = std::make_shared<std::atomic<bool>>(false); // placeholder
+
+    // Re-add read-only bwrap
+    {
+        auto t = make_run_bwrap_tool(cfg, safe_dir, bt, cancelled, true);
+        t.permission = ToolPermission::ReadOnly;
+        tools.add(std::move(t));
+    }
+    // Re-add grep
+    {
+        auto t = make_grep_files_tool(cfg, safe_dir, ro_paths, gt, cancelled);
+        t.permission = ToolPermission::ReadOnly;
+        tools.add(std::move(t));
+    }
+    // Re-add find
+    {
+        auto t = make_find_files_tool(cfg, safe_dir, ro_paths, gt, cancelled);
+        t.permission = ToolPermission::ReadOnly;
+        tools.add(std::move(t));
+    }
+    // Re-add web_search
+    {
+        auto t = make_web_search_tool(cfg, wst, cancelled);
+        t.permission = ToolPermission::ReadOnly;
+        tools.add(std::move(t));
+    }
+    // Re-add web_fetch
+    {
+        auto t = make_web_fetch_tool(cfg, wft, cancelled);
+        t.permission = ToolPermission::ReadOnly;
+        tools.add(std::move(t));
+    }
+    // Re-add write bwrap (if session is not read-only)
+    if (!session.is_read_only()) {
+        auto t = make_run_bwrap_tool(cfg, safe_dir, bt, cancelled, false);
+        t.permission = ToolPermission::Write;
+        tools.add(std::move(t));
+    }
 }

@@ -41,6 +41,8 @@ TEST_CASE("Config to_json / round-trip", "[config]") {
     auto j = cfg.to_json();
     // SYSTEM_PROMPT must NOT be in JSON
     REQUIRE_FALSE(j.contains("SYSTEM_PROMPT"));
+    // Knob fields must NOT be in cima.json (per-session overrides now)
+    REQUIRE_FALSE(j.contains("max_tool_iterations"));
 
     // Now simulate what load() does: parse JSON and overlay on a fresh Config
     Config loaded;
@@ -85,7 +87,8 @@ TEST_CASE("Config to_json / round-trip", "[config]") {
     // manual overlay didn't — just check the JSON value was read
     REQUIRE(loaded.read_only_paths.size() == 1);
     REQUIRE(loaded.read_only_paths[0] == "/custom/path");
-    REQUIRE(loaded.max_tool_iterations == 50);
+    // max_tool_iterations is no longer in cima.json; falls back to code default
+    REQUIRE(loaded.max_tool_iterations == 100);
 }
 
 TEST_CASE("Config read_only_paths defaults added if missing", "[config]") {
@@ -622,38 +625,30 @@ TEST_CASE("SubagentConfig read_only true from JSON", "[config][subagent]") {
     CHECK(loaded[0].read_only == true);
 }
 
-TEST_CASE("subagent_timeout top-level field", "[config][subagent_timeout]") {
-    // Test that the top-level subagent_timeout field is serialized/deserialized.
-    // First, check that the default is 600.
+TEST_CASE("subagent_timeout top-level field no longer in cima.json", "[config][subagent_timeout]") {
+    // Knob fields were removed from cima.json; they use code defaults (600).
     Config cfg;
     CHECK(cfg.subagent_timeout == 600);
 
-    // Set a custom value and round-trip through JSON.
+    // Setting a value should NOT appear in to_json().
     cfg.subagent_timeout = 120;
     auto j = cfg.to_json();
-    REQUIRE(j.contains("subagent_timeout"));
-    CHECK(j["subagent_timeout"] == 120);
+    REQUIRE_FALSE(j.contains("subagent_timeout"));
 
-    // Simulate deserialization from JSON.
-    Config loaded;
-    if (j.contains("subagent_timeout") && j["subagent_timeout"].is_number_integer()) {
-        loaded.subagent_timeout = j["subagent_timeout"].get<int>();
-    }
-    CHECK(loaded.subagent_timeout == 120);
+    // Code default remains 600 even after attempted serialization.
+    CHECK(cfg.subagent_timeout == 120); // in-memory value is unaffected
+    // Reset to verify code default
+    Config fresh;
+    CHECK(fresh.subagent_timeout == 600);
 
-    // Test that missing field defaults to 600.
+    // Test that missing from JSON means code default is used.
+    // (Session-level overrides are handled by SessionData, not Config)
     json j2 = R"({})"_json;
-    loaded.subagent_timeout = 600;
-    if (j2.contains("subagent_timeout") && j2["subagent_timeout"].is_number_integer()) {
-        loaded.subagent_timeout = j2["subagent_timeout"].get<int>();
-    }
+    Config loaded;
     CHECK(loaded.subagent_timeout == 600);
 
-    // Test zero (no timeout).
-    json j3 = R"({"subagent_timeout": 0})"_json;
-    loaded.subagent_timeout = 600;
-    if (j3.contains("subagent_timeout") && j3["subagent_timeout"].is_number_integer()) {
-        loaded.subagent_timeout = j3["subagent_timeout"].get<int>();
-    }
-    CHECK(loaded.subagent_timeout == 0);
+    // Test that loading from old JSON that has subagent_timeout is ignored.
+    json j3 = R"({"subagent_timeout": 120})"_json;
+    // Config::load() no longer reads this field.
+    CHECK(loaded.subagent_timeout == 600);
 }

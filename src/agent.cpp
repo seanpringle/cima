@@ -2,7 +2,6 @@
 #include "agent.h"
 #include "client.h"
 #include "config.h"
-#include "session_data.h"
 
 #include <algorithm>
 #include <expected>
@@ -46,7 +45,7 @@ void PrimaryAgent::cancel_running_chats() {
     }
 }
 
-PrimaryAgent::PrimaryAgent(SessionData& data) : session_data{data} {
+PrimaryAgent::PrimaryAgent(Session& session) : session_{session} {
     init_defaults();
     create_chat_session();
     restore_session_data();
@@ -60,16 +59,16 @@ PrimaryAgent::~PrimaryAgent() {
     cancel_and_wait();
 
     // Stop all custom MCP servers before saving session data.
-    for (const auto& mcp : session_data.custom_mcp_servers) {
+    for (const auto& mcp : session_.session_data().custom_mcp_servers) {
         if (session->mcp_registry().is_running(mcp.name)) {
             session->stop_custom_mcp_server(mcp.name);
         }
     }
 
-    session_data.provider_name = provider_name;
-    session_data.model = model_name;
-    session_data.reasoning_effort = reasoning_effort;
-    session_data.conversation = session->conversation().to_json();
+    session_.session_data().provider_name = provider_name;
+    session_.session_data().model = model_name;
+    session_.session_data().reasoning_effort = reasoning_effort;
+    session_.session_data().conversation = session->conversation().to_json();
 
     json log_arr = json::array();
     for (const auto& e : ui_state.entries) {
@@ -95,19 +94,19 @@ PrimaryAgent::~PrimaryAgent() {
             entry["streaming"] = true;
         log_arr.push_back(std::move(entry));
     }
-    session_data.chat_log = std::move(log_arr);
-    session_data.plan = session->plan().to_json();
-    session_data.mcp_enabled = mcp_enabled;
-    session_data.tool_gates = tool_gates;
-    session_data.rw_subagent_tool_gates = rw_subagent_tool_gates;
-    session_data.ro_subagent_tool_gates = ro_subagent_tool_gates;
-    session_data.input_history.assign(
+    session_.session_data().chat_log = std::move(log_arr);
+    session_.session_data().plan = session->plan().to_json();
+    session_.session_data().mcp_enabled = mcp_enabled;
+    session_.session_data().tool_gates = tool_gates;
+    session_.session_data().rw_subagent_tool_gates = rw_subagent_tool_gates;
+    session_.session_data().ro_subagent_tool_gates = ro_subagent_tool_gates;
+    session_.session_data().input_history.assign(
         ui_state.input_history.begin(), ui_state.input_history.end());
 
     std::error_code ec;
     auto cwd = std::filesystem::current_path(ec);
     if (!ec)
-        session_data.last_cwd = cwd.string();
+        session_.session_data().last_cwd = cwd.string();
 }
 
 void PrimaryAgent::init_defaults() {
@@ -138,31 +137,32 @@ void PrimaryAgent::create_chat_session() {
 }
 
 void PrimaryAgent::restore_session_data() {
-    if (!session_data.provider_name.empty()) {
-        provider_name = session_data.provider_name;
+    auto& sd = session_.session_data();
+    if (!sd.provider_name.empty()) {
+        provider_name = sd.provider_name;
         for (const auto& p : cfg.providers) {
-            if (p.name == session_data.provider_name) {
+            if (p.name == sd.provider_name) {
                 session->set_provider(p);
                 break;
             }
         }
     }
 
-    if (!session_data.model.empty()) {
-        model_name = session_data.model;
-        session->set_model(session_data.model);
+    if (!sd.model.empty()) {
+        model_name = sd.model;
+        session->set_model(sd.model);
     }
 
-    if (!session_data.reasoning_effort.empty()) {
-        reasoning_effort = session_data.reasoning_effort;
-        session->set_reasoning_effort(session_data.reasoning_effort);
+    if (!sd.reasoning_effort.empty()) {
+        reasoning_effort = sd.reasoning_effort;
+        session->set_reasoning_effort(sd.reasoning_effort);
     }
 
-    session->conversation().from_json(session_data.conversation);
+    session->conversation().from_json(sd.conversation);
 
     ui_state.entries.clear();
-    if (session_data.chat_log.is_array()) {
-        for (const auto& entry : session_data.chat_log) {
+    if (sd.chat_log.is_array()) {
+        for (const auto& entry : sd.chat_log) {
             DisplayEntry e;
             std::string t = entry.value("type", "Content");
             if (t == "UserText")
@@ -182,16 +182,16 @@ void PrimaryAgent::restore_session_data() {
         }
     }
 
-    if (session_data.plan.is_object()) {
-        session->plan().from_json(session_data.plan);
+    if (sd.plan.is_object()) {
+        session->plan().from_json(sd.plan);
     }
 
-    mcp_enabled = session_data.mcp_enabled;
+    mcp_enabled = sd.mcp_enabled;
 
     // ── Tool gates: restore from session data ──
     tool_gates.clear();
     // Override with persisted values from session data.
-    for (const auto& [name, enabled] : session_data.tool_gates) {
+    for (const auto& [name, enabled] : sd.tool_gates) {
         tool_gates[name] = enabled;
     }
     // Propagate to session.
@@ -205,7 +205,7 @@ void PrimaryAgent::restore_session_data() {
     rw_subagent_tool_gates.clear();
     rw_subagent_tool_gates["call_subagent"] = false;
     // Override with persisted values.
-    for (const auto& [name, enabled] : session_data.rw_subagent_tool_gates) {
+    for (const auto& [name, enabled] : sd.rw_subagent_tool_gates) {
         rw_subagent_tool_gates[name] = enabled;
     }
 
@@ -218,12 +218,12 @@ void PrimaryAgent::restore_session_data() {
     ro_subagent_tool_gates["web_fetch"] = true;
     // All write tools, bash, call_subagent default to false (missing = false)
     // Override with persisted values.
-    for (const auto& [name, enabled] : session_data.ro_subagent_tool_gates) {
+    for (const auto& [name, enabled] : sd.ro_subagent_tool_gates) {
         ro_subagent_tool_gates[name] = enabled;
     }
 
     // Restore custom MCP servers: start any that were previously enabled.
-    for (const auto& mcp : session_data.custom_mcp_servers) {
+    for (const auto& mcp : sd.custom_mcp_servers) {
         if (mcp_enabled.count(mcp.name) && mcp_enabled[mcp.name]) {
             auto result = session->start_custom_mcp_server(mcp);
             if (!result)
@@ -233,9 +233,12 @@ void PrimaryAgent::restore_session_data() {
 
     // Restore input history
     ui_state.input_history.clear();
-    for (const auto& item : session_data.input_history) {
+    for (const auto& item : sd.input_history) {
         ui_state.input_history.push_back(item);
     }
+
+    // Apply session knob overrides (if any)
+    session_.apply_knobs_to(*session);
 }
 
 void PrimaryAgent::create_subagents() {

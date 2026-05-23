@@ -84,14 +84,7 @@ json Config::to_json() const {
     j["mcp_servers"] = std::move(mcp_arr);
 
     j["read_only_paths"] = read_only_paths;
-    j["max_tool_iterations"] = max_tool_iterations;
     j["snippets"] = snippets;
-    j["subagent_timeout"] = subagent_timeout;
-    j["bash_timeout"] = bash_timeout;
-
-    j["grep_timeout"] = grep_timeout;
-    j["web_search_timeout"] = web_search_timeout;
-    j["web_fetch_timeout"] = web_fetch_timeout;
     // ── Subagents ──
     json sa_arr = json::array();
     for (const auto& sa : subagents) {
@@ -242,25 +235,9 @@ Config Config::load() {
         }
 
         // ── Other top-level fields ──
-        if (j.contains("max_tool_iterations") && j["max_tool_iterations"].is_number_integer()) {
-            int n = j["max_tool_iterations"].get<int>();
-            if (n > 0)
-                cfg.max_tool_iterations = n;
-        }
-
-        // Tool timeouts (int, >= 0)
-        auto load_timeout = [&](const std::string& key, int& field) {
-            if (j.contains(key) && j[key].is_number_integer()) {
-                int n = j[key].get<int>();
-                if (n >= 0)
-                    field = n;
-            }
-        };
-        load_timeout("subagent_timeout", cfg.subagent_timeout);
-        load_timeout("bash_timeout", cfg.bash_timeout);
-        load_timeout("grep_timeout", cfg.grep_timeout);
-        load_timeout("web_search_timeout", cfg.web_search_timeout);
-        load_timeout("web_fetch_timeout", cfg.web_fetch_timeout);
+        // Note: knob fields (max_tool_iterations, bash_timeout, etc.) are
+        // no longer loaded from cima.json — they use code defaults and
+        // can be overridden per-session via SessionData knobs.
 
         // Font settings
         if (j.contains("font_sans") && j["font_sans"].is_string()) {

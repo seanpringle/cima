@@ -300,7 +300,7 @@ int gui_main(const std::string& session_name) {
     Session session(session_name);
     session.print_welcome();
 
-    PrimaryAgent primary(session.session_data());
+    PrimaryAgent primary(session);
 
     // ── Kick off async model fetch for every provider ──
     for (const auto& provider : cfg.providers) {

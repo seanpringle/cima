@@ -32,6 +32,14 @@ struct SessionData {
     std::vector<McpEndpoint> custom_mcp_servers; // session-local custom MCP servers (persisted)
     std::vector<std::string> input_history;       // per-tab input history (persisted)
 
+    // ── Knob overrides (0 = use code default from Config) ──
+    int max_tool_iterations = 0;
+    int subagent_timeout = 0;
+    int bash_timeout = 0;
+    int grep_timeout = 0;
+    int web_search_timeout = 0;
+    int web_fetch_timeout = 0;
+
     json to_json() const;
     void from_json(const json& j);
 

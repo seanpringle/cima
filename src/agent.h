@@ -1,7 +1,7 @@
 #pragma once
 
 #include "gui_app.h"
-#include "session_data.h"
+#include "session.h"
 
 #include <memory>
 
@@ -91,9 +91,9 @@ struct PrimaryAgent : Agent {
 
     std::vector<SubAgent> subagents;
 
-    SessionData& session_data;
+    Session& session_;
 
-    PrimaryAgent(SessionData&);
+    PrimaryAgent(Session&);
     ~PrimaryAgent();
 
     Result<SubAgent*> subagent_by_name(const std::string& name);

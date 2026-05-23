@@ -369,7 +369,7 @@ void render_chat_ui(PrimaryAgent& tab, bool& done) {
             ui.push_entry(EntryType::UserText, input, false);
             // Expand !snippet-name tags before sending to the agent
             // Session snippets take precedence over config snippets.
-            string expanded = expand_tags(input, tab.session_data.snippets);
+            string expanded = expand_tags(input, tab.session_.session_data().snippets);
             tab.start_chat(expanded);
             for (auto it = history.begin(); it != history.end();
                 it = *it == input ? history.erase(it) : ++it)

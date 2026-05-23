@@ -505,7 +505,7 @@ void render_config_tab(PrimaryAgent& tab) {
                         if (err.empty()) {
                             bool name_in_config = is_config_server(name);
                             bool name_in_custom = false;
-                            for (const auto& m : tab.session_data.custom_mcp_servers) {
+                            for (const auto& m : tab.session_.session_data().custom_mcp_servers) {
                                 if (m.name == name && name != tab.mcp_edit.original_name) {
                                     name_in_custom = true;
                                     break;
@@ -566,8 +566,8 @@ void render_config_tab(PrimaryAgent& tab) {
                             // Update existing or add new
                             if (!tab.mcp_edit.original_name.empty()) {
                                 // Find and replace in vector
-                                for (auto it = tab.session_data.custom_mcp_servers.begin();
-                                    it != tab.session_data.custom_mcp_servers.end();
+                                for (auto it = tab.session_.session_data().custom_mcp_servers.begin();
+                                    it != tab.session_.session_data().custom_mcp_servers.end();
                                     ++it) {
                                     if (it->name == tab.mcp_edit.original_name) {
                                         it->name = name;
@@ -582,13 +582,13 @@ void render_config_tab(PrimaryAgent& tab) {
                                     }
                                 }
                             } else {
-                                tab.session_data.custom_mcp_servers.push_back(std::move(mcp));
+                                tab.session_.session_data().custom_mcp_servers.push_back(std::move(mcp));
                             }
 
                             // Start the server if enabled
                             tab.mcp_enabled[name] = true;
                             auto result = session.start_custom_mcp_server(
-                                tab.session_data.custom_mcp_servers.back());
+                                tab.session_.session_data().custom_mcp_servers.back());
                             if (!result) {
                                 tab.mcp_error[name] = result.error();
                                 tab.mcp_enabled[name] = false;
@@ -627,8 +627,8 @@ void render_config_tab(PrimaryAgent& tab) {
                 }
 
                 // List custom MCP servers
-                for (auto it = tab.session_data.custom_mcp_servers.begin();
-                    it != tab.session_data.custom_mcp_servers.end();) {
+                for (auto it = tab.session_.session_data().custom_mcp_servers.begin();
+                    it != tab.session_.session_data().custom_mcp_servers.end();) {
                     PushID(it->name.c_str());
                     bool enabled = tab.mcp_enabled[it->name];
                     if (Checkbox("##en", &enabled)) {
@@ -741,7 +741,7 @@ void render_config_tab(PrimaryAgent& tab) {
                     SameLine();
                     if (Button("X")) {
                         session.stop_custom_mcp_server(it->name);
-                        it = tab.session_data.custom_mcp_servers.erase(it);
+                        it = tab.session_.session_data().custom_mcp_servers.erase(it);
                         tab.mcp_enabled.erase(it->name);
                         tab.mcp_error.erase(it->name);
                         PopID();
@@ -786,8 +786,8 @@ void render_config_tab(PrimaryAgent& tab) {
                             tab.snippet_edit.error = std::move(err);
                         } else {
                             if (!tab.snippet_edit.original_name.empty())
-                                tab.session_data.snippets.erase(tab.snippet_edit.original_name);
-                            tab.session_data.snippets[name] =
+                                tab.session_.session_data().snippets.erase(tab.snippet_edit.original_name);
+                            tab.session_.session_data().snippets[name] =
                                 std::string(tab.snippet_edit.content_buf.data());
                             tab.snippet_edit.active = false;
                             tab.snippet_edit.error.clear();
@@ -811,11 +811,11 @@ void render_config_tab(PrimaryAgent& tab) {
                     }
                 }
 
-                for (auto it = tab.session_data.snippets.begin();
-                    it != tab.session_data.snippets.end();) {
+                for (auto it = tab.session_.session_data().snippets.begin();
+                    it != tab.session_.session_data().snippets.end();) {
                     PushID(it->first.c_str());
                     if (Button("X")) {
-                        it = tab.session_data.snippets.erase(it);
+                        it = tab.session_.session_data().snippets.erase(it);
                         PopID();
                         continue;
                     }
@@ -843,6 +843,45 @@ void render_config_tab(PrimaryAgent& tab) {
                     ++it;
                     PopID();
                 }
+                EndTabItem();
+            }
+
+            // ── Knobs sub-tab ──
+            if (BeginTabItem("  Knobs  ")) {
+                TextUnformatted("Per-session knob overrides (0 = use code default).");
+                TextUnformatted("Changes take effect immediately on this session.");
+                Separator();
+
+                auto& knobs = tab.session_.session_data();
+
+                bool changed = false;
+
+                auto knob_int = [&](const char* label, int& sd_field, int code_default) {
+                    int display = sd_field > 0 ? sd_field : code_default;
+                    PushID(label);
+                    if (InputInt(label, &display)) {
+                        if (display < 0) display = 0;
+                        sd_field = (display == code_default) ? 0 : display;
+                        changed = true;
+                    }
+                    PopID();
+                    if (sd_field == 0) {
+                        SameLine();
+                        TextDisabled("(default: %d)", code_default);
+                    }
+                };
+
+                knob_int("Max Tool Iterations", knobs.max_tool_iterations, 100);
+                knob_int("Subagent Timeout (s)", knobs.subagent_timeout, 600);
+                knob_int("Bash Timeout (s)", knobs.bash_timeout, 30);
+                knob_int("Grep Timeout (s)", knobs.grep_timeout, 10);
+                knob_int("Web Search Timeout (s)", knobs.web_search_timeout, 15);
+                knob_int("Web Fetch Timeout (s)", knobs.web_fetch_timeout, 15);
+
+                if (changed) {
+                    tab.session_.apply_knobs_to(*tab.session);
+                }
+
                 EndTabItem();
             }
 

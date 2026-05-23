@@ -159,6 +159,9 @@ class ChatSession {
         tools_.add(make_call_subagent_tool(primary, subagent_configs, cfg.subagent_timeout));
     }
 
+    /// Override the max tool iterations (session knob).
+    void set_max_iterations(int n) { max_iterations_ = n; }
+
     /// Access the tool registry (for testing and GUI).
     ToolRegistry& tools_for_testing() { return tools_; }
     const ToolRegistry& tools_for_testing() const { return tools_; }
