@@ -34,7 +34,8 @@ struct Agent {
     void validate_current_model();
 
     /// Poll for completion of an in-flight compact operation.
-    void poll_compact();
+    /// Returns std::nullopt if compact is not yet complete, or the result if done.
+    std::optional<Result<void>> poll_compact();
 
     /// Poll for completion of an in-flight clear operation.
     void poll_clear();

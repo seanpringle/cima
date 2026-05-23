@@ -34,6 +34,10 @@ struct AsyncChatState {
     std::atomic<bool> running{false};
     std::future<Result<ChatResult>> future;
     CancellationToken cancelled = make_cancellation_token();
+
+    // Compaction state (runs in background thread)
+    std::future<Result<void>> compact_future;
+    bool compact_running = false;
 };
 
 struct ImFont;

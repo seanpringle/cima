@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <expected>
+#include <optional>
 #include <thread>
 
 void Agent::cancel_and_wait() {
@@ -412,19 +413,38 @@ void Agent::validate_current_model() {
     }
 }
 
-void Agent::poll_compact() {
+std::optional<Result<void>> Agent::poll_compact() {
     auto& ui = ui_state;
-    if (ui.compact_requested) {
+
+    // Launch compaction if requested and not already running
+    if (ui.compact_requested && !chat_state->compact_running) {
         ui.compact_requested = false;
-        auto compact_result = session->compact();
+        chat_state->compact_running = true;
+        chat_state->compact_future = std::async(std::launch::async, [this]() {
+            return session->compact();
+        });
+    }
+
+    // Poll for completion if compact is in-flight
+    if (chat_state->compact_running && chat_state->compact_future.valid() &&
+        chat_state->compact_future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+        chat_state->compact_running = false;
         ui.entries.clear();
-        if (compact_result) {
-            ui.push_entry(EntryType::Content, "Conversation compacted.", false);
-        } else {
-            ui.push_entry(
-                EntryType::Content, "Compaction failed: " + compact_result.error(), false);
+        try {
+            auto result = chat_state->compact_future.get();
+            if (result) {
+                ui.push_entry(EntryType::Content, "Conversation compacted.", false);
+            } else {
+                ui.push_entry(EntryType::Content, "Compaction failed: " + result.error(), false);
+            }
+            return std::move(result);
+        } catch (const std::exception& e) {
+            ui.push_entry(EntryType::Content, "Compaction failed: " + std::string(e.what()), false);
+            return std::unexpected(std::string(e.what()));
         }
     }
+
+    return std::nullopt;
 }
 
 void Agent::poll_clear() {
