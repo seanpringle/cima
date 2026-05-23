@@ -226,7 +226,8 @@ void render_config_tab(PrimaryAgent& tab) {
                     // Categorisation helpers.
                     auto category_of = [](const std::string& name) -> const char* {
                         if (name == "read_file" || name == "grep_files" ||
-                            name == "write_file" || name == "edit_file")
+                            name == "write_file" || name == "edit_file" ||
+                            name == "find_files")
                             return "File";
                         if (name == "web_search" || name == "web_fetch")
                             return "Web";
