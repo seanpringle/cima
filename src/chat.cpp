@@ -490,11 +490,12 @@ Result<void> ChatSession::compact() {
             continue; // skip system messages
 
         if (msg.tool_calls.empty()) {
-            // Simple user/assistant message
+            // Simple user/assistant message.
+            // OpenAI/DeepSeek require that assistant messages have either
+            // content OR tool_calls; always include content (even if empty)
+            // to avoid "content or tool_calls must be set" errors.
             json m{{"role", msg.role}};
-            if (msg.content.has_value() && !msg.content->empty()) {
-                m["content"] = *msg.content;
-            }
+            m["content"] = msg.content.value_or("");
             if (msg.role == "assistant" && !msg.reasoning_content.empty()) {
                 m["reasoning_content"] = msg.reasoning_content;
             }
