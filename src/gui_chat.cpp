@@ -366,12 +366,28 @@ void render_chat_ui(PrimaryAgent& tab, bool& done) {
         !chat.running && !tab.chat_state->compact_running) {
         string input(trimWhite(buffer.data()));
         if (input.size()) {
-            // Push to UI with tags visible (user sees @Page / !Snippet)
-            ui.push_entry(EntryType::UserText, input, false);
-            // Expand !snippet-name tags before sending to the agent
-            // Session snippets take precedence over config snippets.
-            string expanded = expand_tags(input, tab.session_.session_data().snippets, tab.cfg_->snippets);
-            tab.start_chat(expanded);
+            // Check for "/system" prefix — inject as role=system message.
+            // Must be followed by whitespace to avoid matching "/systematic".
+            bool is_system = (input.rfind("/system", 0) == 0 && input.size() >= 8
+                              && std::isspace(static_cast<unsigned char>(input[7])));
+            if (is_system) {
+                string text = input.substr(8);
+                while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front())))
+                    text.erase(text.begin());
+                if (!text.empty()) {
+                    // Push System entry to UI display
+                    ui.push_entry(EntryType::System, text, false);
+                    // Inject into conversation as role=system with "preserve" retention
+                    tab.session->conversation().add_system(text, "preserve");
+                }
+            } else {
+                // Normal user message
+                ui.push_entry(EntryType::UserText, input, false);
+                // Expand !snippet-name tags before sending to the agent
+                // Session snippets take precedence over config snippets.
+                string expanded = expand_tags(input, tab.session_.session_data().snippets, tab.cfg_->snippets);
+                tab.start_chat(expanded);
+            }
             for (auto it = history.begin(); it != history.end();
                 it = *it == input ? history.erase(it) : ++it)
                 ;

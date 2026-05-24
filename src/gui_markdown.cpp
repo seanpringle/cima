@@ -580,5 +580,13 @@ void render_display_entry(const ChatUIState& ui, const DisplayEntry& entry, size
             render_tool_call_group(ui, i);
             break;
         }
+        case EntryType::System: {
+            PushStyleColor(ImGuiCol_Text, IM_COL32(180, 60, 200, 255));
+            TextUnformatted("System: ");
+            if (entry.text.size()) SameLine(0,0);
+            PopStyleColor();
+            render_content(entry.text);
+            break;
+        }
     }
 }
