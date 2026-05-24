@@ -34,11 +34,10 @@ json SessionData::to_json() const {
     j["tool_gates"] = std::move(tg);
 
     // Serialise rw_subagent_tool_gates map
-    // call_subagent and ask_user are intentionally excluded — subagents
-    // must never be able to recurse or ask the user.
+    // call_subagent is intentionally excluded — subagents must not recurse.
     json rwtg = json::object();
     for (const auto& [name, enabled] : rw_subagent_tool_gates) {
-        if (name == "call_subagent" || name == "ask_user")
+        if (name == "call_subagent")
             continue;
         rwtg[name] = enabled;
     }
@@ -47,7 +46,7 @@ json SessionData::to_json() const {
     // Serialise ro_subagent_tool_gates map
     json rotg = json::object();
     for (const auto& [name, enabled] : ro_subagent_tool_gates) {
-        if (name == "call_subagent" || name == "ask_user")
+        if (name == "call_subagent")
             continue;
         rotg[name] = enabled;
     }
@@ -133,15 +132,14 @@ void SessionData::from_json(const json& j) {
     }
 
     // Deserialise rw_subagent_tool_gates map
-    // call_subagent and ask_user are intentionally skipped — subagents
-    // must never be able to recurse or ask the user.
+    // call_subagent is intentionally skipped — subagents must not recurse.
     rw_subagent_tool_gates.clear();
     if (j.contains("rw_subagent_tool_gates") && j["rw_subagent_tool_gates"].is_object()) {
         for (auto it = j["rw_subagent_tool_gates"].begin(); it != j["rw_subagent_tool_gates"].end();
             ++it) {
             if (it.value().is_boolean()) {
                 auto name = it.key();
-                if (name == "call_subagent" || name == "ask_user")
+                if (name == "call_subagent")
                     continue;
                 rw_subagent_tool_gates[name] = it.value().get<bool>();
             }
@@ -155,7 +153,7 @@ void SessionData::from_json(const json& j) {
             ++it) {
             if (it.value().is_boolean()) {
                 auto name = it.key();
-                if (name == "call_subagent" || name == "ask_user")
+                if (name == "call_subagent")
                     continue;
                 ro_subagent_tool_gates[name] = it.value().get<bool>();
             }

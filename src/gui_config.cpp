@@ -313,7 +313,7 @@ void render_config_tab(PrimaryAgent& tab) {
                         // Missing from the map = allowed (same as primary behaviour).
                         TableNextColumn();
                         {
-                            if (name == "call_subagent" || name == "ask_user") {
+                            if (name == "call_subagent") {
                                 bool off = false;
                                 BeginDisabled(true);
                                 PushID((name + "_rw").c_str());
@@ -340,7 +340,7 @@ void render_config_tab(PrimaryAgent& tab) {
                         // ── Read-only Subagent ──
                         TableNextColumn();
                         {
-                            if (name == "call_subagent" || name == "ask_user") {
+                            if (name == "call_subagent") {
                                 bool off = false;
                                 BeginDisabled(true);
                                 PushID((name + "_ro").c_str());

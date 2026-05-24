@@ -162,12 +162,6 @@ class ChatSession {
     McpRegistry& mcp_registry() { return mcp_registry_; }
     const McpRegistry& mcp_registry() const { return mcp_registry_; }
 
-    /// Register the ask_user tool in this session's tool registry.
-    /// Only called for the primary agent (not for subagents).
-    void register_ask_user_tool(AsyncChatState& chat_state) {
-        tools_.add(make_ask_user_tool(chat_state));
-    }
-
     /// Register the call_subagent tool in this session's tool registry.
     /// The tool clears the subagent's UI state before forwarding the primary
     /// agent's request as a UserText entry.  subagent_configs are used to build

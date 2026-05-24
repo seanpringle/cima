@@ -130,7 +130,6 @@ add_library(cima_core
     src/session.cpp
     src/session_data.cpp
     src/tools/factories/subagent.cpp
-    src/tools/factories/ask_user.cpp
     src/mcp/mcp_client.cpp
     src/mcp/mcp_registry.cpp
 )
