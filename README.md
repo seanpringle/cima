@@ -23,6 +23,6 @@ Sessions stored in `~/.local/state/cima/`.
 ## Features
 
 - Multi-tab chat with subagents
-- Tool execution: filesystem, git, bash, cmake, web search/fetch
+- Tool execution: filesystem read/write/edit, bash sandbox, grep/find, web search/fetch
 - MCP server integration (stdio & HTTP transports)
 - Auto-compaction for long conversations

@@ -12,6 +12,7 @@ extern ImFont* mono_font;
 
 // ── Tool result rendering mode ──
 enum class RenderToolResult {
+    None,
     Plain,
     Diff,
 };

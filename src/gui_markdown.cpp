@@ -408,9 +408,11 @@ static void render_tool_result(size_t seq, const std::string& result, RenderTool
     string id = "##toolresult-" + std::to_string(seq);
 
     switch (mode) {
+        case RenderToolResult::None: break;
+
         case RenderToolResult::Plain: {
             auto extents = CalcTextSize(result.c_str());
-            float height = std::min(GetTextLineHeightWithSpacing() * 15, extents.y);
+            float height = std::min(GetTextLineHeightWithSpacing() * 3, extents.y);
             height += GetStyle().WindowPadding.y * 2;
             float width = GetContentRegionAvail().x-GetStyle().ItemSpacing.x;
             if (extents.x > width) height += GetStyle().ScrollbarSize;
@@ -429,6 +431,7 @@ static void render_tool_result(size_t seq, const std::string& result, RenderTool
             EndChild();
             break;
         }
+
         case RenderToolResult::Diff: {
             float height = GetTextLineHeightWithSpacing() * std::min(line_count, 15);
             height += GetStyle().WindowPadding.y * 2;
@@ -480,6 +483,9 @@ static void render_tool_call_group(const ChatUIState& ui, size_t& i) {
             render_tool_result(i, ui.entries[i].tool_result, [&]() {
                 if (string_view(ui.entries[i].text).contains("edit_file(")) {
                     return RenderToolResult::Diff;
+                }
+                if (string_view(ui.entries[i].text).contains("read_file(")) {
+                    return RenderToolResult::None;
                 }
                 return RenderToolResult::Plain;
             }());
