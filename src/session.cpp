@@ -224,7 +224,7 @@ void Session::apply_knobs_to(ChatSession& session) const {
     }
     // Re-add write bwrap (if session is not read-only)
     if (!session.is_read_only()) {
-        auto t = make_run_bwrap_tool(cfg, safe_dir, bt, cancelled, false);
+        auto t = make_run_bwrap_tool(cfg, safe_dir, bt, cancelled, /*read_only=*/false, /*allow_network=*/true);
         t.permission = ToolPermission::Write;
         tools.add(std::move(t));
     }

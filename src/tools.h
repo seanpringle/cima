@@ -183,7 +183,8 @@ Tool make_edit_file_tool(
 Tool make_run_bwrap_tool(const Config& config, std::shared_ptr<std::string> safe_dir_ptr,
     int timeout,
     CancellationToken cancelled = nullptr,
-    bool read_only = false);
+    bool read_only = false,
+    bool allow_network = false);
 Tool make_web_search_tool(const Config& config, int timeout, CancellationToken cancelled = nullptr);
 Tool make_web_fetch_tool(const Config& config, int timeout, CancellationToken cancelled = nullptr);
 

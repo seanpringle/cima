@@ -72,7 +72,7 @@ void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
         }
 
         {
-            auto t = make_run_bwrap_tool(config, safe_dir_ptr, kDefaultBashTimeout, cancelled_);
+            auto t = make_run_bwrap_tool(config, safe_dir_ptr, kDefaultBashTimeout, cancelled_, /*read_only=*/false, /*allow_network=*/true);
             t.permission = ToolPermission::Write;
             add(std::move(t));
         }

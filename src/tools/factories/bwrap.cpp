@@ -13,11 +13,14 @@
 
 Tool make_run_bwrap_tool(const Config& config, std::shared_ptr<std::string> safe_dir_ptr,
     int timeout, CancellationToken cancelled,
-    bool read_only) {
+    bool read_only, bool allow_network) {
     Tool t;
     if (read_only) {
         t.name = "run_bwrap_ro";
         t.description = "Read-only: run a bash command in the project directory inside a bwrap sandbox (restricted filesystem, no network, no writes to project dir).";
+    } else if (allow_network) {
+        t.name = "run_bwrap";
+        t.description = "Run a bash command in the project directory inside a bwrap sandbox (restricted filesystem, with network access).";
     } else {
         t.name = "run_bwrap";
         t.description = "Run a bash command in the project directory inside a bwrap sandbox (restricted filesystem, no network).";
@@ -27,7 +30,7 @@ Tool make_run_bwrap_tool(const Config& config, std::shared_ptr<std::string> safe
         {"properties",
             {{"command", {{"type", "string"}, {"description", "Shell command to execute"}}}}},
         {"required", {"command"}}};
-    t.execute = [safe_dir_ptr, timeout, cancelled, read_only](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr, timeout, cancelled, read_only, allow_network](const json& args) -> Result<std::string> {
         auto command = args.value("command", std::string());
         if (command.empty()) {
             return std::unexpected(std::string("command is required"));
@@ -127,7 +130,14 @@ Tool make_run_bwrap_tool(const Config& config, std::shared_ptr<std::string> safe
             }
 
             // Namespace isolation
-            argv[argc++] = "--unshare-all";
+            if (allow_network) {
+                // Unshare all namespaces except network, so commands can
+                // access the network (e.g. CMake FetchContent).
+                argv[argc++] = "--unshare-all";
+                argv[argc++] = "--share-net";
+            } else {
+                argv[argc++] = "--unshare-all";
+            }
             argv[argc++] = "--new-session";
             argv[argc++] = "--die-with-parent";
 
