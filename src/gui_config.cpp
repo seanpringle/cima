@@ -942,10 +942,12 @@ void render_config_tab(PrimaryAgent& tab) {
                 {
                     std::string tools = tab.session->tools_json().dump(2);
                     BeginDisabled(true);
+                    PushFont(mono_font);
                     InputTextMultiline("##toolsjson",
                         tools.data(), tools.size(),
                         ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 20),
                         ImGuiInputTextFlags_ReadOnly);
+                    PopFont();
                     EndDisabled();
                 }
 
