@@ -131,6 +131,17 @@ std::string ChatSession::build_effective_prompt() const {
                   "Tools from external MCP servers are available.\n"
                   "These are listed among your tools with a \"mcp_<servername>_\" prefix.\n"
                   "Use them as you would any other tool.\n";
+
+        // Append a table showing running servers and their descriptions.
+        auto servers = mcp_registry_.running_servers();
+        if (!servers.empty()) {
+            prompt += "\n## MCP Servers\n\n"
+                      "| Server | Description |\n"
+                      "| --- | --- |\n";
+            for (const auto& s : servers) {
+                prompt += "| " + s.name + " | " + s.description + " |\n";
+            }
+        }
     }
     return prompt;
 }

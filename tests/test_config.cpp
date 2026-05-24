@@ -134,6 +134,7 @@ TEST_CASE("McpEndpoint defaults", "[config][mcp]") {
     REQUIRE(m.cwd.empty());
     REQUIRE(m.url.empty());
     REQUIRE(m.api_key.empty());
+    REQUIRE(m.description.empty());
     REQUIRE(m.env.empty());
     REQUIRE(m.timeout_sec == 60);
 }
@@ -148,6 +149,7 @@ TEST_CASE("McpEndpoint round-trip serialization", "[config][mcp]") {
     stdio_mcp.command = "npx";
     stdio_mcp.args = {"-y", "@modelcontextprotocol/server-filesystem", "/tmp/test"};
     stdio_mcp.cwd = "/home/user";
+    stdio_mcp.description = "File system access for the project directory";
     stdio_mcp.env = {{"NODE_ENV", "production"}};
     stdio_mcp.timeout_sec = 120;
     cfg.mcp_servers.push_back(stdio_mcp);
@@ -178,6 +180,7 @@ TEST_CASE("McpEndpoint round-trip serialization", "[config][mcp]") {
             m.api_key = mj.value("api_key", std::string());
             m.cwd = mj.value("cwd", std::string());
             m.timeout_sec = mj.value("timeout_sec", 60);
+            m.description = mj.value("description", std::string());
 
             if (mj.contains("args") && mj["args"].is_array()) {
                 for (const auto& a : mj["args"]) {
@@ -204,6 +207,7 @@ TEST_CASE("McpEndpoint round-trip serialization", "[config][mcp]") {
     CHECK(loaded.mcp_servers[0].args[1] == "@modelcontextprotocol/server-filesystem");
     CHECK(loaded.mcp_servers[0].args[2] == "/tmp/test");
     CHECK(loaded.mcp_servers[0].cwd == "/home/user");
+    CHECK(loaded.mcp_servers[0].description == "File system access for the project directory");
     CHECK(loaded.mcp_servers[0].env.size() == 1);
     CHECK(loaded.mcp_servers[0].env.at("NODE_ENV") == "production");
     CHECK(loaded.mcp_servers[0].timeout_sec == 120);
@@ -264,6 +268,7 @@ TEST_CASE("McpEndpoint missing optional fields load as empty", "[config][mcp]") 
     CHECK(m.cwd.empty());               // missing → empty
     CHECK(m.url.empty());               // missing → empty
     CHECK(m.api_key.empty());           // missing → empty
+    CHECK(m.description.empty());       // missing → empty
     CHECK(m.env.empty());               // missing → empty
     CHECK(m.args.empty());              // missing → empty
     CHECK(m.timeout_sec == 60);         // default

@@ -44,6 +44,7 @@ struct McpEndpoint {
     std::string url;     // e.g. "http://localhost:3100/mcp"
     std::string api_key; // Bearer token for Authorization header
     // Common:
+    std::string description;                 // human-readable description (for prompt table)
     std::map<std::string, std::string> env; // extra env vars for stdio
     int timeout_sec = 60;
 };
@@ -51,7 +52,7 @@ struct McpEndpoint {
 inline bool operator==(const McpEndpoint& a, const McpEndpoint& b) {
     return a.name == b.name && a.transport == b.transport && a.command == b.command &&
         a.args == b.args && a.cwd == b.cwd && a.url == b.url && a.api_key == b.api_key &&
-        a.env == b.env && a.timeout_sec == b.timeout_sec;
+        a.description == b.description && a.env == b.env && a.timeout_sec == b.timeout_sec;
 }
 
 /// A single subagent definition from cima.json.

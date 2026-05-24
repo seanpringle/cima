@@ -66,6 +66,7 @@ struct McpServerEditState {
     std::array<char, 512> command_or_url_buf; // command (stdio) or URL (http)
     std::array<char, 1024> args_buf;          // space-separated args
     std::array<char, 256> cwd_buf;            // working directory
+    std::array<char, 512> description_buf;    // human-readable description
     std::array<char, 512> api_key_buf;        // Bearer token (HTTP only)
     std::array<char, 32> timeout_buf;         // timeout in seconds as string
     std::string error;                        // validation error to display

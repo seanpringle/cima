@@ -46,6 +46,9 @@ public:
     /// Set of currently running server names.
     std::set<std::string> running_server_names() const;
 
+    /// Get the endpoint configs of all currently running servers.
+    std::vector<McpEndpoint> running_servers() const;
+
     // ── Tool management ──────────────────────────────────────────────
 
     /// Return all tools from all running servers, namespaced as

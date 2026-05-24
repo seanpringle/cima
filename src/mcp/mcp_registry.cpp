@@ -125,6 +125,15 @@ std::set<std::string> McpRegistry::running_server_names() const {
     return names;
 }
 
+std::vector<McpEndpoint> McpRegistry::running_servers() const {
+    std::vector<McpEndpoint> result;
+    for (const auto& [name, server] : servers_) {
+        if (server.running)
+            result.push_back(server.config);
+    }
+    return result;
+}
+
 // ===================================================================
 // Tool management
 // ===================================================================

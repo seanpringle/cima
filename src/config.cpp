@@ -75,6 +75,7 @@ json Config::to_json() const {
         mj["cwd"] = m.cwd;
         mj["url"] = m.url;
         mj["api_key"] = m.api_key;
+        mj["description"] = m.description;
         mj["env"] = m.env;
         mj["timeout_sec"] = m.timeout_sec;
         mcp_arr.push_back(std::move(mj));
@@ -196,6 +197,7 @@ Config Config::load() {
                 m.api_key = mj.value("api_key", std::string());
                 m.cwd = mj.value("cwd", std::string());
                 m.timeout_sec = mj.value("timeout_sec", 60);
+                m.description = mj.value("description", std::string());
 
                 // Parse args array
                 if (mj.contains("args") && mj["args"].is_array()) {

@@ -442,6 +442,9 @@ void render_config_tab(PrimaryAgent& tab) {
                     PushID("mcp-edit");
 
                     InputText("Name", tab.mcp_edit.name_buf.data(), tab.mcp_edit.name_buf.size());
+                    InputText("Description",
+                        tab.mcp_edit.description_buf.data(),
+                        tab.mcp_edit.description_buf.size());
                     if (BeginCombo("Transport", tab.mcp_edit.transport_buf.data())) {
                         for (const char* opt : {"stdio", "streamable-http"}) {
                             bool selected = strcmp(tab.mcp_edit.transport_buf.data(), opt) == 0;
@@ -494,6 +497,7 @@ void render_config_tab(PrimaryAgent& tab) {
                         std::string cmd_or_url(tab.mcp_edit.command_or_url_buf.data());
                         std::string args_str(tab.mcp_edit.args_buf.data());
                         std::string cwd(tab.mcp_edit.cwd_buf.data());
+                        std::string description(tab.mcp_edit.description_buf.data());
                         std::string api_key(tab.mcp_edit.api_key_buf.data());
                         std::string timeout_str(tab.mcp_edit.timeout_buf.data());
 
@@ -554,6 +558,7 @@ void render_config_tab(PrimaryAgent& tab) {
                             mcp.command = cmd_or_url;
                             mcp.args = std::move(args_vec);
                             mcp.cwd = cwd;
+                            mcp.description = description;
                             if (transport == "streamable-http") {
                                 mcp.url = cmd_or_url;
                                 mcp.api_key = api_key;
@@ -635,6 +640,9 @@ void render_config_tab(PrimaryAgent& tab) {
                             0);
                         std::fill(tab.mcp_edit.args_buf.begin(), tab.mcp_edit.args_buf.end(), 0);
                         std::fill(tab.mcp_edit.cwd_buf.begin(), tab.mcp_edit.cwd_buf.end(), 0);
+                        std::fill(tab.mcp_edit.description_buf.begin(),
+                            tab.mcp_edit.description_buf.end(),
+                            0);
                         std::fill(
                             tab.mcp_edit.api_key_buf.begin(), tab.mcp_edit.api_key_buf.end(), 0);
                         std::fill(
@@ -711,11 +719,17 @@ void render_config_tab(PrimaryAgent& tab) {
                             tab.mcp_edit.api_key_buf.begin(), tab.mcp_edit.api_key_buf.end(), 0);
                         std::fill(
                             tab.mcp_edit.timeout_buf.begin(), tab.mcp_edit.timeout_buf.end(), 0);
+                        std::fill(tab.mcp_edit.description_buf.begin(),
+                            tab.mcp_edit.description_buf.end(),
+                            0);
 
                         std::copy(it->name.begin(), it->name.end(), tab.mcp_edit.name_buf.begin());
                         std::copy(it->transport.begin(),
                             it->transport.end(),
                             tab.mcp_edit.transport_buf.begin());
+                        std::copy(it->description.begin(),
+                            it->description.end(),
+                            tab.mcp_edit.description_buf.begin());
 
                         if (it->transport == "streamable-http") {
                             std::copy(it->url.begin(),
