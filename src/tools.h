@@ -193,6 +193,10 @@ class ChatSession; // forward decl for SubagentLookup
 
 struct PrimaryAgent;
 
+// ── ask_user tool ──
+struct AsyncChatState;
+Tool make_ask_user_tool(AsyncChatState& chat_state);
+
 // ── Subagent tool ──
 Tool make_call_subagent_tool(
     PrimaryAgent&, const std::vector<SubagentConfig>& subagent_configs = {}, int timeout_sec = 600);

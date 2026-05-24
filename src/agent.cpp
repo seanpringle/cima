@@ -135,6 +135,7 @@ void PrimaryAgent::create_chat_session() {
         std::lock_guard<std::mutex> lock(cs->mutex);
         cs->pending.emplace_back(text, type);
     });
+    session->register_ask_user_tool(*chat_state);
 }
 
 void PrimaryAgent::restore_session_data() {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <future>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -116,4 +117,21 @@ class SSEParser {
     Callbacks cb_;
     std::string buf_;
     std::string raw_;
+};
+
+// ---------------------------------------------------------------------------
+// UserInputRequest — bridge for ask_user tool (background thread ↔ GUI)
+// ---------------------------------------------------------------------------
+
+struct UserInputRequest {
+    std::string question;
+    std::string input_type; // "text", "confirm", "choice"
+    std::vector<std::string> options;
+    std::string default_value;
+
+    std::promise<std::string> promise;
+    std::future<std::string> future;
+
+    UserInputRequest()
+        : future(promise.get_future()) {}
 };

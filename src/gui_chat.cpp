@@ -242,6 +242,124 @@ void render_subagent_chat(SubAgent& tab) {
     EndChild();
 }
 
+// ===================================================================
+// ask_user modal
+// ===================================================================
+
+bool render_ask_user_modal(AsyncChatState& chat_state, ChatUIState& ui_state) {
+    // Pick up a pending request from the background thread, if any.
+    std::optional<UserInputRequest> req;
+    {
+        std::lock_guard<std::mutex> lock(chat_state.input_mutex);
+        if (chat_state.pending_user_input) {
+            req = std::move(chat_state.pending_user_input);
+            chat_state.pending_user_input.reset();
+            // Show the question in the chat history once.
+            ui_state.push_entry(EntryType::ToolCall, "\xF0\x9F\x96\x8B " + req->question, false);
+        }
+    }
+
+    if (!req) {
+        // No new request — is there one already being displayed?
+        if (!ui_state.active_ask_user)
+            return false;
+        req = std::move(ui_state.active_ask_user);
+    }
+
+    // Store in ui_state so it lives across frames.
+    ui_state.active_ask_user = std::move(req);
+    auto& active = *ui_state.active_ask_user;
+
+    // ── Helper: fulfill the promise and close ──
+    auto fulfill = [&](std::string value) {
+        active.promise.set_value(std::move(value));
+        // Record the answer on the most recent ToolCall entry.
+        for (auto it = ui_state.entries.rbegin(); it != ui_state.entries.rend(); ++it) {
+            if (it->type == EntryType::ToolCall && it->tool_result.empty()) {
+                it->tool_result = "User answered: " + value;
+                break;
+            }
+        }
+        ui_state.active_ask_user.reset();
+        CloseCurrentPopup();
+    };
+
+    // ── Open the modal ──
+    OpenPopup("ask_user_modal");
+    bool modal_open = true;
+    SetNextWindowSize(ImVec2(520, 0), ImGuiCond_Appearing);
+
+    if (BeginPopupModal("ask_user_modal", &modal_open,
+            ImGuiWindowFlags_AlwaysAutoResize))
+    {
+        TextWrapped("%s", active.question.c_str());
+        Separator();
+
+        // ── Main interaction area ──
+        if (active.input_type == "confirm") {
+            float btn_w = CalcTextSize("  Yes  ").x + GetStyle().FramePadding.x * 2;
+            SetItemDefaultFocus();
+            if (Button("  Yes  ", ImVec2(btn_w, 0))) {
+                fulfill("yes");
+            }
+            SameLine();
+            if (Button("  No  ", ImVec2(btn_w, 0))) {
+                fulfill("no");
+            }
+
+        } else if (active.input_type == "choice") {
+            for (size_t i = 0; i < active.options.size(); i++) {
+                PushID(static_cast<int>(i));
+                if (Selectable(active.options[i].c_str(), false)) {
+                    fulfill(active.options[i]);
+                    PopID();
+                    break;
+                }
+                PopID();
+            }
+
+        } else { // "text"
+            static char text_buf[4096];
+            text_buf[0] = 0;
+            if (!active.default_value.empty()) {
+                strncpy(text_buf, active.default_value.c_str(), sizeof(text_buf) - 1);
+            }
+
+            InputTextMultiline("##ask_user_input", text_buf, sizeof(text_buf),
+                ImVec2(GetContentRegionAvail().x, 100),
+                ImGuiInputTextFlags_CtrlEnterForNewLine);
+
+            if (Button("Submit") || IsKeyPressed(ImGuiKey_Enter)) {
+                fulfill(std::string(text_buf));
+            }
+            SameLine();
+            if (Button("Cancel") || IsKeyPressed(ImGuiKey_Escape)) {
+                fulfill(""); // empty = cancelled / dismissed
+            }
+        }
+
+        // ── Override area — shown for confirm and choice ──
+        if (active.input_type == "confirm" || active.input_type == "choice") {
+            Separator();
+            TextDisabled("Or override:");
+            SameLine();
+            static char override_buf[4096];
+            override_buf[0] = 0;
+            PushItemWidth(GetContentRegionAvail().x - CalcTextSize("  Send  ").x - GetStyle().FramePadding.x * 2);
+            InputText("##ask_user_override", override_buf, sizeof(override_buf));
+            PopItemWidth();
+            SameLine();
+            if (Button("  Send  ")) {
+                fulfill(override_buf[0] ? std::string(override_buf) : "no");
+            }
+        }
+
+        EndPopup();
+    }
+
+    return ui_state.active_ask_user.has_value();
+}
+
 void render_chat_ui(PrimaryAgent& tab, bool& done) {
     auto& ui = tab.ui_state;
     auto& chat = *tab.chat_state;
@@ -260,6 +378,9 @@ void render_chat_ui(PrimaryAgent& tab, bool& done) {
 
     // ── drain pending output (includes any items that arrived after last frame's drain) ──
     tab.drain_pending();
+
+    // ── Handle ask_user modal (before compact/clear so it takes priority) ──
+    bool modal_active = render_ask_user_modal(*tab.chat_state, tab.ui_state);
 
     // ── Handle compact request ──
     tab.poll_compact();
@@ -363,7 +484,7 @@ void render_chat_ui(PrimaryAgent& tab, bool& done) {
             inputFlags,
             InputTextCallback,
             &ui.cursor_pos) &&
-        !chat.running && !tab.chat_state->compact_running) {
+        !chat.running && !tab.chat_state->compact_running && !modal_active) {
         string input(trimWhite(buffer.data()));
         if (input.size()) {
             // Push to UI with tags visible (user sees @Page / !Snippet)

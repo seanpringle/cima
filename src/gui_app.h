@@ -10,7 +10,9 @@
 #include <deque>
 #include <future>
 #include <map>
+#include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -38,6 +40,10 @@ struct AsyncChatState {
     // Compaction state (runs in background thread)
     std::future<Result<void>> compact_future;
     bool compact_running = false;
+
+    // ── ask_user bridge ──
+    std::optional<UserInputRequest> pending_user_input;
+    std::mutex input_mutex;
 };
 
 struct ImFont;
@@ -63,6 +69,9 @@ struct ChatUIState {
     std::deque<std::string> input_history;
     std::vector<char> input_buffer = {0};
     int cursor_pos = 0; // tracked by InputText callback for insert-at-cursor
+
+    // ── ask_user ──
+    std::optional<UserInputRequest> active_ask_user; // active modal request (GUI side)
 
     // (workspace_path_buf removed — safe_dir locked to cwd)
 };
