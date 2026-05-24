@@ -202,10 +202,11 @@ void PrimaryAgent::restore_session_data() {
     }
 
     // ── Read-write subagent gates: same defaults as primary ──
-    // All tools enabled by default, except call_subagent
-    // (subagents must not recurse into other subagents).
+    // All tools enabled by default, except call_subagent and ask_user
+    // (subagents must not recurse into other subagents, and must not ask the user).
     rw_subagent_tool_gates.clear();
     rw_subagent_tool_gates["call_subagent"] = false;
+    rw_subagent_tool_gates["ask_user"] = false;
     // Override with persisted values.
     for (const auto& [name, enabled] : sd.rw_subagent_tool_gates) {
         rw_subagent_tool_gates[name] = enabled;

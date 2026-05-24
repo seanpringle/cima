@@ -254,8 +254,6 @@ bool render_ask_user_modal(AsyncChatState& chat_state, ChatUIState& ui_state) {
         if (chat_state.pending_user_input) {
             req = std::move(chat_state.pending_user_input);
             chat_state.pending_user_input.reset();
-            // Show the question in the chat history once.
-            ui_state.push_entry(EntryType::ToolCall, "\xF0\x9F\x96\x8B " + req->question, false);
         }
     }
 
@@ -272,7 +270,6 @@ bool render_ask_user_modal(AsyncChatState& chat_state, ChatUIState& ui_state) {
 
     // ── Helper: fulfill the promise and close ──
     auto fulfill = [&](std::string value) {
-        active.promise.set_value(std::move(value));
         // Record the answer on the most recent ToolCall entry.
         for (auto it = ui_state.entries.rbegin(); it != ui_state.entries.rend(); ++it) {
             if (it->type == EntryType::ToolCall && it->tool_result.empty()) {
@@ -280,6 +277,7 @@ bool render_ask_user_modal(AsyncChatState& chat_state, ChatUIState& ui_state) {
                 break;
             }
         }
+        active.promise.set_value(std::move(value));
         ui_state.active_ask_user.reset();
         CloseCurrentPopup();
     };
@@ -287,11 +285,9 @@ bool render_ask_user_modal(AsyncChatState& chat_state, ChatUIState& ui_state) {
     // ── Open the modal ──
     OpenPopup("ask_user_modal");
     bool modal_open = true;
-    SetNextWindowSize(ImVec2(520, 0), ImGuiCond_Appearing);
+    SetNextWindowSize(ImVec2(GetIO().DisplaySize.x*0.3f, GetIO().DisplaySize.y*0.5f), ImGuiCond_Always);
 
-    if (BeginPopupModal("ask_user_modal", &modal_open,
-            ImGuiWindowFlags_AlwaysAutoResize))
-    {
+    if (BeginPopupModal("ask_user_modal", &modal_open, ImGuiWindowFlags_None)) {
         TextWrapped("%s", active.question.c_str());
         Separator();
 
@@ -325,9 +321,10 @@ bool render_ask_user_modal(AsyncChatState& chat_state, ChatUIState& ui_state) {
                 strncpy(text_buf, active.default_value.c_str(), sizeof(text_buf) - 1);
             }
 
+            ImVec2 size(-1, GetContentRegionAvail().y - GetFrameHeightWithSpacing());
+
             InputTextMultiline("##ask_user_input", text_buf, sizeof(text_buf),
-                ImVec2(GetContentRegionAvail().x, 100),
-                ImGuiInputTextFlags_CtrlEnterForNewLine);
+                size, ImGuiInputTextFlags_CtrlEnterForNewLine);
 
             if (Button("Submit") || IsKeyPressed(ImGuiKey_Enter)) {
                 fulfill(std::string(text_buf));
@@ -342,15 +339,13 @@ bool render_ask_user_modal(AsyncChatState& chat_state, ChatUIState& ui_state) {
         if (active.input_type == "confirm" || active.input_type == "choice") {
             Separator();
             TextDisabled("Or override:");
-            SameLine();
             static char override_buf[4096];
-            override_buf[0] = 0;
-            PushItemWidth(GetContentRegionAvail().x - CalcTextSize("  Send  ").x - GetStyle().FramePadding.x * 2);
-            InputText("##ask_user_override", override_buf, sizeof(override_buf));
-            PopItemWidth();
-            SameLine();
-            if (Button("  Send  ")) {
-                fulfill(override_buf[0] ? std::string(override_buf) : "no");
+            if (IsWindowAppearing()) override_buf[0] = 0;
+            ImVec2 size(-1, -1);
+            if (InputTextMultiline("##ask_user_override", override_buf, sizeof(override_buf),
+                size, ImGuiInputTextFlags_CtrlEnterForNewLine))
+            {
+                fulfill(override_buf);
             }
         }
 
