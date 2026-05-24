@@ -46,9 +46,7 @@ void PlanBoard::from_json(const json& j) {
 Tool make_write_plan_tool(PlanBoard& board) {
     Tool t;
     t.name = "write_plan";
-    t.description = "Write the Plan document. This completely replaces the plan "
-                    "body. Use this from the Planner "
-                    "to document the implementation plan for the Builder.";
+    t.description = "Write the Plan markdown document. This completely replaces the plan body.";
 
     t.permission = ToolPermission::Write;
 
@@ -83,8 +81,7 @@ Tool make_write_plan_tool(PlanBoard& board) {
 Tool make_read_plan_tool(PlanBoard& board) {
     Tool t;
     t.name = "read_plan";
-    t.description = "Read the Plan document. "
-                    "Returns a markdown document with the plan.";
+    t.description = "Read the Plan markdown document.";
     t.permission = ToolPermission::ReadOnly;
     t.parameters = {
         {"type", "object"}, {"properties", json::object()}, {"required", json::array()}};

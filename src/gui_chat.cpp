@@ -371,14 +371,13 @@ void render_chat_ui(PrimaryAgent& tab, bool& done) {
             bool is_system = (input.rfind("/system", 0) == 0 && input.size() >= 8
                               && std::isspace(static_cast<unsigned char>(input[7])));
             if (is_system) {
-                string text = input.substr(8);
-                while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front())))
-                    text.erase(text.begin());
-                if (!text.empty()) {
+                string text(trimWhite(input.substr(8)));
+                if (text.size()) {
                     // Push System entry to UI display
                     ui.push_entry(EntryType::System, text, false);
                     // Inject into conversation as role=system with "preserve" retention
-                    tab.session->conversation().add_system(text, "preserve");
+                    string expanded = expand_tags(text, tab.session_.session_data().snippets, tab.cfg_->snippets);
+                    tab.session->conversation().add_system(expanded, "preserve");
                 }
             } else {
                 // Normal user message
