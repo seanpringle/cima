@@ -15,26 +15,29 @@ Tool make_run_bwrap_tool(const Config& config, std::shared_ptr<std::string> safe
     int timeout, CancellationToken cancelled,
     bool read_only, bool allow_network) {
     Tool t;
+    const std::string& safe_dir = *safe_dir_ptr;
     if (read_only) {
         t.name = "run_bwrap_ro";
-        t.description = "Read-only: run a bash command in the project directory inside a bwrap sandbox (restricted filesystem, no network, no writes to project dir).";
+        t.description = "Read-only: run a bash command in a bwrap sandbox (restricted filesystem, no network, no writes). Default cwd: " + safe_dir;
     } else if (allow_network) {
         t.name = "run_bwrap";
-        t.description = "Run a bash command in the project directory inside a bwrap sandbox (restricted filesystem, with network access).";
+        t.description = "Run a bash command in a bwrap sandbox (restricted filesystem, with network access). Default cwd: " + safe_dir;
     } else {
         t.name = "run_bwrap";
-        t.description = "Run a bash command in the project directory inside a bwrap sandbox (restricted filesystem, no network).";
+        t.description = "Run a bash command in a bwrap sandbox (restricted filesystem, no network). Default cwd: " + safe_dir;
     }
     t.timeout_sec = 0; // manages its own timeout internally
     t.parameters = {{"type", "object"},
         {"properties",
-            {{"command", {{"type", "string"}, {"description", "Shell command to execute"}}}}},
+            {{"command", {{"type", "string"}, {"description", "Shell command to execute"}}},
+             {"cwd", {{"type", "string"}, {"description", "Working directory for the command (default: " + safe_dir + ")"}}}}},
         {"required", {"command"}}};
     t.execute = [safe_dir_ptr, timeout, cancelled, read_only, allow_network](const json& args) -> Result<std::string> {
         auto command = args.value("command", std::string());
         if (command.empty()) {
             return std::unexpected(std::string("command is required"));
         }
+        auto cwd = args.value("cwd", std::string());
 
         // --- fork + exec with pipe and timeout ---
         int pipefd[2];
@@ -73,6 +76,8 @@ Tool make_run_bwrap_tool(const Config& config, std::shared_ptr<std::string> safe
 
             // Build the bwrap command
             const std::string& safe_dir = *safe_dir_ptr;
+            // Resolve working directory: use user-provided cwd, or default to safe_dir.
+            std::string work_dir = cwd.empty() ? safe_dir : cwd;
 
             // We have 15 arguments plus 2 for the final command (sh, -c) plus
             // the command string itself = 18 fixed args + safe_dir twice + command.
@@ -126,7 +131,7 @@ Tool make_run_bwrap_tool(const Config& config, std::shared_ptr<std::string> safe
                 argv[argc++] = safe_dir.c_str();
 
                 argv[argc++] = "--chdir";
-                argv[argc++] = safe_dir.c_str();
+                argv[argc++] = work_dir.c_str();
             }
 
             // Namespace isolation
