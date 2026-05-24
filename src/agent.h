@@ -93,6 +93,9 @@ struct PrimaryAgent : Agent {
 
     std::vector<SubAgent> subagents;
 
+    /// Built-in subagent configs (always available).
+    static const std::vector<SubagentConfig>& builtin_subagent_configs();
+
     Session& session_;
 
     PrimaryAgent(Session& session, ConfigPtr cfg);

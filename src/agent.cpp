@@ -244,9 +244,22 @@ void PrimaryAgent::restore_session_data() {
     session_.apply_knobs_to(*session);
 }
 
+const std::vector<SubagentConfig>& PrimaryAgent::builtin_subagent_configs() {
+    static const std::vector<SubagentConfig> configs = {
+        {"Explore",
+            "Subagent for code and web exploration tasks, with read-only code access.",
+            true},
+        {"General",
+            "Subagent for general tasks with read-write access to all tools.",
+            false},
+    };
+    return configs;
+}
+
 void PrimaryAgent::create_subagents() {
     int next_id = 2;
 
+    // ── Create cima.json subagents ──
     for (const auto& sa : cfg_->subagents) {
         if (cfg_->providers.empty())
             throw std::runtime_error("No providers configured");
@@ -280,6 +293,50 @@ void PrimaryAgent::create_subagents() {
             sub_agent.session->set_tool_enabled(name, enabled);
         }
     }
+
+    // ── Create built-in subagents (if not already defined in cima.json) ──
+    for (const auto& bsa : builtin_subagent_configs()) {
+        // Skip if a subagent with this name already exists (user override).
+        bool already_exists = false;
+        for (const auto& sa : cfg_->subagents) {
+            if (sa.name == bsa.name) {
+                already_exists = true;
+                break;
+            }
+        }
+        if (already_exists)
+            continue;
+
+        if (cfg_->providers.empty())
+            throw std::runtime_error("No providers configured");
+        const auto& provider = cfg_->providers[0];
+
+        auto& sub_agent = subagents.emplace_back();
+        sub_agent.id = next_id++;
+        sub_agent.subagent_name = bsa.name;
+        sub_agent.title = bsa.name;
+        sub_agent.read_only_tools = bsa.read_only;
+        sub_agent.cfg_ = cfg_;
+        sub_agent.provider_name = provider.name;
+        sub_agent.model_name = provider.model;
+        sub_agent.reasoning_effort = provider.reasoning_effort;
+
+        sub_agent.chat_state = std::make_unique<AsyncChatState>();
+        sub_agent.session = ChatSession::create_subagent(
+            cfg_, provider, bsa.read_only, sub_agent.chat_state->cancelled, nullptr, &session_.plan());
+        sub_agent.session->set_agent_name(bsa.name);
+        sub_agent.session->set_output_callback(
+            [cs = sub_agent.chat_state.get()](const std::string& text, OutputType type) {
+                std::lock_guard<std::mutex> lock(cs->mutex);
+                cs->pending.emplace_back(text, type);
+            });
+
+        // Apply the appropriate gate map to this subagent.
+        const auto& gates = bsa.read_only ? ro_subagent_tool_gates : rw_subagent_tool_gates;
+        for (const auto& [name, enabled] : gates) {
+            sub_agent.session->set_tool_enabled(name, enabled);
+        }
+    }
 }
 
 Result<SubAgent*> PrimaryAgent::subagent_by_name(const std::string& name) {
@@ -290,8 +347,22 @@ Result<SubAgent*> PrimaryAgent::subagent_by_name(const std::string& name) {
 }
 
 void PrimaryAgent::register_subagent_tools() {
-    session->register_call_subagent_tool(
-        *this, cfg_->subagents);
+    // Combine cima.json subagents with built-in subagents for the tool description.
+    auto all_configs = cfg_->subagents;
+    for (const auto& bsa : builtin_subagent_configs()) {
+        // Only add if not already present in cima.json (skip duplicates).
+        bool already_exists = false;
+        for (const auto& sa : cfg_->subagents) {
+            if (sa.name == bsa.name) {
+                already_exists = true;
+                break;
+            }
+        }
+        if (!already_exists) {
+            all_configs.push_back(bsa);
+        }
+    }
+    session->register_call_subagent_tool(*this, all_configs);
 }
 
 // ── ChatUIState methods ─────────────────────────────────────────────────────
