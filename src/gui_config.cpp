@@ -415,7 +415,7 @@ void render_config_tab(PrimaryAgent& tab) {
                         }
                     }
                 } else {
-                    TextDisabled("No MCP servers configured.");
+                    TextDisabled("No MCP servers in cima.json.");
                 }
 
                 // ── Custom MCP Servers CRUD ──
@@ -565,19 +565,24 @@ void render_config_tab(PrimaryAgent& tab) {
 
                             // Update existing or add new
                             if (!tab.mcp_edit.original_name.empty()) {
+                                // If renamed, transfer mcp_enabled/mcp_error to the new name
+                                // and stop the old server before updating the config.
+                                if (name != tab.mcp_edit.original_name) {
+                                    auto it_en = tab.mcp_enabled.find(tab.mcp_edit.original_name);
+                                    if (it_en != tab.mcp_enabled.end()) {
+                                        tab.mcp_enabled[name] = it_en->second;
+                                        tab.mcp_enabled.erase(it_en);
+                                    }
+                                    tab.mcp_error.erase(tab.mcp_edit.original_name);
+                                }
+                                session.stop_custom_mcp_server(tab.mcp_edit.original_name);
+
                                 // Find and replace in vector
                                 for (auto it = tab.session_.session_data().custom_mcp_servers.begin();
                                     it != tab.session_.session_data().custom_mcp_servers.end();
                                     ++it) {
                                     if (it->name == tab.mcp_edit.original_name) {
-                                        it->name = name;
-                                        it->transport = transport;
-                                        it->command = mcp.command;
-                                        it->args = mcp.args;
-                                        it->cwd = cwd;
-                                        it->url = mcp.url;
-                                        it->api_key = api_key;
-                                        it->timeout_sec = timeout_sec;
+                                        *it = std::move(mcp);
                                         break;
                                     }
                                 }
@@ -585,13 +590,25 @@ void render_config_tab(PrimaryAgent& tab) {
                                 tab.session_.session_data().custom_mcp_servers.push_back(std::move(mcp));
                             }
 
-                            // Start the server if enabled
+                            // Start the server (find by name — works for both add and edit)
                             tab.mcp_enabled[name] = true;
-                            auto result = session.start_custom_mcp_server(
-                                tab.session_.session_data().custom_mcp_servers.back());
-                            if (!result) {
-                                tab.mcp_error[name] = result.error();
-                                tab.mcp_enabled[name] = false;
+                            {
+                                bool started = false;
+                                for (const auto& s : tab.session_.session_data().custom_mcp_servers) {
+                                    if (s.name == name) {
+                                        auto result = session.start_custom_mcp_server(s);
+                                        if (!result) {
+                                            tab.mcp_error[name] = result.error();
+                                            tab.mcp_enabled[name] = false;
+                                        }
+                                        started = true;
+                                        break;
+                                    }
+                                }
+                                if (!started) {
+                                    tab.mcp_error[name] = "Server not found after save";
+                                    tab.mcp_enabled[name] = false;
+                                }
                             }
 
                             tab.mcp_edit.active = false;
@@ -740,10 +757,13 @@ void render_config_tab(PrimaryAgent& tab) {
                     }
                     SameLine();
                     if (Button("X")) {
-                        session.stop_custom_mcp_server(it->name);
-                        it = tab.session_.session_data().custom_mcp_servers.erase(it);
-                        tab.mcp_enabled.erase(it->name);
-                        tab.mcp_error.erase(it->name);
+                        {
+                            std::string name = it->name; // save before erase
+                            session.stop_custom_mcp_server(name);
+                            it = tab.session_.session_data().custom_mcp_servers.erase(it);
+                            tab.mcp_enabled.erase(name);
+                            tab.mcp_error.erase(name);
+                        }
                         PopID();
                         continue;
                     }
