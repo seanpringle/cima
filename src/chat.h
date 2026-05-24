@@ -83,6 +83,16 @@ class ChatSession {
     // Expose the underlying client so the GUI can call fetch_models() etc.
     ChatClient& client_for_models() { return client_; }
 
+    // Return the effective system prompt (with injected MCP sections).
+    std::string effective_prompt() const { return build_effective_prompt(); }
+
+    // Return the tool definitions JSON as sent with each request
+    // (filtered by tool gates / allowed tools).
+    json tools_json() const {
+        auto allowed = filter_allowed_tools();
+        return tools_.to_openai_tools(&allowed);
+    }
+
     // Return the current safe directory (workspace) path for this session.
     const std::string& safe_dir() const { return *safe_dir_; }
 

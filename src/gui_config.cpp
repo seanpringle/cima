@@ -919,6 +919,39 @@ void render_config_tab(PrimaryAgent& tab) {
                 EndTabItem();
             }
 
+            // ── Prompt sub-tab ──
+            if (BeginTabItem("  Prompt  ")) {
+                TextUnformatted("Effective System Prompt:");
+                SameLine();
+                TextDisabled("(read-only, for debugging)");
+                {
+                    std::string prompt = tab.session->effective_prompt();
+                    BeginDisabled(true);
+                    InputTextMultiline("##sysprompt",
+                        prompt.data(), prompt.size(),
+                        ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 20),
+                        ImGuiInputTextFlags_ReadOnly);
+                    EndDisabled();
+                }
+
+                Separator();
+
+                TextUnformatted("Tool Definitions (sent with each request):");
+                SameLine();
+                TextDisabled("(read-only, for debugging)");
+                {
+                    std::string tools = tab.session->tools_json().dump(2);
+                    BeginDisabled(true);
+                    InputTextMultiline("##toolsjson",
+                        tools.data(), tools.size(),
+                        ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 20),
+                        ImGuiInputTextFlags_ReadOnly);
+                    EndDisabled();
+                }
+
+                EndTabItem();
+            }
+
             EndTabBar();
         }
     }
