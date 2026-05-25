@@ -48,7 +48,9 @@ void PrimaryAgent::cancel_running_chats() {
 PrimaryAgent::PrimaryAgent(Session& session, ConfigPtr cfg) : session_{session} {
     cfg_ = std::move(cfg);
     init_defaults();
+    skill_registry_.scan(); // discover skills from ~/.agents/skills/
     create_chat_session();
+    this->session->set_skill_registry(skill_registry_);
     restore_session_data();
     create_subagents();
     register_subagent_tools();
@@ -366,6 +368,9 @@ void PrimaryAgent::register_subagent_tools() {
         }
     }
     session->register_call_subagent_tool(*this, all_configs);
+
+    // Register the load_skill tool (available only if skills were discovered).
+    session->register_load_skill_tool(skill_registry_);
 }
 
 // ── ChatUIState methods ─────────────────────────────────────────────────────

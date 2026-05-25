@@ -130,6 +130,8 @@ add_library(cima_core
     src/session.cpp
     src/session_data.cpp
     src/tools/factories/subagent.cpp
+    src/tools/factories/skill.cpp
+    src/skill.cpp
     src/mcp/mcp_client.cpp
     src/mcp/mcp_registry.cpp
 )
@@ -192,6 +194,9 @@ target_link_libraries(test_mcp_client PRIVATE cima_core Catch2::Catch2WithMain)
 add_executable(test_mcp_registry tests/test_mcp_registry.cpp)
 target_link_libraries(test_mcp_registry PRIVATE cima_core Catch2::Catch2WithMain)
 
+add_executable(test_skill tests/test_skill.cpp)
+target_link_libraries(test_skill PRIVATE cima_core Catch2::Catch2WithMain)
+
 include(CTest)
 include(Catch)
 catch_discover_tests(test_config)
@@ -202,3 +207,4 @@ catch_discover_tests(test_chat)
 catch_discover_tests(test_conversation)
 catch_discover_tests(test_mcp_client)
 catch_discover_tests(test_mcp_registry)
+catch_discover_tests(test_skill)

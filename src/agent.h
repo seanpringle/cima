@@ -2,6 +2,7 @@
 
 #include "gui_app.h"
 #include "session.h"
+#include "skill.h"
 
 #include <memory>
 
@@ -87,6 +88,9 @@ struct PrimaryAgent : Agent {
 
     // MCP: per-server error message (transient, not persisted)
     std::map<std::string, std::string> mcp_error;
+
+    // Skill registry (scanned at startup from ~/.agents/skills/)
+    SkillRegistry skill_registry_;
 
     // Custom MCP server CRUD editing state
     McpServerEditState mcp_edit;

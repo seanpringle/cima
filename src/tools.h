@@ -190,9 +190,13 @@ Tool make_web_fetch_tool(const Config& config, int timeout, CancellationToken ca
 
 
 class ChatSession; // forward decl for SubagentLookup
+class SkillRegistry; // forward decl for skill tool
 
 struct PrimaryAgent;
 
 // ── Subagent tool ──
 Tool make_call_subagent_tool(
     PrimaryAgent&, const std::vector<SubagentConfig>& subagent_configs = {}, int timeout_sec = 600);
+
+// ── Skill tool ──
+Tool make_load_skill_tool(SkillRegistry& registry, ChatSession& session);

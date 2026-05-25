@@ -1,5 +1,6 @@
 #include "chat.h"
 #include "plan.h"
+#include "skill.h"
 
 #include <exception>
 #include <filesystem>
@@ -143,6 +144,30 @@ std::string ChatSession::build_effective_prompt() const {
             }
         }
     }
+
+    // ── Skills section (Level 1 progressive disclosure) ──
+    if (skill_registry_ && skill_registry_->size() > 0) {
+        prompt += "\n## Available Skills\n\n"
+                  "Skills are reusable instruction sets that teach the agent "
+                  "specialised knowledge and workflows. Below is a list of "
+                  "available skills. Load one with the `load_skill` tool when "
+                  "its task matches your goal.\n\n"
+                  "| Skill | Description |\n"
+                  "| --- | --- |\n";
+        for (const auto& s : skill_registry_->skills()) {
+            // Escape pipe characters in name/description to avoid breaking the table
+            auto esc = [](std::string v) {
+                size_t p = 0;
+                while ((p = v.find('|', p)) != std::string::npos) {
+                    v.replace(p, 1, "\\|");
+                    p += 2;
+                }
+                return v;
+            };
+            prompt += "| " + esc(s.name) + " | " + esc(s.description) + " |\n";
+        }
+    }
+
     return prompt;
 }
 

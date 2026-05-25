@@ -16,6 +16,8 @@
 
 using json = nlohmann::json;
 
+class SkillRegistry; // forward decl for skill support
+
 /// Shared gating state for tool enable/disable checkboxes.
 /// Read-write subagents share the primary agent's GatingState via shared_ptr,
 /// so gate changes propagate automatically.
@@ -171,6 +173,15 @@ class ChatSession {
         tools_.add(make_call_subagent_tool(primary, subagent_configs, kDefaultSubagentTimeout));
     }
 
+    /// Provide the SkillRegistry so build_effective_prompt() can list available
+    /// skills and the load_skill tool can look them up.
+    void set_skill_registry(SkillRegistry& registry) { skill_registry_ = &registry; }
+
+    /// Register the load_skill tool in this session's tool registry.
+    void register_load_skill_tool(SkillRegistry& registry) {
+        tools_.add(make_load_skill_tool(registry, *this));
+    }
+
     /// Override the max tool iterations (session knob).
     void set_max_iterations(int n) { max_iterations_ = n; }
 
@@ -237,4 +248,5 @@ class ChatSession {
     std::shared_ptr<GatingState> gates_ = std::make_shared<GatingState>();
     bool is_read_only_ = false;
     McpRegistry mcp_registry_;
+    const SkillRegistry* skill_registry_ = nullptr; // non-owning, set by set_skill_registry()
 };
