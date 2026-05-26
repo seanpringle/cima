@@ -198,6 +198,8 @@ void PrimaryAgent::restore_session_data() {
 
     // ── Tool gates: restore from session data ──
     tool_gates.clear();
+    // Primary agent has full run_bwrap; disable the read-only variant.
+    tool_gates["run_bwrap_ro"] = false;
     // Override with persisted values from session data.
     for (const auto& [name, enabled] : sd.tool_gates) {
         tool_gates[name] = enabled;
@@ -208,10 +210,11 @@ void PrimaryAgent::restore_session_data() {
     }
 
     // ── Read-write subagent gates: same defaults as primary ──
-    // All tools enabled by default, except call_subagent
-    // (subagents must not recurse into other subagents).
+    // All tools enabled by default, except call_subagent and run_bwrap_ro
+    // (subagents must not recurse into other subagents; they have full run_bwrap).
     rw_subagent_tool_gates.clear();
     rw_subagent_tool_gates["call_subagent"] = false;
+    rw_subagent_tool_gates["run_bwrap_ro"] = false;
     // Override with persisted values.
     for (const auto& [name, enabled] : sd.rw_subagent_tool_gates) {
         rw_subagent_tool_gates[name] = enabled;
@@ -222,9 +225,11 @@ void PrimaryAgent::restore_session_data() {
     ro_subagent_tool_gates["read_file"] = true;
     ro_subagent_tool_gates["read_file_lines"] = true;
     ro_subagent_tool_gates["grep_files"] = true;
+    ro_subagent_tool_gates["find_files"] = true;
     ro_subagent_tool_gates["web_search"] = true;
     ro_subagent_tool_gates["web_fetch"] = true;
-    // All write tools, bash, call_subagent default to false (missing = false)
+    ro_subagent_tool_gates["run_bwrap_ro"] = true;
+    // All write tools, full bash (run_bwrap), call_subagent default to false (missing = false)
     // Override with persisted values.
     for (const auto& [name, enabled] : sd.ro_subagent_tool_gates) {
         ro_subagent_tool_gates[name] = enabled;
