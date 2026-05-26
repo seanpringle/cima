@@ -133,7 +133,7 @@ struct GuiBootstrap {
         }
 
         std::string window_title = "cima :: " + session_name;
-        window = SDL_CreateWindow(window_title.c_str(), 1280, 720, SDL_WINDOW_RESIZABLE | SDL_WINDOW_MAXIMIZED);
+        window = SDL_CreateWindow(window_title.c_str(), 1280, 720, SDL_WINDOW_RESIZABLE);
         if (!window) {
             SDL_Log("SDL_CreateWindow error: %s", SDL_GetError());
             result_code = 1;
