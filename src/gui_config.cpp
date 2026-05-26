@@ -55,10 +55,9 @@ using std::string_view;
 using std::stringstream;
 using std::vector;
 
-void render_config_tab(PrimaryAgent& tab) {
-    auto& ui = tab.ui_state;
-    auto& session = *tab.session;
-
+// ── Shared provider/model/reasoning-effort helper ────────────────
+// Used by render_model_tab() for both Primary and SubAgent tabs.
+static void render_provider_model_ui(Agent& tab, ChatSession& session) {
     // ── Provider combo ──
     {
         string label = tab.provider_name.empty() ? tab.cfg_->providers[0].name : tab.provider_name;
@@ -163,6 +162,33 @@ void render_config_tab(PrimaryAgent& tab) {
             EndCombo();
         }
     }
+}
+
+// ── Model sub-tab (Config -> Model) ──────────────────────────
+void render_model_tab(PrimaryAgent& tab) {
+    TextDisabled("Primary Agent");
+    {
+        auto& session = *tab.session;
+        render_provider_model_ui(tab, session);
+    }
+
+    if (!tab.subagents.empty()) {
+        Separator();
+
+        for (auto& sa : tab.subagents) {
+            PushID(sa.id);
+            if (TreeNodeEx(sa.title.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
+                render_provider_model_ui(sa, *sa.session);
+                TreePop();
+            }
+            PopID();
+        }
+    }
+}
+
+void render_config_tab(PrimaryAgent& tab) {
+    auto& ui = tab.ui_state;
+    auto& session = *tab.session;
 
     // Workspace path editing removed — safe_dir locked to cwd at startup
 
@@ -207,6 +233,12 @@ void render_config_tab(PrimaryAgent& tab) {
         Separator();
 
         if (BeginTabBar("ConfigSubTabs")) {
+
+            // ── Model sub-tab ──
+            if (BeginTabItem("  Model  ")) {
+                render_model_tab(tab);
+                EndTabItem();
+            }
 
             // ── Tool Calls sub-tab ──
             if (BeginTabItem("  Tool Calls  ")) {

@@ -218,10 +218,6 @@ static void render_frame(PrimaryAgent& primary, bool& done, PlanBoard& plan) {
         auto planSize = ImVec2(planWidth, space.y);
         auto chatPos = ImVec2(tl.x + planWidth + gap, tl.y);
         auto chatSize = ImVec2(-1, space.y);
-        auto winPos = GetWindowPos();
-        auto sepPosA = ImVec2(winPos.x + tl.x + planWidth + (gap / 2), winPos.y + tl.y);
-        auto sepPosB = ImVec2(sepPosA.x, winPos.y + tl.y + space.y);
-
         // Left panel: session tabs
         SetCursorPos(planPos);
         BeginChild("##left-session-tabs", planSize, ImGuiChildFlags_None,
@@ -261,11 +257,27 @@ static void render_frame(PrimaryAgent& primary, bool& done, PlanBoard& plan) {
                 EndTabItem();
             }
 
+            EndTabBar();
+        }
+        EndChild();
+
+        // Right panel: chat tabs (Primary + subagents)
+        PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        SetCursorPos(chatPos);
+        BeginChild("##tab_chat", chatSize, ImGuiChildFlags_None, ImGuiWindowFlags_None);
+        PopStyleVar();
+
+        if (BeginTabBar("##chat-tabs")) {
+
+            if (BeginTabItem("   Primary   ##primary")) {
+                render_chat_ui(primary, done);
+                EndTabItem();
+            }
+
             for (auto& sa_tab : primary.subagents) {
                 PushID(sa_tab.id);
                 if (BeginTabItem(
                         ("   " + sa_tab.title + "   ##sa-" + std::to_string(sa_tab.id)).c_str())) {
-                    render_subagent_tab(sa_tab);
                     render_subagent_chat(sa_tab);
                     EndTabItem();
                 }
@@ -274,14 +286,7 @@ static void render_frame(PrimaryAgent& primary, bool& done, PlanBoard& plan) {
 
             EndTabBar();
         }
-        EndChild();
 
-        // Right panel: Chat UI
-        PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-        SetCursorPos(chatPos);
-        BeginChild("##tab_chat", chatSize, ImGuiChildFlags_None, ImGuiWindowFlags_None);
-        PopStyleVar();
-        render_chat_ui(primary, done);
         EndChild();
     }
 
