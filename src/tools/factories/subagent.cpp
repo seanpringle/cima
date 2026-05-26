@@ -65,8 +65,15 @@ Tool make_call_subagent_tool(PrimaryAgent& primary,
                                    "\" is already running — wait for it to finish");
         }
 
-        // Reset subagent state: clear conversation and UI entries
+        // Reset subagent state: clear conversation, pending output, UI entries,
+        // and reset cancellation token (so a cancelled-but-not-reused subagent
+        // gets a fresh start).
         subagent.session->conversation().clear();
+        {
+            std::lock_guard<std::mutex> lock(subagent.chat_state->mutex);
+            subagent.chat_state->pending.clear();
+        }
+        *subagent.chat_state->cancelled = false;
         subagent.ui_state.entries.clear();
 
         // Push the primary agent's request as a UserText entry in the subagent chat
