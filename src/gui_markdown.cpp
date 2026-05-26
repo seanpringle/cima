@@ -397,6 +397,27 @@ static int text_cb(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* us
 
 } // anonymous namespace
 
+static void render_plain_text_response(size_t seq, const std::string& text) {
+    string id = "##text-block-" + std::to_string(seq);
+    auto extents = CalcTextSize(text.c_str());
+    float height = std::min(GetTextLineHeightWithSpacing() * 3, extents.y);
+    height += GetStyle().WindowPadding.y * 2;
+    float width = GetContentRegionAvail().x-GetStyle().ItemSpacing.x;
+    if (extents.x > width) height += GetStyle().ScrollbarSize;
+    PushStyleColor(ImGuiCol_ChildBg, GetColorU32(ImGuiCol_TableRowBgAlt));
+    BeginChild(id.c_str(),
+        ImVec2(width, height),
+        ImGuiChildFlags_AlwaysUseWindowPadding,
+        ImGuiWindowFlags_HorizontalScrollbar|ImGuiWindowFlags_NoScrollWithMouse);
+    PopStyleColor();
+    PushFont(mono_font);
+    PushStyleColor(ImGuiCol_Text, IM_COL32(160, 160, 160, 255));
+    TextUnformatted(text.c_str());
+    PopStyleColor();
+    PopFont();
+    EndChild();
+}
+
 // ── Render tool result inline (compact child window) ──
 static void render_tool_result(size_t seq, const std::string& result, RenderToolResult mode) {
     int line_count = 1;
@@ -411,24 +432,7 @@ static void render_tool_result(size_t seq, const std::string& result, RenderTool
         case RenderToolResult::None: break;
 
         case RenderToolResult::Plain: {
-            auto extents = CalcTextSize(result.c_str());
-            float height = std::min(GetTextLineHeightWithSpacing() * 3, extents.y);
-            height += GetStyle().WindowPadding.y * 2;
-            float width = GetContentRegionAvail().x-GetStyle().ItemSpacing.x;
-            if (extents.x > width) height += GetStyle().ScrollbarSize;
-
-            PushStyleColor(ImGuiCol_ChildBg, GetColorU32(ImGuiCol_TableRowBgAlt));
-            BeginChild(id.c_str(),
-                ImVec2(width, height),
-                ImGuiChildFlags_AlwaysUseWindowPadding,
-                ImGuiWindowFlags_HorizontalScrollbar|ImGuiWindowFlags_NoScrollWithMouse);
-            PopStyleColor();
-            PushFont(mono_font);
-            PushStyleColor(ImGuiCol_Text, IM_COL32(160, 160, 160, 255));
-            TextUnformatted(result.c_str());
-            PopStyleColor();
-            PopFont();
-            EndChild();
+            render_plain_text_response(seq, result);
             break;
         }
 
@@ -585,7 +589,7 @@ void render_display_entry(const ChatUIState& ui, const DisplayEntry& entry, size
             TextUnformatted("System: ");
             if (entry.text.size()) SameLine(0,0);
             PopStyleColor();
-            render_content(entry.text);
+            render_plain_text_response(i, entry.text);
             break;
         }
     }

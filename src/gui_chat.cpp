@@ -378,6 +378,7 @@ void render_chat_ui(PrimaryAgent& tab, bool& done) {
                     // Inject into conversation as role=system with "preserve" retention
                     string expanded = expand_tags(text, tab.session_.session_data().snippets, tab.cfg_->snippets);
                     tab.session->conversation().add_system(expanded, "preserve");
+                    tab.ui_state.push_entry(EntryType::System, text, false);
                 }
             } else {
                 // Normal user message
