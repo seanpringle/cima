@@ -139,7 +139,7 @@ struct GuiBootstrap {
             result_code = 1;
             return;
         }
-        SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
+        SDL_MaximizeWindow(window);
 
         renderer = SDL_CreateRenderer(window, NULL);
         if (!renderer) {
