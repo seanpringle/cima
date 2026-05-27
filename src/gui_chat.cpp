@@ -261,34 +261,18 @@ void render_chat_ui(PrimaryAgent& tab, bool& done) {
         !chat.running && !tab.chat_state->compact_running) {
         string input(trimWhite(buffer.data()));
         if (input.size()) {
-            // Check for "/system" prefix — inject as role=system message.
-            // Must be followed by whitespace to avoid matching "/systematic".
-            bool is_system = (input.rfind("/system", 0) == 0 && input.size() >= 8
-                              && std::isspace(static_cast<unsigned char>(input[7])));
-            if (is_system) {
-                string text(trimWhite(input.substr(8)));
-                if (text.size()) {
-                    // Push System entry to UI display
-                    ui.push_entry(EntryType::System, text, false);
-                    // Inject into conversation as role=system with "preserve" retention
-                    string expanded = expand_tags(text, tab.session_.session_data().snippets, tab.cfg_->snippets);
-                    tab.session->conversation().add_system(expanded, "preserve");
-                    tab.ui_state.push_entry(EntryType::System, text, false);
-                }
-            } else {
-                // Normal user message
-                ui.push_entry(EntryType::UserText, input, false);
-                // Expand !snippet-name tags before sending to the agent
-                // Session snippets take precedence over config snippets.
-                string expanded = expand_tags(input, tab.session_.session_data().snippets, tab.cfg_->snippets);
-                tab.start_chat(expanded);
-            }
-            for (auto it = history.begin(); it != history.end();
-                it = *it == input ? history.erase(it) : ++it)
-                ;
-            history.push_back(input);
-            buffer.front() = 0;
+            // Normal user message
+            ui.push_entry(EntryType::UserText, input, false);
+            // Expand !snippet-name tags before sending to the agent
+            // Session snippets take precedence over config snippets.
+            string expanded = expand_tags(input, tab.session_.session_data().snippets, tab.cfg_->snippets);
+            tab.start_chat(expanded);
         }
+        for (auto it = history.begin(); it != history.end();
+            it = *it == input ? history.erase(it) : ++it)
+            ;
+        history.push_back(input);
+        buffer.front() = 0;
     }
 
     PopFont();

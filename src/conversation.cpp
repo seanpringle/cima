@@ -39,6 +39,24 @@ int64_t Conversation::add_system(
     return id;
 }
 
+bool Conversation::add_skill(const std::string& name, const std::string& content) {
+    if (!name.empty() && loaded_skill_names_.insert(name).second) {
+        appended_system_ += "\n\n## Skill: " + name + "\n\n" + content;
+        return true;
+    }
+    return false;
+}
+
+void Conversation::append_system(const std::string& content) {
+    if (!content.empty()) {
+        appended_system_ += "\n\n" + content;
+    }
+}
+
+std::string Conversation::get_appended_system() const {
+    return appended_system_;
+}
+
 int64_t Conversation::add_assistant(const std::string& content,
     const std::string& reasoning,
     const std::vector<ToolCall>& tool_calls) {
@@ -181,6 +199,8 @@ void Conversation::truncate_conversation(size_t n) {
 void Conversation::replace_with_summary(const std::string& summary) {
     messages_.clear();
     next_id_ = 1;
+    appended_system_.clear();
+    loaded_skill_names_.clear();
 
     Message msg;
     msg.role = "user";

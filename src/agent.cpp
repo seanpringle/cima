@@ -89,9 +89,6 @@ PrimaryAgent::~PrimaryAgent() {
         case EntryType::ToolCall:
             entry["type"] = "ToolCall";
             break;
-        case EntryType::System:
-            entry["type"] = "System";
-            break;
         }
         entry["text"] = e.text;
         if (!e.tool_result.empty())
@@ -179,8 +176,6 @@ void PrimaryAgent::restore_session_data() {
                 e.type = EntryType::Content;
             else if (t == "ToolCall")
                 e.type = EntryType::ToolCall;
-            else if (t == "System")
-                e.type = EntryType::System;
             else
                 continue;
             e.text = entry.value("text", "");

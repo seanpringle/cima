@@ -33,10 +33,8 @@ Tool make_load_skill_tool(SkillRegistry& registry, ChatSession& session) {
         if (!skill)
             return std::unexpected("load_skill: unknown skill \"" + name + "\"");
 
-        // Inject the skill body as a system message (droppable, so compaction
-        // can remove it when context is tight).
-        session.conversation().add_system(
-            "## Skill: " + skill->name + "\n\n" + skill->body, "droppable");
+        // Append the skill body to the system prompt (deduplicated by name).
+        session.conversation().add_skill(skill->name, skill->body);
 
         return "skill \"" + name + "\" loaded";
     };

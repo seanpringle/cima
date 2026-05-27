@@ -5,6 +5,7 @@
 
 #include <string>
 #include <vector>
+#include <set>
 
 /// In-memory conversation history, stored as a vector of Message structs.
 /// Replaces the old approach of storing messages in a SQLite `messages` table.
@@ -30,6 +31,16 @@ class Conversation {
 
     /// Add a notice message (user role, droppable suggested_retention).
     int64_t add_notice(const std::string& content);
+
+    /// Add a skill's content to the system prompt, deduplicating by name.
+    /// Returns true if newly added, false if already loaded.
+    bool add_skill(const std::string& name, const std::string& content);
+
+    /// Append arbitrary content to the system prompt (merged at payload-build time).
+    void append_system(const std::string& content);
+
+    /// Return all appended system content as a single string.
+    std::string get_appended_system() const;
 
     /// Set the result of a tool call on the given assistant message.
     void add_tool(int64_t message_id, const std::string& tool_call_id, const std::string& content);
@@ -70,4 +81,6 @@ class Conversation {
   private:
     std::vector<Message> messages_;
     int64_t next_id_ = 1;
+    std::string appended_system_;
+    std::set<std::string> loaded_skill_names_;
 };

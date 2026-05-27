@@ -168,6 +168,9 @@ std::string ChatSession::build_effective_prompt() const {
         }
     }
 
+    // Append any dynamically-loaded skill content.
+    prompt += conversation_.get_appended_system();
+
     return prompt;
 }
 
