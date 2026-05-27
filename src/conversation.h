@@ -18,10 +18,6 @@ class Conversation {
     /// Add a user message. Returns the new message id.
     int64_t add_user(const std::string& content);
 
-    /// Add a system message. Returns the new message id.
-    int64_t add_system(
-        const std::string& content, const std::string& suggested_retention = "droppable");
-
     /// Add an assistant message. If tool_calls is non-empty, the message
     /// content is set to nullopt and the calls are stored on the message.
     /// Returns the new message id.

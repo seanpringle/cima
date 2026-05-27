@@ -28,17 +28,6 @@ int64_t Conversation::add_notice(const std::string& content) {
     return id;
 }
 
-int64_t Conversation::add_system(
-    const std::string& content, const std::string& suggested_retention) {
-    Message msg;
-    msg.role = "system";
-    msg.content = content;
-    msg.suggested_retention = suggested_retention;
-    int64_t id = next_id_++;
-    messages_.push_back(std::move(msg));
-    return id;
-}
-
 bool Conversation::add_skill(const std::string& name, const std::string& content) {
     if (!name.empty() && loaded_skill_names_.insert(name).second) {
         appended_system_ += "\n\n## Skill: " + name + "\n\n" + content;
@@ -218,6 +207,8 @@ void Conversation::replace_with_summary(const std::string& summary) {
 void Conversation::clear() {
     messages_.clear();
     next_id_ = 1;
+    appended_system_.clear();
+    loaded_skill_names_.clear();
 }
 
 // ---------------------------------------------------------------------------
