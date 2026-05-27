@@ -169,9 +169,11 @@ static void render_provider_model_ui(Agent& tab, ChatSession& session) {
 void render_provider_model_inline(Agent& tab, ChatSession& session) {
     PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 4));
 
+    float width = GetContentRegionAvail().x/3 - GetStyle().ItemSpacing.x*2;
+
     // ── Provider combo ──
     {
-        SetNextItemWidth(GetContentRegionAvail().x / 3.0f);
+        SetNextItemWidth(width);
         string label = tab.provider_name.empty() ? tab.cfg_->providers[0].name : tab.provider_name;
         if (BeginCombo("##inline-provider", label.c_str())) {
             for (const auto& p : tab.cfg_->providers) {
@@ -194,7 +196,8 @@ void render_provider_model_inline(Agent& tab, ChatSession& session) {
 
     // ── Model combo ──
     {
-        SetNextItemWidth(GetContentRegionAvail().x / 3.0f);
+        SameLine(0,GetStyle().ItemSpacing.x);
+        SetNextItemWidth(width);
         auto& cache_entry = g_provider_models[tab.provider_name];
 
         if (!cache_entry.fetched) {
@@ -239,7 +242,8 @@ void render_provider_model_inline(Agent& tab, ChatSession& session) {
 
     // ── Reasoning effort combo ──
     {
-        SetNextItemWidth(GetContentRegionAvail().x / 3.0f);
+        SameLine(0,GetStyle().ItemSpacing.x);
+        SetNextItemWidth(GetContentRegionAvail().x);
         std::string re =
             tab.reasoning_effort.empty() ? session.reasoning_effort() : tab.reasoning_effort;
 
@@ -268,7 +272,7 @@ void render_provider_model_inline(Agent& tab, ChatSession& session) {
             EndCombo();
         }
     }
-
+    Separator();
     PopStyleVar();
 }
 
