@@ -164,26 +164,112 @@ static void render_provider_model_ui(Agent& tab, ChatSession& session) {
     }
 }
 
-// ── Model sub-tab (Config -> Model) ──────────────────────────
-void render_model_tab(PrimaryAgent& tab) {
-    TextDisabled("Primary Agent");
+// ── Horizontal inline provider/model/reasoning selector ──────────
+// Used at the top of each agent chat tab.
+void render_provider_model_inline(Agent& tab, ChatSession& session) {
+    PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 4));
+
+    // ── Provider combo ──
     {
-        auto& session = *tab.session;
-        render_provider_model_ui(tab, session);
-    }
-
-    if (!tab.subagents.empty()) {
-        Separator();
-
-        for (auto& sa : tab.subagents) {
-            PushID(sa.id);
-            if (TreeNodeEx(sa.title.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
-                render_provider_model_ui(sa, *sa.session);
-                TreePop();
+        SetNextItemWidth(GetContentRegionAvail().x / 3.0f);
+        string label = tab.provider_name.empty() ? tab.cfg_->providers[0].name : tab.provider_name;
+        if (BeginCombo("##inline-provider", label.c_str())) {
+            for (const auto& p : tab.cfg_->providers) {
+                bool is_selected = (p.name == tab.provider_name);
+                if (Selectable(p.name.c_str(), is_selected)) {
+                    if (p.name != tab.provider_name) {
+                        session.set_provider(p);
+                        tab.provider_name = p.name;
+                        tab.model_name = p.model;
+                        tab.reasoning_effort = p.reasoning_effort;
+                        tab.ui_state.models_validated = false;
+                    }
+                }
+                if (is_selected)
+                    SetItemDefaultFocus();
             }
-            PopID();
+            EndCombo();
         }
     }
+
+    // ── Model combo ──
+    {
+        SetNextItemWidth(GetContentRegionAvail().x / 3.0f);
+        auto& cache_entry = g_provider_models[tab.provider_name];
+
+        if (!cache_entry.fetched) {
+            PushStyleColor(ImGuiCol_Text, IM_COL32(128, 128, 128, 255));
+            TextDisabled("Loading...");
+            PopStyleColor();
+        } else if (!cache_entry.error.empty() || cache_entry.models.empty()) {
+            PushStyleColor(ImGuiCol_Text, IM_COL32(255, 100, 100, 255));
+            if (!cache_entry.error.empty()) {
+                TextDisabled(cache_entry.error.c_str());
+            } else {
+                TextDisabled("(no models)");
+            }
+            PopStyleColor();
+            char buf[256];
+            strncpy(buf, session.model().c_str(), sizeof(buf) - 1);
+            buf[sizeof(buf) - 1] = '\0';
+            if (InputText("##model-manual", buf, sizeof(buf), ImGuiInputTextFlags_EnterReturnsTrue)) {
+                std::string new_model(buf);
+                if (!new_model.empty()) {
+                    session.set_model(new_model);
+                    tab.model_name = new_model;
+                }
+            }
+        } else {
+            if (BeginCombo("##inline-model", session.model().c_str())) {
+                for (const auto& m : cache_entry.models) {
+                    bool is_selected = (m == session.model());
+                    if (Selectable(m.c_str(), is_selected)) {
+                        session.set_model(m);
+                        tab.model_name = m;
+                    }
+                    if (is_selected)
+                        SetItemDefaultFocus();
+                }
+                EndCombo();
+            }
+        }
+    }
+
+    tab.validate_current_model();
+
+    // ── Reasoning effort combo ──
+    {
+        SetNextItemWidth(GetContentRegionAvail().x / 3.0f);
+        std::string re =
+            tab.reasoning_effort.empty() ? session.reasoning_effort() : tab.reasoning_effort;
+
+        std::vector<std::string> efforts;
+        for (const auto& p : tab.cfg_->providers) {
+            if (p.name == tab.provider_name) {
+                efforts = p.reasoning_efforts;
+                break;
+            }
+        }
+
+        if (BeginCombo("##inline-reasoning", re.empty() ? "(unset)" : re.c_str())) {
+            if (Selectable("(unset)", re.empty())) {
+                tab.reasoning_effort.clear();
+                session.set_reasoning_effort("");
+            }
+            for (const auto& e : efforts) {
+                bool is_selected = (e == re);
+                if (Selectable(e.c_str(), is_selected)) {
+                    tab.reasoning_effort = e;
+                    session.set_reasoning_effort(e);
+                }
+                if (is_selected)
+                    SetItemDefaultFocus();
+            }
+            EndCombo();
+        }
+    }
+
+    PopStyleVar();
 }
 
 void render_config_tab(PrimaryAgent& tab) {
@@ -233,12 +319,6 @@ void render_config_tab(PrimaryAgent& tab) {
         Separator();
 
         if (BeginTabBar("ConfigSubTabs")) {
-
-            // ── Model sub-tab ──
-            if (BeginTabItem("  Model  ")) {
-                render_model_tab(tab);
-                EndTabItem();
-            }
 
             // ── Tool Calls sub-tab ──
             if (BeginTabItem("  Tool Calls  ")) {

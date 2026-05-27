@@ -270,6 +270,7 @@ static void render_frame(PrimaryAgent& primary, bool& done, PlanBoard& plan) {
         if (BeginTabBar("##chat-tabs")) {
 
             if (BeginTabItem("   Primary   ##primary")) {
+                render_provider_model_inline(primary, *primary.session);
                 render_chat_ui(primary, done);
                 EndTabItem();
             }
@@ -278,6 +279,7 @@ static void render_frame(PrimaryAgent& primary, bool& done, PlanBoard& plan) {
                 PushID(sa_tab.id);
                 if (BeginTabItem(
                         ("   " + sa_tab.title + "   ##sa-" + std::to_string(sa_tab.id)).c_str())) {
+                    render_provider_model_inline(sa_tab, *sa_tab.session);
                     render_subagent_chat(sa_tab);
                     EndTabItem();
                 }
