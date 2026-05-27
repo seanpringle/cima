@@ -163,6 +163,13 @@ void PrimaryAgent::restore_session_data() {
 
     session->conversation().from_json(sd.conversation);
 
+    // Restore loaded skills from session data.
+    for (const auto& name : sd.loaded_skills) {
+        const Skill* skill = skill_registry_.find(name);
+        if (skill)
+            session->conversation().add_skill(skill->name, skill->body);
+    }
+
     ui_state.entries.clear();
     if (sd.chat_log.is_array()) {
         for (const auto& entry : sd.chat_log) {

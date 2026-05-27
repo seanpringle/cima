@@ -175,7 +175,10 @@ class ChatSession {
 
     /// Provide the SkillRegistry so build_effective_prompt() can list available
     /// skills and the load_skill tool can look them up.
-    void set_skill_registry(SkillRegistry& registry) { skill_registry_ = &registry; }
+    void set_skill_registry(SkillRegistry& registry) {
+        skill_registry_ = &registry;
+        conversation_.set_skill_registry(&registry);
+    }
 
     /// Register the load_skill tool in this session's tool registry.
     void register_load_skill_tool(SkillRegistry& registry) {

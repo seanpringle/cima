@@ -1,6 +1,7 @@
 #include "conversation.h"
 
 #include <fstream>
+#include "skill.h"
 
 using json = nlohmann::json;
 
@@ -284,6 +285,18 @@ void Conversation::from_json(const json& j) {
     }
 
     next_id_ = messages_.size() + 1;
+
+    // Restore loaded skills from session data.
+    if (skill_registry_ && j.contains("loaded_skills") && j["loaded_skills"].is_array()) {
+        for (const auto& item : j["loaded_skills"]) {
+            std::string name = item.get<std::string>();
+            if (!name.empty()) {
+                const Skill* skill = skill_registry_->find(name);
+                if (skill)
+                    add_skill(skill->name, skill->body);
+            }
+        }
+    }
 }
 
 Result<void> Conversation::save_to_file(const std::string& path) {

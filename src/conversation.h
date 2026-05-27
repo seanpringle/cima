@@ -66,6 +66,9 @@ class Conversation {
     /// Clear all messages from the conversation and reset ID counter.
     void clear();
 
+    /// Provide the SkillRegistry so skills can be restored from JSON.
+    void set_skill_registry(class SkillRegistry* registry) { skill_registry_ = registry; }
+
     // ── Serialization ──
 
     json to_json() const;
@@ -79,4 +82,5 @@ class Conversation {
     int64_t next_id_ = 1;
     std::string appended_system_;
     std::set<std::string> loaded_skill_names_;
+    class SkillRegistry* skill_registry_ = nullptr;
 };

@@ -84,6 +84,13 @@ json SessionData::to_json() const {
     }
     j["input_history"] = std::move(hist);
 
+    // Serialise loaded_skills
+    json ls = json::array();
+    for (const auto& s : loaded_skills) {
+        ls.push_back(s);
+    }
+    j["loaded_skills"] = std::move(ls);
+
     // Serialise knobs (sparse — only non-zero values)
     json k = json::object();
     if (max_tool_iterations > 0)  k["max_tool_iterations"] = max_tool_iterations;
@@ -210,6 +217,16 @@ void SessionData::from_json(const json& j) {
         for (const auto& item : j["input_history"]) {
             if (item.is_string()) {
                 input_history.push_back(item.get<std::string>());
+            }
+        }
+    }
+
+    // Deserialise loaded_skills
+    loaded_skills.clear();
+    if (j.contains("loaded_skills") && j["loaded_skills"].is_array()) {
+        for (const auto& item : j["loaded_skills"]) {
+            if (item.is_string()) {
+                loaded_skills.push_back(item.get<std::string>());
             }
         }
     }
