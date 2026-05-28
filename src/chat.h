@@ -70,9 +70,9 @@ class ChatSession {
     void set_output_callback(OutputCallback cb) { output_cb_ = std::move(cb); }
     const Usage& last_usage() const { return last_usage_; }
 
-    /// Return the effective API type for the current model
-    /// (model_api_types override, then heuristic, then provider default).
-    std::string effective_api_type() const;
+    /// Return the effective API type (set by provider default or per-tab combo).
+    const std::string& effective_api_type() const { return api_type_; }
+    void set_api_type(const std::string& t) { api_type_ = t; client_.set_api_type(t); }
     const std::string& api_type() const { return api_type_; }
     int max_tokens() const { return max_tokens_; }
 
@@ -259,7 +259,6 @@ class ChatSession {
     std::string api_base_;     // API base URL (for creating temp clients)
     std::string api_key_;      // API key for authentication
     std::string api_type_ = "openai"; // effective API type for current model
-    std::map<std::string, std::string> model_api_types_; // model → api_type overrides
     int max_tokens_ = 0;       // 0 = auto-derive from context_limit/4
     int max_iterations_ = kDefaultMaxToolIterations; // overridden by session knob
     std::shared_ptr<FileModifiedCallback> file_modified_cb_;

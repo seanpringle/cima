@@ -19,7 +19,7 @@ ChatSession::ChatSession(ConfigPtr config,
       provider_name_(provider.name),
       safe_dir_(std::make_shared<std::string>(std::filesystem::current_path().string())),
       api_base_(provider.api_base), api_key_(provider.api_key),
-      api_type_(provider.api_type), model_api_types_(provider.model_api_types),
+      api_type_(provider.api_type),
       max_tokens_(provider.max_tokens),
       max_iterations_(kDefaultMaxToolIterations), context_limit_(provider.context_limit),
       system_prompt_(config_->SYSTEM_PROMPT), client_(provider.api_base, provider.api_key),
@@ -79,7 +79,6 @@ void ChatSession::set_provider(const Provider& provider) {
     api_base_ = provider.api_base;
     api_key_ = provider.api_key;
     api_type_ = provider.api_type;
-    model_api_types_ = provider.model_api_types;
     max_tokens_ = provider.max_tokens;
     model_ = provider.model;
     reasoning_effort_ = provider.reasoning_effort;
@@ -88,21 +87,6 @@ void ChatSession::set_provider(const Provider& provider) {
     client_.set_api_base(provider.api_base);
     client_.set_api_key(provider.api_key);
     client_.set_api_type(provider.api_type);
-}
-
-std::string ChatSession::effective_api_type() const {
-    // 1. Check explicit model override
-    auto it = model_api_types_.find(model_);
-    if (it != model_api_types_.end())
-        return it->second;
-
-    // 2. Heuristic: model IDs starting with "anthropic/" or containing "claude"
-    if (model_.rfind("anthropic/", 0) == 0 ||
-        model_.find("claude") != std::string::npos)
-        return "anthropic";
-
-    // 3. Provider default
-    return api_type_;
 }
 
 int ChatSession::context_usage_percent() const {

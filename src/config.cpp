@@ -67,9 +67,6 @@ json Config::to_json() const {
         pj["api_base"] = p.api_base;
         pj["api_key"] = p.api_key;
         pj["api_type"] = p.api_type;
-        if (!p.model_api_types.empty()) {
-            pj["model_api_types"] = p.model_api_types;
-        }
         pj["model"] = p.model;
         pj["reasoning_effort"] = p.reasoning_effort;
         pj["reasoning_efforts"] = p.reasoning_efforts;
@@ -172,13 +169,6 @@ Config Config::load() {
                 p.api_base = pj.value("api_base", std::string());
                 p.api_key = pj.value("api_key", std::string());
                 p.api_type = pj.value("api_type", "openai");
-                if (pj.contains("model_api_types") && pj["model_api_types"].is_object()) {
-                    for (auto it = pj["model_api_types"].begin();
-                         it != pj["model_api_types"].end(); ++it) {
-                        if (it.value().is_string())
-                            p.model_api_types[it.key()] = it.value().get<std::string>();
-                    }
-                }
                 p.model = pj.value("model", std::string());
                 p.reasoning_effort = pj.value("reasoning_effort", std::string());
                 p.reasoning_efforts = pj.value("reasoning_efforts", std::vector<std::string>());

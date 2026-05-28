@@ -15,6 +15,7 @@ struct Agent {
     std::string title;            // Culture ship name (display label)
     std::string model_name;       // actual model name (shown in dropdown)
     std::string provider_name;    // which provider this tab belongs to
+    std::string api_type;         // per-tab api type override ("openai"|"anthropic")
     std::string reasoning_effort; // per-tab reasoning effort override
     std::string git_branch;
 

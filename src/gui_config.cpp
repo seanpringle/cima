@@ -69,6 +69,8 @@ static void render_provider_model_ui(Agent& tab, ChatSession& session) {
                         // Provider changed — update session client
                         session.set_provider(p);
                         tab.provider_name = p.name;
+                        tab.api_type = p.api_type;
+                        session.set_api_type(p.api_type);
                         tab.model_name = p.model;
                         tab.reasoning_effort = p.reasoning_effort;
                         tab.ui_state.models_validated = false;
@@ -131,6 +133,25 @@ static void render_provider_model_ui(Agent& tab, ChatSession& session) {
 
     tab.validate_current_model();
 
+    // ── API type combo ──
+    {
+        std::string current = tab.api_type.empty() ? session.api_type() : tab.api_type;
+        if (BeginCombo("API Type", current.c_str())) {
+            for (const auto& t : {"openai", "anthropic"}) {
+                bool is_selected = (t == current);
+                if (Selectable(t, is_selected)) {
+                    if (t != current) {
+                        tab.api_type = t;
+                        session.set_api_type(t);
+                    }
+                }
+                if (is_selected)
+                    SetItemDefaultFocus();
+            }
+            EndCombo();
+        }
+    }
+
     // ── Reasoning effort combo ──
     {
         std::string re =
@@ -169,7 +190,7 @@ static void render_provider_model_ui(Agent& tab, ChatSession& session) {
 void render_provider_model_inline(Agent& tab, ChatSession& session) {
     PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 4));
 
-    float width = GetContentRegionAvail().x/3 - GetStyle().ItemSpacing.x*2;
+    float width = GetContentRegionAvail().x/4 - GetStyle().ItemSpacing.x*2;
 
     // ── Provider combo ──
     {
@@ -182,6 +203,8 @@ void render_provider_model_inline(Agent& tab, ChatSession& session) {
                     if (p.name != tab.provider_name) {
                         session.set_provider(p);
                         tab.provider_name = p.name;
+                        tab.api_type = p.api_type;
+                        session.set_api_type(p.api_type);
                         tab.model_name = p.model;
                         tab.reasoning_effort = p.reasoning_effort;
                         tab.ui_state.models_validated = false;
@@ -239,6 +262,27 @@ void render_provider_model_inline(Agent& tab, ChatSession& session) {
     }
 
     tab.validate_current_model();
+
+    // ── API type combo ──
+    {
+        SameLine(0,GetStyle().ItemSpacing.x);
+        SetNextItemWidth(width);
+        std::string current = tab.api_type.empty() ? session.api_type() : tab.api_type;
+        if (BeginCombo("##inline-apitype", current.c_str())) {
+            for (const auto& t : {"openai", "anthropic"}) {
+                bool is_selected = (t == current);
+                if (Selectable(t, is_selected)) {
+                    if (t != current) {
+                        tab.api_type = t;
+                        session.set_api_type(t);
+                    }
+                }
+                if (is_selected)
+                    SetItemDefaultFocus();
+            }
+            EndCombo();
+        }
+    }
 
     // ── Reasoning effort combo ──
     {

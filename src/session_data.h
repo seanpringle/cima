@@ -19,6 +19,7 @@ struct SessionData {
     std::string last_cwd;         // working directory last used
     std::string provider_name;    // which provider this session belongs to
     std::string model;            // model name
+    std::string api_type;         // "openai" or "anthropic"
     std::string reasoning_effort; // reasoning effort override
     // workspace_path removed — safe_dir is always the cwd at startup
     json conversation;                       // serialized Conversation (array of message objects)

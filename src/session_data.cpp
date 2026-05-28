@@ -14,6 +14,7 @@ json SessionData::to_json() const {
     j["last_cwd"] = last_cwd;
     j["provider_name"] = provider_name;
     j["model"] = model;
+    j["api_type"] = api_type;
     j["reasoning_effort"] = reasoning_effort;
     // workspace_path removed — safe_dir locked to cwd
     j["conversation"] = conversation;
@@ -112,6 +113,7 @@ void SessionData::from_json(const json& j) {
     last_cwd = j.value("last_cwd", std::string());
     provider_name = j.value("provider_name", std::string());
     model = j.value("model", std::string());
+    api_type = j.value("api_type", "openai");
     reasoning_effort = j.value("reasoning_effort", std::string());
     // workspace_path removed — safe_dir locked to cwd
     conversation = j.value("conversation", json::array());

@@ -70,6 +70,7 @@ PrimaryAgent::~PrimaryAgent() {
 
     session_.session_data().provider_name = provider_name;
     session_.session_data().model = model_name;
+    session_.session_data().api_type = api_type;
     session_.session_data().reasoning_effort = reasoning_effort;
     session_.session_data().conversation = session->conversation().to_json();
 
@@ -121,6 +122,7 @@ void PrimaryAgent::init_defaults() {
 
     const auto& provider = cfg_->providers[0];
     provider_name = provider.name;
+    api_type = provider.api_type;
     model_name = provider.model;
     reasoning_effort = provider.reasoning_effort;
 }
@@ -154,6 +156,11 @@ void PrimaryAgent::restore_session_data() {
     if (!sd.model.empty()) {
         model_name = sd.model;
         session->set_model(sd.model);
+    }
+
+    if (!sd.api_type.empty()) {
+        api_type = sd.api_type;
+        session->set_api_type(sd.api_type);
     }
 
     if (!sd.reasoning_effort.empty()) {
@@ -284,6 +291,7 @@ void PrimaryAgent::create_subagents() {
         sub_agent.read_only_tools = sa.read_only;
         sub_agent.cfg_ = cfg_;
         sub_agent.provider_name = provider.name;
+        sub_agent.api_type = provider.api_type;
         sub_agent.model_name = provider.model;
         sub_agent.reasoning_effort = provider.reasoning_effort;
 
@@ -330,6 +338,7 @@ void PrimaryAgent::create_subagents() {
         sub_agent.read_only_tools = bsa.read_only;
         sub_agent.cfg_ = cfg_;
         sub_agent.provider_name = provider.name;
+        sub_agent.api_type = provider.api_type;
         sub_agent.model_name = provider.model;
         sub_agent.reasoning_effort = provider.reasoning_effort;
 

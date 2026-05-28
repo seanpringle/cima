@@ -66,8 +66,7 @@ struct Provider {
     std::string name;     // unique identifier, e.g. "opencode.go"
     std::string api_base; // e.g. "https://api.opencode.go/v1"
     std::string api_key;
-    std::string api_type = "openai";                  // "openai" | "anthropic" (per-model default)
-    std::map<std::string, std::string> model_api_types; // model name → "openai"|"anthropic" overrides
+    std::string api_type = "openai"; // "openai" | "anthropic" (default for sessions)
     std::string model;            // default model for this provider
     std::string reasoning_effort; // reasoning effort (empty = not set / omit from API)
     std::vector<std::string> reasoning_efforts; // allowed values for the dropdown
