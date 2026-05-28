@@ -224,6 +224,14 @@ Result<void> ChatClient::stream_chat_anthropic(const json& payload,
         // Prefer the JSON "type" field, fall back to the SSE event name.
         std::string ev = j.value("type", event);
 
+        // Fallback: if the response is OpenAI format (has "choices"),
+        // pass it through directly — some /messages endpoints emit
+        // OpenAI-style SSE chunks internally.
+        if (j.contains("choices")) {
+            if (cb) cb("", j);
+            return;
+        }
+
         if (ev == "message_start") {
             // Emit initial usage if present
             if (j.contains("message") && j["message"].contains("usage")) {
@@ -677,3 +685,5 @@ Result<void> ChatClient::stream_chat(const json& payload, SSEParser::Callbacks c
 
     return {};
 }
+
+// ── Discover context window from API metadata ──
