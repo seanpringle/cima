@@ -212,12 +212,6 @@ json ChatSession::build_payload(const std::set<std::string>& allowed_tools) cons
         auto tools = tools_.to_anthropic_tools(&allowed_tools);
         if (!tools.empty())
             payload["tools"] = tools;
-        // Add thinking config if reasoning_effort is set
-        if (!reasoning_effort_.empty() && reasoning_effort_ != "low") {
-            int budget = 2000;
-            if (reasoning_effort_ == "high") budget = 4000;
-            payload["thinking"] = {{"type", "enabled"}, {"budget_tokens", budget}};
-        }
         return payload;
     }
 
