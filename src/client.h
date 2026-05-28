@@ -40,7 +40,7 @@ class ChatClient {
 
     const std::string& last_raw_response() const { return raw_response_; }
     std::string url() const {
-        if (api_type_ == "anthropic") return api_base_ + "/v1/messages";
+        if (api_type_ == "anthropic") return api_base_ + "/messages";
         return api_base_ + "/chat/completions";
     }
     std::string models_url() const { return api_base_ + "/models"; }
