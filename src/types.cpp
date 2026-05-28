@@ -192,9 +192,14 @@ void SSEParser::process_line(std::string line) {
         return;
     }
 
-    constexpr std::string_view prefix = "data: ";
-    if (line.size() > prefix.size() && std::string_view(line).substr(0, prefix.size()) == prefix) {
-        std::string payload = line.substr(prefix.size());
+    constexpr std::string_view prefix_nospace = "data:";
+    if (line.size() >= prefix_nospace.size() &&
+        std::string_view(line).substr(0, prefix_nospace.size()) == prefix_nospace) {
+        // Skip "data:" and optional whitespace
+        size_t payload_start = prefix_nospace.size();
+        if (payload_start < line.size() && line[payload_start] == ' ')
+            payload_start++;
+        std::string payload = line.substr(payload_start);
 
         // [DONE] is OpenAI-specific; emit it as regular data for the client to handle
         if (payload == "[DONE]") {
