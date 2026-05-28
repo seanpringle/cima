@@ -245,9 +245,9 @@ void render_chat_ui(PrimaryAgent& tab, bool& done) {
         SetKeyboardFocusHere();
     }
 
-    uint32_t inputFlags = ImGuiInputTextFlags_CtrlEnterForNewLine |
-        ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_WordWrap |
-        ImGuiInputTextFlags_CallbackAlways;
+    uint32_t inputFlags = ImGuiInputTextFlags_EnterReturnsTrue
+        | ImGuiInputTextFlags_WordWrap
+        | ImGuiInputTextFlags_CallbackAlways;
 
     ImVec2 inputSize(0, GetContentRegionAvail().y - GetFrameHeight());
 
