@@ -220,7 +220,11 @@ Result<void> ChatClient::stream_chat_anthropic(const json& payload,
                           const std::string& event, const json& j) {
         data_delivered = true;
 
-        if (event == "message_start") {
+        // Some providers omit SSE event: lines and embed the type in JSON.
+        // Prefer the JSON "type" field, fall back to the SSE event name.
+        std::string ev = j.value("type", event);
+
+        if (ev == "message_start") {
             // Emit initial usage if present
             if (j.contains("message") && j["message"].contains("usage")) {
                 const auto& u = j["message"]["usage"];
@@ -231,7 +235,7 @@ Result<void> ChatClient::stream_chat_anthropic(const json& payload,
                                   {"total_tokens", in + out}};
                 if (cb) cb("", {{"usage", std::move(usage_obj)}});
             }
-        } else if (event == "content_block_start") {
+        } else if (ev == "content_block_start") {
             s->active_block_index = j.value("index", 0);
             if (j.contains("content_block")) {
                 s->active_block_type = j["content_block"].value("type", "text");
@@ -244,7 +248,7 @@ Result<void> ChatClient::stream_chat_anthropic(const json& payload,
                     s->thinking_text.clear();
                 }
             }
-        } else if (event == "content_block_delta") {
+        } else if (ev == "content_block_delta") {
             if (!j.contains("delta"))
                 return;
             const auto& delta = j["delta"];
@@ -266,7 +270,7 @@ Result<void> ChatClient::stream_chat_anthropic(const json& payload,
             } else if (dt == "signature_delta") {
                 // Extended thinking signature — silently accumulate
             }
-        } else if (event == "content_block_stop") {
+        } else if (ev == "content_block_stop") {
             if (s->active_block_type == "tool_use" && !s->tool_partial_json.empty()) {
                 // Parse the accumulated partial JSON into the tool arguments
                 std::string args = s->tool_partial_json;
@@ -285,7 +289,7 @@ Result<void> ChatClient::stream_chat_anthropic(const json& payload,
                 if (cb) cb("", fake);
             }
             s->active_block_type.clear();
-        } else if (event == "message_delta") {
+        } else if (ev == "message_delta") {
             if (j.contains("usage")) {
                 const auto& u = j["usage"];
                 int out = u.value("output_tokens", 0);
@@ -295,9 +299,9 @@ Result<void> ChatClient::stream_chat_anthropic(const json& payload,
                                   {"total_tokens", in + out}};
                 if (cb) cb("", {{"usage", std::move(usage_obj)}});
             }
-        } else if (event == "message_stop") {
+        } else if (ev == "message_stop") {
             // No additional data to emit; done signal handled by on_done
-        } else if (event == "error") {
+        } else if (ev == "error") {
             std::string msg = "Anthropic stream error";
             if (j.contains("error") && j["error"].is_object())
                 msg = j["error"].value("message", msg);
