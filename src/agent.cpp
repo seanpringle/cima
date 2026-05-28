@@ -374,7 +374,11 @@ void PrimaryAgent::register_subagent_tools() {
             all_configs.push_back(bsa);
         }
     }
-    session->register_call_subagent_tool(*this, all_configs);
+    // Compute the effective subagent timeout from the session knob (if set).
+    int effective_timeout = kDefaultSubagentTimeout;
+    int knob = session_.subagent_timeout();
+    if (knob > 0) effective_timeout = knob;
+    session->register_call_subagent_tool(*this, all_configs, effective_timeout);
 
     // Register the load_skill tool (available only if skills were discovered).
     session->register_load_skill_tool(skill_registry_);

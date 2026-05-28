@@ -179,6 +179,7 @@ void Session::apply_knobs_to(ChatSession& session) const {
     // Note: we keep read-only-path-aware tools and plan tools intact.
 
     // Remove existing time-sensitive tools
+    session.tools_for_testing().remove("call_subagent");
     session.tools_for_testing().remove("run_bwrap");
     session.tools_for_testing().remove("run_bwrap_ro");
     session.tools_for_testing().remove("grep_files");
@@ -228,4 +229,9 @@ void Session::apply_knobs_to(ChatSession& session) const {
         t.permission = ToolPermission::Write;
         tools.add(std::move(t));
     }
+
+    // Re-register call_subagent with the effective timeout.
+    // (The tool was removed above; this also stores the PrimaryAgent reference
+    // and subagent configs needed to rebuild it.)
+    session.reregister_call_subagent_tool(sa);
 }

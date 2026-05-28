@@ -30,7 +30,7 @@ Tool make_call_subagent_tool(PrimaryAgent& primary,
     }
     t.description = desc;
 
-    t.permission = ToolPermission::ReadOnly;
+    t.permission = ToolPermission::Write;  // serialise to prevent concurrent subagent runs
     t.timeout_sec = timeout_sec;
 
     t.parameters = {{"type", "object"},
@@ -59,8 +59,19 @@ Tool make_call_subagent_tool(PrimaryAgent& primary,
 
         SubAgent& subagent = **lookup;
 
-        // Check if subagent is already running
-        if (subagent.chat_state->running) {
+        // Set up a promise/future pair BEFORE claiming the subagent, so that
+        // cancel_and_wait() (called on shutdown) always sees a valid future
+        // if running is true — closing the race between the two checks.
+        auto promise = std::make_shared<std::promise<Result<ChatResult>>>();
+        subagent.chat_state->future = promise->get_future();
+
+        // Atomically claim the subagent (guard against concurrent tool-initiated runs).
+        // compare_exchange closes the check-to-set race between two tool calls.
+        bool expected = false;
+        if (!subagent.chat_state->running.compare_exchange_strong(expected, true)) {
+            // Already running — reset the future we just set (nobody can be waiting
+            // on it because running was false).
+            subagent.chat_state->future = std::future<Result<ChatResult>>();
             return std::unexpected("subagent \"" + name +
                                    "\" is already running — wait for it to finish");
         }
@@ -80,9 +91,21 @@ Tool make_call_subagent_tool(PrimaryAgent& primary,
         subagent.ui_state.entries.push_back(
             {EntryType::UserText, request, false});
 
-        // Run the request
-        auto result = subagent.session->run_once(request);
+        // Run the request (may throw only in truly exceptional cases — bad_alloc etc.)
+        Result<ChatResult> result;
+        try {
+            result = subagent.session->run_once(request);
+        } catch (const std::exception& e) {
+            subagent.chat_state->running = false;
+            promise->set_value(std::unexpected(std::string(e.what())));
+            return std::unexpected(std::string("subagent error: ") + e.what());
+        }
+
+        // Build response string while result is still alive
         if (!result) {
+            std::string err = result.error();
+            subagent.chat_state->running = false;
+            promise->set_value(std::unexpected(std::move(err)));
             return std::unexpected("subagent error: " + result.error());
         }
 
@@ -91,6 +114,12 @@ Tool make_call_subagent_tool(PrimaryAgent& primary,
             response += result->reasoning + "\n";
         }
         response += result->content;
+
+        // Cleanup: clear the running flag, then fulfil the promise so that
+        // cancel_and_wait() (if waiting) can proceed.
+        subagent.chat_state->running = false;
+        promise->set_value(std::move(result));
+
         return response;
     };
     return t;

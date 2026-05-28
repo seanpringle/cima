@@ -168,9 +168,24 @@ class ChatSession {
     /// The tool clears the subagent's UI state before forwarding the primary
     /// agent's request as a UserText entry.  subagent_configs are used to build
     /// the tool description with available names.
+    /// The primary pointer and configs are stored so the tool can be re-registered
+    /// with a different timeout later (see reregister_call_subagent_tool).
     void register_call_subagent_tool(
-        PrimaryAgent& primary, const std::vector<SubagentConfig>& subagent_configs = {}) {
-        tools_.add(make_call_subagent_tool(primary, subagent_configs, kDefaultSubagentTimeout));
+        PrimaryAgent& primary, const std::vector<SubagentConfig>& subagent_configs = {},
+        int timeout_sec = kDefaultSubagentTimeout) {
+        call_subagent_primary_ = &primary;
+        call_subagent_configs_ = subagent_configs;
+        tools_.add(make_call_subagent_tool(primary, subagent_configs, timeout_sec));
+    }
+
+    /// Re-register the call_subagent tool with a different timeout (e.g. after a
+    /// session knob override).  No-op if the tool has not been registered yet.
+    void reregister_call_subagent_tool(int timeout_sec) {
+        tools_.remove("call_subagent");
+        if (call_subagent_primary_) {
+            tools_.add(make_call_subagent_tool(
+                *call_subagent_primary_, call_subagent_configs_, timeout_sec));
+        }
     }
 
     /// Provide the SkillRegistry so build_effective_prompt() can list available
@@ -252,4 +267,9 @@ class ChatSession {
     bool is_read_only_ = false;
     McpRegistry mcp_registry_;
     const SkillRegistry* skill_registry_ = nullptr; // non-owning, set by set_skill_registry()
+
+    // Stored by register_call_subagent_tool; used by reregister_call_subagent_tool
+    // to rebuild the call_subagent tool with a different timeout.
+    PrimaryAgent* call_subagent_primary_ = nullptr;
+    std::vector<SubagentConfig> call_subagent_configs_;
 };
