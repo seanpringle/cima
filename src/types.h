@@ -94,7 +94,7 @@ class ToolAccumulator {
 
 class SSEParser {
   public:
-    using DataCallback = std::function<void(const json&)>;
+    using DataCallback = std::function<void(const std::string& event, const json& data)>;
     using DoneCallback = std::function<void()>;
     using ErrorCallback = std::function<void(const std::string&)>;
 
@@ -116,6 +116,7 @@ class SSEParser {
     Callbacks cb_;
     std::string buf_;
     std::string raw_;
+    std::string current_event_;
 };
 
 

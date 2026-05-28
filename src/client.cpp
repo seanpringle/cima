@@ -19,9 +19,17 @@ ChatClient::~ChatClient() = default;
 struct curl_slist* ChatClient::make_headers() const {
     struct curl_slist* list = nullptr;
     list = curl_slist_append(list, "Content-Type: application/json");
-    if (!api_key_.empty()) {
-        std::string auth_header = "Authorization: Bearer " + api_key_;
-        list = curl_slist_append(list, auth_header.c_str());
+    if (api_type_ == "anthropic") {
+        if (!api_key_.empty()) {
+            std::string auth_header = "x-api-key: " + api_key_;
+            list = curl_slist_append(list, auth_header.c_str());
+        }
+        list = curl_slist_append(list, "anthropic-version: 2023-06-01");
+    } else {
+        if (!api_key_.empty()) {
+            std::string auth_header = "Authorization: Bearer " + api_key_;
+            list = curl_slist_append(list, auth_header.c_str());
+        }
     }
     return list;
 }
@@ -176,6 +184,223 @@ Result<std::string> ChatClient::http_get(const std::string& url) {
         return std::unexpected("HTTP " + std::to_string(http_code));
     }
     return body;
+}
+
+// ── Anthropic SSE stream parser ─────────────────────────────────
+// Converts named-event Anthropic SSE streams into OpenAI-format
+// JSON callbacks so ChatSession can share the same on_data logic.
+
+Result<void> ChatClient::stream_chat_anthropic(const json& payload,
+                                              SSEParser::Callbacks callbacks) {
+    std::string payload_str = payload.dump();
+    long http_code = 0;
+
+    // We intercept the SSE events and re-emit OpenAI-shaped JSON
+    // to the original callbacks.  State machine:
+    struct AnthropicState {
+        int active_block_index = -1;
+        std::string active_block_type;       // "text", "tool_use", "thinking"
+        std::string tool_id;
+        std::string tool_name;
+        std::string tool_partial_json;
+        std::string thinking_text;
+        // Track tool call indices for OpenAI-format emission
+        int tool_call_counter = 0;
+    };
+    auto state = std::make_shared<AnthropicState>();
+
+    // --- Wrap the original callbacks ---
+    bool data_delivered = false;
+    SSEParser::Callbacks guarded;
+
+    // Capture the error callback reference for use inside on_data
+    auto& err_cb = callbacks.on_error;
+
+    guarded.on_data = [&data_delivered, &err_cb, s = state, cb = std::move(callbacks.on_data)](
+                          const std::string& event, const json& j) {
+        data_delivered = true;
+
+        if (event == "message_start") {
+            // Emit initial usage if present
+            if (j.contains("message") && j["message"].contains("usage")) {
+                const auto& u = j["message"]["usage"];
+                int in = u.value("input_tokens", 0);
+                int out = u.value("output_tokens", 0);
+                json usage_obj = {{"prompt_tokens", in},
+                                  {"completion_tokens", out},
+                                  {"total_tokens", in + out}};
+                if (cb) cb("", {{"usage", std::move(usage_obj)}});
+            }
+        } else if (event == "content_block_start") {
+            s->active_block_index = j.value("index", 0);
+            if (j.contains("content_block")) {
+                s->active_block_type = j["content_block"].value("type", "text");
+                if (s->active_block_type == "tool_use") {
+                    s->tool_id = j["content_block"].value("id", "");
+                    s->tool_name = j["content_block"].value("name", "");
+                    s->tool_partial_json.clear();
+                }
+                if (s->active_block_type == "thinking") {
+                    s->thinking_text.clear();
+                }
+            }
+        } else if (event == "content_block_delta") {
+            if (!j.contains("delta"))
+                return;
+            const auto& delta = j["delta"];
+            std::string dt = delta.value("type", "");
+
+            if (dt == "text_delta") {
+                std::string text = delta.value("text", "");
+                json fake = {{"choices",
+                    {{{"delta", {{"content", text}}}}}}};
+                if (cb) cb("", fake);
+            } else if (dt == "thinking_delta") {
+                std::string think = delta.value("thinking", "");
+                s->thinking_text += think;
+                json fake = {{"choices",
+                    {{{"delta", {{"reasoning_content", think}}}}}}};
+                if (cb) cb("", fake);
+            } else if (dt == "input_json_delta") {
+                s->tool_partial_json += delta.value("partial_json", "");
+            } else if (dt == "signature_delta") {
+                // Extended thinking signature — silently accumulate
+            }
+        } else if (event == "content_block_stop") {
+            if (s->active_block_type == "tool_use" && !s->tool_partial_json.empty()) {
+                // Parse the accumulated partial JSON into the tool arguments
+                std::string args = s->tool_partial_json;
+                // The partial JSON may be a complete JSON object; use it directly
+                json tc_arr = json::array({{
+                    {"index", s->tool_call_counter},
+                    {"id", s->tool_id},
+                    {"type", "function"},
+                    {"function",
+                        {{"name", s->tool_name},
+                         {"arguments", args}}}
+                }});
+                s->tool_call_counter++;
+                json fake = {{"choices",
+                    {{{"delta", {{"tool_calls", std::move(tc_arr)}}}}}}};
+                if (cb) cb("", fake);
+            }
+            s->active_block_type.clear();
+        } else if (event == "message_delta") {
+            if (j.contains("usage")) {
+                const auto& u = j["usage"];
+                int out = u.value("output_tokens", 0);
+                int in = 0; // cumulative input tokens not included in delta
+                json usage_obj = {{"prompt_tokens", in},
+                                  {"completion_tokens", out},
+                                  {"total_tokens", in + out}};
+                if (cb) cb("", {{"usage", std::move(usage_obj)}});
+            }
+        } else if (event == "message_stop") {
+            // No additional data to emit; done signal handled by on_done
+        } else if (event == "error") {
+            std::string msg = "Anthropic stream error";
+            if (j.contains("error") && j["error"].is_object())
+                msg = j["error"].value("message", msg);
+            if (err_cb) err_cb(msg);
+        }
+        // "ping" events are ignored
+    };
+
+    // Pass through on_done/on_error
+    if (callbacks.on_done) {
+        guarded.on_done = [&data_delivered, cb = std::move(callbacks.on_done)]() {
+            data_delivered = true;
+            cb();
+        };
+    }
+    if (callbacks.on_error) {
+        guarded.on_error = [&data_delivered, cb = std::move(callbacks.on_error)](
+                               const std::string& s) {
+            data_delivered = true;
+            cb(s);
+        };
+    }
+
+    SSEParser parser(std::move(guarded));
+
+    auto* headers = make_headers();
+    CURL* curl = setup_curl(url(), headers, payload_str, cancelled_.get());
+    if (!curl) {
+        curl_slist_free_all(headers);
+        return std::unexpected(std::string("curl_easy_init failed"));
+    }
+
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_stream);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &parser);
+
+    CURLcode res = CURLE_OK;
+    for (int attempt = 0; attempt < kMaxRetries; ++attempt) {
+        data_delivered = false;
+        parser.reset();
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_stream);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &parser);
+
+        res = curl_easy_perform(curl);
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+
+        if (res == CURLE_OK && !should_retry(http_code))
+            break;
+
+        if (attempt == kMaxRetries - 1)
+            break;
+
+        if (data_delivered)
+            break;
+
+        bool recoverable = (res == CURLE_OK && should_retry(http_code)) ||
+            res == CURLE_SEND_ERROR || res == CURLE_RECV_ERROR ||
+            res == CURLE_OPERATION_TIMEDOUT || res == CURLE_COULDNT_CONNECT;
+        if (!recoverable)
+            break;
+
+        std::this_thread::sleep_for(
+            std::chrono::duration<double>(jittered_delay(kBaseDelaySec * (1 << attempt))));
+    }
+
+    parser.flush();
+    curl_easy_cleanup(curl);
+    curl_slist_free_all(headers);
+
+    raw_response_ = parser.raw();
+
+    if (res != CURLE_OK) {
+        if (!raw_response_.empty()) {
+            std::cerr << "curl error raw response (" << curl_easy_strerror(res) << "):\n"
+                      << raw_response_ << std::endl;
+        }
+        auto msg = std::string("curl error: ") + curl_easy_strerror(res);
+        if (!raw_response_.empty()) {
+            msg += " | raw: " + raw_response_.substr(0, 500);
+        }
+        return std::unexpected(std::move(msg));
+    }
+
+    if (http_code != 200) {
+        if (http_code >= 400 && http_code < 500) {
+            std::cerr << "HTTP " << http_code << " error for POST " << url() << "\n";
+            std::cerr << "Request body:\n" << payload_str << "\n";
+            if (!raw_response_.empty()) {
+                std::cerr << "Response body:\n" << raw_response_ << std::endl;
+            }
+        } else {
+            if (!raw_response_.empty()) {
+                std::cerr << "HTTP " << http_code << " response body:\n"
+                          << raw_response_ << std::endl;
+            }
+        }
+        auto msg = "HTTP " + std::to_string(http_code);
+        if (!raw_response_.empty()) {
+            msg += ": " + raw_response_.substr(0, 500);
+        }
+        return std::unexpected(msg);
+    }
+
+    return {};
 }
 
 // ── Discover context window from API metadata ──
@@ -342,9 +567,10 @@ Result<void> ChatClient::stream_chat(const json& payload, SSEParser::Callbacks c
     bool data_delivered = false;
     SSEParser::Callbacks guarded;
     if (callbacks.on_data) {
-        guarded.on_data = [&data_delivered, cb = std::move(callbacks.on_data)](const json& j) {
+        guarded.on_data = [&data_delivered, cb = std::move(callbacks.on_data)](
+                              const std::string& ev, const json& j) {
             data_delivered = true;
-            cb(j);
+            cb(ev, j);
         };
     }
     if (callbacks.on_done) {

@@ -69,6 +69,9 @@ class ToolRegistry {
     /// Return tools for OpenAI, filtered to only include tools whose names
     /// appear in \p only_these (if non-null).
     json to_openai_tools(const std::set<std::string>* only_these) const;
+    /// Return tools for Anthropic Messages API (input_schema instead of parameters).
+    json to_anthropic_tools() const;
+    json to_anthropic_tools(const std::set<std::string>* only_these) const;
     Result<std::string> execute(const std::string& name, const std::string& args_json);
 
     const std::vector<Tool>& tools() const { return tools_; }

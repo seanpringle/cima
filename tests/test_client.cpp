@@ -95,7 +95,7 @@ TEST_CASE("ChatClient streaming calls on_data and on_done", "[client]") {
     bool errored = false;
 
     SSEParser::Callbacks cbs;
-    cbs.on_data = [&](const json& j) {
+    cbs.on_data = [&](const std::string&, const json& j) {
         content += j["choices"][0]["delta"].value("content", "");
     };
     cbs.on_done = [&]() { done = true; };
@@ -121,7 +121,7 @@ TEST_CASE("ChatClient streaming calls on_error for bad JSON", "[client]") {
 
     bool errored = false;
     SSEParser::Callbacks cbs;
-    cbs.on_data = [](const json&) {};
+    cbs.on_data = [](const std::string&, const json&) {};
     cbs.on_done = []() {};
     cbs.on_error = [&](const std::string&) { errored = true; };
 
@@ -171,7 +171,7 @@ TEST_CASE("Integration: streaming against 127.0.0.1:11000",
 
     std::string full;
     SSEParser::Callbacks cbs;
-    cbs.on_data = [&](const json& j) {
+    cbs.on_data = [&](const std::string&, const json& j) {
         full += j["choices"][0]["delta"].value("content", "");
     };
     cbs.on_done = []() {};

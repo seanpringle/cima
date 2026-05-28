@@ -66,10 +66,15 @@ json Config::to_json() const {
         pj["name"] = p.name;
         pj["api_base"] = p.api_base;
         pj["api_key"] = p.api_key;
+        pj["api_type"] = p.api_type;
+        if (!p.model_api_types.empty()) {
+            pj["model_api_types"] = p.model_api_types;
+        }
         pj["model"] = p.model;
         pj["reasoning_effort"] = p.reasoning_effort;
         pj["reasoning_efforts"] = p.reasoning_efforts;
         pj["context_limit"] = p.context_limit;
+        pj["max_tokens"] = p.max_tokens;
         prov_arr.push_back(std::move(pj));
     }
     j["providers"] = std::move(prov_arr);
@@ -166,10 +171,19 @@ Config Config::load() {
                 p.name = pj.value("name", std::string());
                 p.api_base = pj.value("api_base", std::string());
                 p.api_key = pj.value("api_key", std::string());
+                p.api_type = pj.value("api_type", "openai");
+                if (pj.contains("model_api_types") && pj["model_api_types"].is_object()) {
+                    for (auto it = pj["model_api_types"].begin();
+                         it != pj["model_api_types"].end(); ++it) {
+                        if (it.value().is_string())
+                            p.model_api_types[it.key()] = it.value().get<std::string>();
+                    }
+                }
                 p.model = pj.value("model", std::string());
                 p.reasoning_effort = pj.value("reasoning_effort", std::string());
                 p.reasoning_efforts = pj.value("reasoning_efforts", std::vector<std::string>());
                 p.context_limit = pj.value("context_limit", 300000);
+                p.max_tokens = pj.value("max_tokens", 0);
                 cfg.providers.push_back(std::move(p));
             }
         }

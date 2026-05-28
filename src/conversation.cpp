@@ -145,6 +145,80 @@ json Conversation::build_openai_payload(const std::string& system_prompt) const 
     return arr;
 }
 
+json Conversation::build_anthropic_payload(const std::string& system_prompt) const {
+    json result;
+    result["system"] = sanitize_utf8(system_prompt);
+
+    json messages = json::array();
+
+    for (const auto& msg : messages_) {
+        if (msg.role == "system") continue;
+
+        if (msg.role == "user") {
+            // User message: plain text for now
+            messages.push_back({
+                {"role", "user"},
+                {"content", sanitize_utf8(msg.content.value_or(""))}
+            });
+        } else if (msg.role == "assistant" && !msg.tool_calls.empty()) {
+            // Assistant with tool calls → content blocks with tool_use entries
+            json content_blocks = json::array();
+
+            // Add text content block if present
+            if (msg.content.has_value() && !msg.content->empty()) {
+                content_blocks.push_back({
+                    {"type", "text"},
+                    {"text", sanitize_utf8(*msg.content)}
+                });
+            }
+
+            // Add tool_use blocks
+            for (const auto& tc : msg.tool_calls) {
+                json args;
+                try {
+                    args = json::parse(tc.arguments);
+                } catch (...) {
+                    args = json::object();
+                }
+                content_blocks.push_back({
+                    {"type", "tool_use"},
+                    {"id", tc.id},
+                    {"name", tc.name},
+                    {"input", args}
+                });
+            }
+            messages.push_back({
+                {"role", "assistant"},
+                {"content", std::move(content_blocks)}
+            });
+
+            // Tool results: emit as a user message with tool_result blocks
+            json result_blocks = json::array();
+            for (const auto& tc : msg.tool_calls) {
+                result_blocks.push_back({
+                    {"type", "tool_result"},
+                    {"tool_use_id", tc.id},
+                    {"content", sanitize_utf8(tc.result)}
+                });
+            }
+            messages.push_back({
+                {"role", "user"},
+                {"content", std::move(result_blocks)}
+            });
+        } else if (msg.role == "assistant") {
+            // Plain assistant message
+            messages.push_back({
+                {"role", "assistant"},
+                {"content", sanitize_utf8(msg.content.value_or(""))}
+            });
+        }
+        // ignore "tool" role messages — they are handled inline with tool_calls above
+    }
+
+    result["messages"] = std::move(messages);
+    return result;
+}
+
 // ---------------------------------------------------------------------------
 // Token estimation
 // ---------------------------------------------------------------------------

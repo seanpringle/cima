@@ -70,6 +70,12 @@ class ChatSession {
     void set_output_callback(OutputCallback cb) { output_cb_ = std::move(cb); }
     const Usage& last_usage() const { return last_usage_; }
 
+    /// Return the effective API type for the current model
+    /// (model_api_types override, then heuristic, then provider default).
+    std::string effective_api_type() const;
+    const std::string& api_type() const { return api_type_; }
+    int max_tokens() const { return max_tokens_; }
+
     /// Access the PlanBoard.
     PlanBoard& plan() { return *plan_; }
     const PlanBoard& plan() const { return *plan_; }
@@ -252,6 +258,9 @@ class ChatSession {
     std::shared_ptr<std::string> safe_dir_;
     std::string api_base_;     // API base URL (for creating temp clients)
     std::string api_key_;      // API key for authentication
+    std::string api_type_ = "openai"; // effective API type for current model
+    std::map<std::string, std::string> model_api_types_; // model → api_type overrides
+    int max_tokens_ = 0;       // 0 = auto-derive from context_limit/4
     int max_iterations_ = kDefaultMaxToolIterations; // overridden by session knob
     std::shared_ptr<FileModifiedCallback> file_modified_cb_;
     std::string system_prompt_;

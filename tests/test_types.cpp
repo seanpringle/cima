@@ -132,7 +132,7 @@ TEST_CASE("SSEParser single complete event", "[types][sse]") {
     bool done = false;
 
     SSEParser parser(SSEParser::Callbacks{
-        .on_data = [&](const json& j) { received.push_back(j); },
+        .on_data = [&](const std::string&, const json& j) { received.push_back(j); },
         .on_done = [&]() { done = true; },
         .on_error = [&](const std::string& e) { FAIL(e); },
     });
@@ -148,7 +148,7 @@ TEST_CASE("SSEParser multiple events in one feed", "[types][sse]") {
     bool done = false;
 
     SSEParser parser(SSEParser::Callbacks{
-        .on_data = [&](const json& j) { received.push_back(j); },
+        .on_data = [&](const std::string&, const json& j) { received.push_back(j); },
         .on_done = [&]() { done = true; },
         .on_error = [&](const std::string& e) { FAIL(e); },
     });
@@ -166,7 +166,7 @@ TEST_CASE("SSEParser partial data across feed calls", "[types][sse]") {
     std::string error;
 
     SSEParser parser(SSEParser::Callbacks{
-        .on_data = [&](const json& j) { received.push_back(j); },
+        .on_data = [&](const std::string&, const json& j) { received.push_back(j); },
         .on_done = [&]() { done = true; },
         .on_error = [&](const std::string& e) { error = e; },
     });
@@ -183,7 +183,7 @@ TEST_CASE("SSEParser ignores non-data lines", "[types][sse]") {
     std::vector<json> received;
 
     SSEParser parser(SSEParser::Callbacks{
-        .on_data = [&](const json& j) { received.push_back(j); },
+        .on_data = [&](const std::string&, const json& j) { received.push_back(j); },
         .on_done = []() {},
         .on_error = [&](const std::string& e) { FAIL(e); },
     });
@@ -197,7 +197,7 @@ TEST_CASE("SSEParser reset clears state", "[types][sse]") {
     std::vector<json> received;
 
     SSEParser parser(SSEParser::Callbacks{
-        .on_data = [&](const json& j) { received.push_back(j); },
+        .on_data = [&](const std::string&, const json& j) { received.push_back(j); },
         .on_done = []() {},
         .on_error = [&](const std::string& e) { FAIL(e); },
     });
@@ -214,7 +214,7 @@ TEST_CASE("SSEParser malformed JSON calls on_error", "[types][sse]") {
     bool errored = false;
 
     SSEParser parser(SSEParser::Callbacks{
-        .on_data = [](const json&) {},
+        .on_data = [](const std::string&, const json&) {},
         .on_done = []() {},
         .on_error = [&](const std::string&) { errored = true; },
     });
@@ -228,7 +228,7 @@ TEST_CASE("SSEParser flush processes remaining buffered data", "[types][sse]") {
     bool done = false;
 
     SSEParser parser(SSEParser::Callbacks{
-        .on_data = [&](const json& j) { received.push_back(j); },
+        .on_data = [&](const std::string&, const json& j) { received.push_back(j); },
         .on_done = [&]() { done = true; },
         .on_error = [&](const std::string& e) { FAIL(e); },
     });
@@ -255,7 +255,7 @@ TEST_CASE("SSEParser flush handles partial non-DONE data", "[types][sse]") {
     std::string error;
 
     SSEParser parser(SSEParser::Callbacks{
-        .on_data = [&](const json& j) { received.push_back(j); },
+        .on_data = [&](const std::string&, const json& j) { received.push_back(j); },
         .on_done = [&]() { done = true; },
         .on_error = [&](const std::string& e) { error = e; },
     });
@@ -273,7 +273,7 @@ TEST_CASE("SSEParser flush handles partial non-DONE data", "[types][sse]") {
 
 TEST_CASE("SSEParser flush with no buffered data is safe", "[types][sse]") {
     SSEParser parser(SSEParser::Callbacks{
-        .on_data = [](const json&) {},
+        .on_data = [](const std::string&, const json&) {},
         .on_done = []() {},
         .on_error = [](const std::string&) {},
     });

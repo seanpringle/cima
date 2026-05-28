@@ -178,8 +178,17 @@ void SSEParser::process_line(std::string line) {
         line.pop_back();
     }
 
-    // Skip empty lines (event separator)
+    // Skip empty lines (event separator) — reset event name
     if (line.empty()) {
+        current_event_.clear();
+        return;
+    }
+
+    // Track event: lines (SSE named events)
+    constexpr std::string_view event_prefix = "event: ";
+    if (line.size() > event_prefix.size() &&
+        std::string_view(line).substr(0, event_prefix.size()) == event_prefix) {
+        current_event_ = line.substr(event_prefix.size());
         return;
     }
 
@@ -187,6 +196,7 @@ void SSEParser::process_line(std::string line) {
     if (line.size() > prefix.size() && std::string_view(line).substr(0, prefix.size()) == prefix) {
         std::string payload = line.substr(prefix.size());
 
+        // [DONE] is OpenAI-specific; emit it as regular data for the client to handle
         if (payload == "[DONE]") {
             try {
                 if (cb_.on_done) {
@@ -195,10 +205,6 @@ void SSEParser::process_line(std::string line) {
             } catch (...) {
                 // swallow all exceptions — must not throw through C frames (libcurl)
             }
-            // Auto-reset internal buffers so the parser is ready for reuse
-            // without requiring an explicit reset() call from the caller.
-            buf_.clear();
-            raw_.clear();
             return;
         }
 
@@ -206,7 +212,7 @@ void SSEParser::process_line(std::string line) {
             json j = json::parse(payload);
             try {
                 if (cb_.on_data) {
-                    cb_.on_data(j);
+                    cb_.on_data(current_event_, j);
                 }
             } catch (...) {
                 // swallow — must not throw through C frames (libcurl)
@@ -231,7 +237,7 @@ void SSEParser::process_line(std::string line) {
         return;
     }
 
-    // Ignore other fields (event:, :keepalive, etc.)
+    // Ignore other fields (:keepalive, etc.)
 }
 
 void SSEParser::flush() {
@@ -244,6 +250,7 @@ void SSEParser::flush() {
 void SSEParser::reset() {
     buf_.clear();
     raw_.clear();
+    current_event_.clear();
 }
 
 // ---------------------------------------------------------------------------

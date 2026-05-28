@@ -43,6 +43,9 @@ class Conversation {
 
     /// Build the OpenAI-compatible messages array.
     json build_openai_payload(const std::string& system_prompt) const;
+    /// Build the Anthropic-compatible messages array and separate system prompt.
+    /// Returns {"system": "...", "messages": [...]}
+    json build_anthropic_payload(const std::string& system_prompt) const;
 
     /// Estimate total tokens for all messages.
     size_t estimate_total_tokens() const;

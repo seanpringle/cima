@@ -19,11 +19,15 @@ ChatSession::ChatSession(ConfigPtr config,
       provider_name_(provider.name),
       safe_dir_(std::make_shared<std::string>(std::filesystem::current_path().string())),
       api_base_(provider.api_base), api_key_(provider.api_key),
+      api_type_(provider.api_type), model_api_types_(provider.model_api_types),
+      max_tokens_(provider.max_tokens),
       max_iterations_(kDefaultMaxToolIterations), context_limit_(provider.context_limit),
       system_prompt_(config_->SYSTEM_PROMPT), client_(provider.api_base, provider.api_key),
       file_modified_cb_(std::make_shared<FileModifiedCallback>()),
       cancelled_(cancelled ? std::move(cancelled) : make_cancellation_token()),
       gates_(gates ? std::move(gates) : std::make_shared<GatingState>()) {
+    // Set the api_type on the client
+    client_.set_api_type(provider.api_type);
     // Share the cancellation token with tools and client
     tools_.set_cancelled(cancelled_);
     client_.set_cancelled(cancelled_);
@@ -74,12 +78,31 @@ void ChatSession::set_provider(const Provider& provider) {
     provider_name_ = provider.name;
     api_base_ = provider.api_base;
     api_key_ = provider.api_key;
+    api_type_ = provider.api_type;
+    model_api_types_ = provider.model_api_types;
+    max_tokens_ = provider.max_tokens;
     model_ = provider.model;
     reasoning_effort_ = provider.reasoning_effort;
     context_limit_ = provider.context_limit;
     context_limit_discovered_ = false; // will re-discover on next run
     client_.set_api_base(provider.api_base);
     client_.set_api_key(provider.api_key);
+    client_.set_api_type(provider.api_type);
+}
+
+std::string ChatSession::effective_api_type() const {
+    // 1. Check explicit model override
+    auto it = model_api_types_.find(model_);
+    if (it != model_api_types_.end())
+        return it->second;
+
+    // 2. Heuristic: model IDs starting with "anthropic/" or containing "claude"
+    if (model_.rfind("anthropic/", 0) == 0 ||
+        model_.find("claude") != std::string::npos)
+        return "anthropic";
+
+    // 3. Provider default
+    return api_type_;
 }
 
 int ChatSession::context_usage_percent() const {
@@ -105,7 +128,7 @@ void ChatSession::discover_context_limit() {
     static std::mutex cache_mutex;
     static std::unordered_map<std::string, int> cache;
 
-    std::string cache_key = client_.url() + ":" + model_;
+    std::string cache_key = client_.url() + ":" + model_ + ":" + effective_api_type();
     {
         std::lock_guard<std::mutex> lock(cache_mutex);
         auto it = cache.find(cache_key);
@@ -194,6 +217,27 @@ std::set<std::string> ChatSession::filter_allowed_tools() const {
 }
 
 json ChatSession::build_payload(const std::set<std::string>& allowed_tools) const {
+    if (effective_api_type() == "anthropic") {
+        auto ap = conversation_.build_anthropic_payload(build_effective_prompt());
+        json payload;
+        payload["model"] = model_;
+        payload["system"] = ap["system"];
+        payload["messages"] = ap["messages"];
+        payload["max_tokens"] = max_tokens_ > 0 ? max_tokens_ : (context_limit_ > 0 ? std::min(context_limit_ / 4, 8192) : 4096);
+        payload["stream"] = true;
+        auto tools = tools_.to_anthropic_tools(&allowed_tools);
+        if (!tools.empty())
+            payload["tools"] = tools;
+        // Add thinking config if reasoning_effort is set
+        if (!reasoning_effort_.empty() && reasoning_effort_ != "low") {
+            int budget = 2000;
+            if (reasoning_effort_ == "high") budget = 4000;
+            payload["thinking"] = {{"type", "enabled"}, {"budget_tokens", budget}};
+        }
+        return payload;
+    }
+
+    // OpenAI-compatible payload
     json payload = {{"model", model_},
         {"messages", conversation_.build_openai_payload(build_effective_prompt())},
         {"tools", tools_.to_openai_tools(&allowed_tools)},
@@ -210,7 +254,7 @@ Result<ChatSession::StreamResult> ChatSession::stream_chat(const json& payload) 
     bool stream_errored = false;
     std::string stream_error;
 
-    auto on_data = [&](const json& data) {
+    auto on_data = [&](const std::string& /*event*/, const json& data) {
         // Capture token usage if present (may appear in the final chunk).
         auto usage_it = data.find("usage");
         if (usage_it != data.end() && usage_it->is_object()) {
@@ -256,7 +300,12 @@ Result<ChatSession::StreamResult> ChatSession::stream_chat(const json& payload) 
             },
     });
 
-    auto stream_result = client_.stream_chat(payload, callbacks);
+    Result<void> stream_result;
+    if (effective_api_type() == "anthropic") {
+        stream_result = client_.stream_chat_anthropic(payload, callbacks);
+    } else {
+        stream_result = client_.stream_chat(payload, callbacks);
+    }
     if (!stream_result) {
         return std::unexpected(stream_result.error());
     }
@@ -509,94 +558,90 @@ Result<void> ChatSession::compact() {
     }
 
     // ── Build a proper multi-message payload for the summarization request ──
-    // Instead of concatenating all messages into one flat string (which causes
-    // "lost in the middle" behavior), we send them as separate API messages.
-    json messages = json::array();
+    const std::string compact_sys_prompt =
+        "You are summarizing a conversation for context retention. "
+        "Provide a comprehensive, detailed summary that preserves ALL significant "
+        "context from the entire conversation — not just the most recent exchanges. "
+        "Include important decisions, code changes, file paths, tool outputs, and "
+        "outstanding tasks. The summary must be detailed enough that another session "
+        "can continue seamlessly from this point.";
 
-    // Compaction-specific system prompt — instruct model to summarize ALL parts
-    messages.push_back({{"role", "system"},
-        {"content",
-            "You are summarizing a conversation for context retention. "
-            "Provide a comprehensive, detailed summary that preserves ALL significant "
-            "context from the entire conversation — not just the most recent exchanges. "
-            "Include important decisions, code changes, file paths, tool outputs, and "
-            "outstanding tasks. The summary must be detailed enough that another session "
-            "can continue seamlessly from this point."}});
+    const std::string compact_user_msg =
+        "Please provide a comprehensive summary of the conversation above. "
+        "Preserve all important context, decisions, code changes, file paths, "
+        "and outstanding tasks. Be detailed enough that the conversation can "
+        "continue seamlessly from this summary.";
 
-    // Expand conversation messages into proper OpenAI message format
-    for (const auto& msg : msgs) {
-        if (msg.role == "system")
-            continue; // skip system messages
+    json payload;
+    if (effective_api_type() == "anthropic") {
+        auto ap = conversation_.build_anthropic_payload(compact_sys_prompt);
+        payload["model"] = model_;
+        payload["system"] = ap["system"];
+        // Insert the compact system prompt as the system field
+        payload["system"] = compact_sys_prompt;
+        payload["messages"] = ap["messages"];
+        // Append the summarization user message
+        payload["messages"].push_back({{"role", "user"}, {"content", compact_user_msg}});
+        payload["max_tokens"] = max_tokens_ > 0 ? max_tokens_ : (context_limit_ > 0 ? std::min(context_limit_ / 4, 8192) : 4096);
+        payload["stream"] = true;
+        auto tools = tools_.to_anthropic_tools();
+        if (!tools.empty()) payload["tools"] = tools;
+    } else {
+        json messages = json::array();
+        messages.push_back({{"role", "system"}, {"content", compact_sys_prompt}});
 
-        if (msg.tool_calls.empty()) {
-            // Simple user/assistant message.
-            // OpenAI/DeepSeek require that assistant messages have either
-            // content OR tool_calls; always include content (even if empty)
-            // to avoid "content or tool_calls must be set" errors.
-            json m{{"role", msg.role}};
-            m["content"] = msg.content.value_or("");
-            if (msg.role == "assistant" && !msg.reasoning_content.empty()) {
-                m["reasoning_content"] = msg.reasoning_content;
-            }
-            messages.push_back(std::move(m));
-        } else {
-            // Assistant with tool calls — expand to proper API structure
-            json assistant_msg{{"role", "assistant"}};
-            if (msg.content.has_value() && !msg.content->empty()) {
-                assistant_msg["content"] = *msg.content;
-            }
-            if (!msg.reasoning_content.empty()) {
-                assistant_msg["reasoning_content"] = msg.reasoning_content;
-            }
-
-            // Build tool_calls array
-            json tc_arr = json::array();
-            for (const auto& tc : msg.tool_calls) {
-                json tc_json;
-                tc_json["id"] = tc.id;
-                tc_json["type"] = "function";
-                tc_json["function"] = {{"name", tc.name}, {"arguments", tc.arguments}};
-                tc_arr.push_back(std::move(tc_json));
-            }
-            assistant_msg["tool_calls"] = std::move(tc_arr);
-            messages.push_back(std::move(assistant_msg));
-
-            // Add tool result messages for each call
-            for (const auto& tc : msg.tool_calls) {
-                json tr;
-                tr["role"] = "tool";
-                tr["tool_call_id"] = tc.id;
-                tr["content"] = tc.result.empty() ? "(empty result)" : tc.result;
-                messages.push_back(std::move(tr));
+        for (const auto& msg : msgs) {
+            if (msg.role == "system") continue;
+            if (msg.tool_calls.empty()) {
+                json m{{"role", msg.role}};
+                m["content"] = msg.content.value_or("");
+                if (msg.role == "assistant" && !msg.reasoning_content.empty()) {
+                    m["reasoning_content"] = msg.reasoning_content;
+                }
+                messages.push_back(std::move(m));
+            } else {
+                json assistant_msg{{"role", "assistant"}};
+                if (msg.content.has_value() && !msg.content->empty()) {
+                    assistant_msg["content"] = *msg.content;
+                }
+                if (!msg.reasoning_content.empty()) {
+                    assistant_msg["reasoning_content"] = msg.reasoning_content;
+                }
+                json tc_arr = json::array();
+                for (const auto& tc : msg.tool_calls) {
+                    json tc_json;
+                    tc_json["id"] = tc.id;
+                    tc_json["type"] = "function";
+                    tc_json["function"] = {{"name", tc.name}, {"arguments", tc.arguments}};
+                    tc_arr.push_back(std::move(tc_json));
+                }
+                assistant_msg["tool_calls"] = std::move(tc_arr);
+                messages.push_back(std::move(assistant_msg));
+                for (const auto& tc : msg.tool_calls) {
+                    json tr;
+                    tr["role"] = "tool";
+                    tr["tool_call_id"] = tc.id;
+                    tr["content"] = tc.result.empty() ? "(empty result)" : tc.result;
+                    messages.push_back(std::move(tr));
+                }
             }
         }
+        messages.push_back({{"role", "user"}, {"content", compact_user_msg}});
+
+        payload["model"] = model_;
+        payload["messages"] = std::move(messages);
+        payload["tools"] = tools_.to_openai_tools();
+        payload["stream"] = true;
+        if (!reasoning_effort_.empty())
+            payload["reasoning_effort"] = reasoning_effort_;
+        payload["stream_options"] = {{"include_usage", true}};
     }
-
-    // Add the summarization request as a final user message
-    messages.push_back({{"role", "user"},
-        {"content",
-            "Please provide a comprehensive summary of the conversation above. "
-            "Preserve all important context, decisions, code changes, file paths, "
-            "and outstanding tasks. Be detailed enough that the conversation can "
-            "continue seamlessly from this summary."}});
-
-    // Send to LLM via client_
-    // Build the full tool list so the model sees a consistent prompt.
-    // The model won't actually use tools in a summarization request,
-    // but some models may behave oddly when tools are suddenly absent.
-    json payload = {{"model", model_},
-        {"messages", std::move(messages)},
-        {"tools", tools_.to_openai_tools()},
-        {"stream", true}};
-    if (!reasoning_effort_.empty())
-        payload["reasoning_effort"] = reasoning_effort_;
-    payload["stream_options"] = {{"include_usage", true}};
 
     std::string summary;
     bool stream_errored = false;
     std::string stream_error;
 
-    auto on_data = [&](const json& data) {
+    auto on_data = [&](const std::string& /*event*/, const json& data) {
         if (!data.contains("choices") || data["choices"].empty())
             return;
         const auto& delta = data["choices"][0]["delta"];
@@ -617,7 +662,12 @@ Result<void> ChatSession::compact() {
             },
     });
 
-    auto stream_result = client_.stream_chat(payload, callbacks);
+    Result<void> stream_result;
+    if (effective_api_type() == "anthropic") {
+        stream_result = client_.stream_chat_anthropic(payload, callbacks);
+    } else {
+        stream_result = client_.stream_chat(payload, callbacks);
+    }
     if (!stream_result) {
         return std::unexpected(stream_result.error());
     }

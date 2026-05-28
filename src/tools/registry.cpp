@@ -96,6 +96,25 @@ json ToolRegistry::to_openai_tools(const std::set<std::string>* only_these) cons
     return arr;
 }
 
+json ToolRegistry::to_anthropic_tools() const {
+    return to_anthropic_tools(nullptr);
+}
+
+json ToolRegistry::to_anthropic_tools(const std::set<std::string>* only_these) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    json arr = json::array();
+    for (const auto& t : tools_) {
+        if (only_these && !only_these->count(t.name))
+            continue;
+        arr.push_back({
+            {"name", t.name},
+            {"description", t.description},
+            {"input_schema", t.parameters}
+        });
+    }
+    return arr;
+}
+
 std::set<std::string> ToolRegistry::tool_names_by_permission(ToolPermission perm) const {
     std::lock_guard<std::mutex> lock(mutex_);
     std::set<std::string> names;
