@@ -212,6 +212,10 @@ json ChatSession::build_payload(const std::set<std::string>& allowed_tools) cons
         auto tools = tools_.to_anthropic_tools(&allowed_tools);
         if (!tools.empty())
             payload["tools"] = tools;
+        // Note: we intentionally do NOT send a "thinking" field.
+        // Some models (Qwen 3.7 Max) have extended thinking on by
+        // default and sending an explicit thinking config conflicts
+        // with the model's own defaults, causing the stream to hang.
         return payload;
     }
 

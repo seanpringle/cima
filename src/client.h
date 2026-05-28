@@ -40,6 +40,11 @@ class ChatClient {
 
     const std::string& last_raw_response() const { return raw_response_; }
     std::string url() const {
+        // Anthropic endpoints use just /messages under the base path.
+        // The /v1 prefix is part of api.anthropic.com's URL structure,
+        // not a universal Anthropic convention — other providers
+        // (opencode, ofox.ai) use different path prefixes. The user
+        // sets api_base to include any path prefix they need.
         if (api_type_ == "anthropic") return api_base_ + "/messages";
         return api_base_ + "/chat/completions";
     }

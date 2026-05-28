@@ -192,6 +192,10 @@ void SSEParser::process_line(std::string line) {
         return;
     }
 
+    // Accept "data:" with or without trailing space.
+    // The SSE spec allows optional whitespace after the colon.
+    // Some providers (opencode) omit the space for Anthropic-format
+    // events while including it for OpenAI-format chunks.
     constexpr std::string_view prefix_nospace = "data:";
     if (line.size() >= prefix_nospace.size() &&
         std::string_view(line).substr(0, prefix_nospace.size()) == prefix_nospace) {

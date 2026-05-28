@@ -220,13 +220,22 @@ Result<void> ChatClient::stream_chat_anthropic(const json& payload,
                           const std::string& event, const json& j) {
         data_delivered = true;
 
-        // Some providers omit SSE event: lines and embed the type in JSON.
-        // Prefer the JSON "type" field, fall back to the SSE event name.
+        // Some providers omit SSE event: lines and embed the type into
+        // the JSON payload itself (the "type" key).  Prefer the JSON
+        // type field when present, falling back to the SSE event name.
+        // This covers both standard Anthropic (event: + data:) and
+        // providers that skip the event: line.
         std::string ev = j.value("type", event);
 
-        // Fallback: if the response is OpenAI format (has "choices"),
-        // pass it through directly — some /messages endpoints emit
-        // OpenAI-style SSE chunks internally.
+        // ── Proxy preamble / OpenAI-wrapped fallback ─────────────────
+        // Some provider gateways (opencode) wrap the real Anthropic
+        // stream with a brief OpenAI-format preamble and postamble:
+        // a burst of null-content chat.completion.chunk frames, then
+        // the actual Anthropic content_block_* events, then another
+        // burst of OpenAI chunks.  The chunks carry top-level "choices"
+        // keys that real Anthropic events never have, so we detect them
+        // and pass them straight through to the OpenAI parser — they
+        // just produce empty deltas and are harmless.
         if (j.contains("choices")) {
             if (cb) cb("", j);
             return;
