@@ -212,10 +212,12 @@ json ChatSession::build_payload(const std::set<std::string>& allowed_tools) cons
         auto tools = tools_.to_anthropic_tools(&allowed_tools);
         if (!tools.empty())
             payload["tools"] = tools;
-        // Note: we intentionally do NOT send a "thinking" field.
-        // Some models (Qwen 3.7 Max) have extended thinking on by
-        // default and sending an explicit thinking config conflicts
-        // with the model's own defaults, causing the stream to hang.
+        // Map reasoning_effort to Anthropic thinking budget.
+        if (!reasoning_effort_.empty() && reasoning_effort_ != "low") {
+            int budget = 2000;
+            if (reasoning_effort_ == "high") budget = 4000;
+            payload["thinking"] = {{"type", "enabled"}, {"budget_tokens", budget}};
+        }
         return payload;
     }
 
