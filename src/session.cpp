@@ -28,16 +28,13 @@ static std::filesystem::path get_home_dir() {
     return std::filesystem::path(home);
 }
 
-std::filesystem::path Session::sessions_base_dir() {
-    return get_home_dir() / ".local" / "state" / "cima";
-}
+std::filesystem::path Session::sessions_base_dir() { return get_home_dir() / ".local" / "state" / "cima"; }
 
 // -----------------------------------------------------------------------
 // Constructor
 // -----------------------------------------------------------------------
 
-Session::Session(const std::string& name, ConfigPtr cfg, PlanBoardPtr plan)
-    : session_name_{name}, cfg_{std::move(cfg)}, plan_{std::move(plan)} {
+Session::Session(const std::string& name, ConfigPtr cfg, PlanBoardPtr plan) : session_name_{name}, cfg_{std::move(cfg)}, plan_{std::move(plan)} {
     if (name.empty()) {
         throw std::invalid_argument("session name must not be empty");
     }
@@ -49,8 +46,7 @@ Session::Session(const std::string& name, ConfigPtr cfg, PlanBoardPtr plan)
     std::error_code ec;
     std::filesystem::create_directories(sessions_base_dir(), ec);
     if (ec) {
-        throw std::runtime_error("Failed to create sessions directory " +
-            sessions_base_dir().string() + ": " + ec.message());
+        throw std::runtime_error("Failed to create sessions directory " + sessions_base_dir().string() + ": " + ec.message());
     }
 
     // Check if the session file already exists
@@ -75,9 +71,7 @@ Session::~Session() { save_session(); }
 // Path accessors
 // -----------------------------------------------------------------------
 
-std::string Session::session_file_path() const {
-    return (sessions_base_dir() / (session_name_ + ".json")).string();
-}
+std::string Session::session_file_path() const { return (sessions_base_dir() / (session_name_ + ".json")).string(); }
 
 // -----------------------------------------------------------------------
 // Session data persistence
@@ -93,8 +87,7 @@ Result<void> Session::save_session() {
         {
             std::ofstream file(tmp_path);
             if (!file.is_open()) {
-                return std::unexpected(
-                    "Failed to open temporary file for writing: " + tmp_path.string());
+                return std::unexpected("Failed to open temporary file for writing: " + tmp_path.string());
             }
             file << session_data_.to_json().dump(2) << std::endl;
         }
@@ -225,8 +218,7 @@ void Session::apply_knobs_to(ChatSession& session) const {
     }
     // Re-add write bwrap (if session is not read-only)
     if (!session.is_read_only()) {
-        auto t = make_run_bwrap_tool(
-            cfg, safe_dir, bt, cancelled, /*read_only=*/false, /*allow_network=*/true);
+        auto t = make_run_bwrap_tool(cfg, safe_dir, bt, cancelled, /*read_only=*/false, /*allow_network=*/true);
         t.permission = ToolPermission::Write;
         tools.add(std::move(t));
     }

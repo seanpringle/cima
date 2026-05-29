@@ -6,8 +6,7 @@
 #include <fstream>
 #include <string>
 
-Tool make_read_file_tool(
-    std::shared_ptr<std::string> safe_dir_ptr, const std::vector<std::string>& read_only_paths) {
+Tool make_read_file_tool(std::shared_ptr<std::string> safe_dir_ptr, const std::vector<std::string>& read_only_paths) {
 
     Tool t;
     t.name = "read_file";
@@ -20,10 +19,8 @@ Tool make_read_file_tool(
         {"properties",
             {
                 {"path", {{"type", "string"}, {"description", "Path to the file to read."}}},
-                {"start_line",
-                    {{"type", "integer"}, {"description", "Beginning of range, 1-based"}}},
-                {"end_line",
-                    {{"type", "integer"}, {"description", "End of range (inclusive): 1-based"}}},
+                {"start_line", {{"type", "integer"}, {"description", "Beginning of range, 1-based"}}},
+                {"end_line", {{"type", "integer"}, {"description", "End of range (inclusive): 1-based"}}},
             }},
         {"required", {"path", "start_line", "end_line"}}};
 
@@ -45,8 +42,7 @@ Tool make_read_file_tool(
         }
 
         std::error_code ec;
-        if (std::filesystem::exists(*resolved, ec) &&
-            !std::filesystem::is_regular_file(*resolved, ec)) {
+        if (std::filesystem::exists(*resolved, ec) && !std::filesystem::is_regular_file(*resolved, ec)) {
             return std::unexpected("Not a regular file: " + *resolved);
         }
 
@@ -72,8 +68,7 @@ Tool make_read_file_tool(
         end_line = std::max(start_line, std::min(end_line, int(lines.size())));
 
         std::stringstream ss;
-        ss << "read_file " << raw << '\n'
-           << "lines " << start_line << ':' << end_line << " of " << lines.size() << '\n';
+        ss << "read_file " << raw << '\n' << "lines " << start_line << ':' << end_line << " of " << lines.size() << '\n';
 
         for (int i = start_line; i <= end_line; i++) {
             ss << i << ": " << lines[i - 1] << '\n';
@@ -84,16 +79,14 @@ Tool make_read_file_tool(
     return t;
 }
 
-Tool make_write_file_tool(
-    std::shared_ptr<std::string> safe_dir_ptr, FileModifiedCallback on_file_modified) {
+Tool make_write_file_tool(std::shared_ptr<std::string> safe_dir_ptr, FileModifiedCallback on_file_modified) {
     Tool t;
     t.name = "write_file";
     t.description = "Write content to a file, creating parent directories if needed";
 
     t.parameters = {{"type", "object"},
         {"properties",
-            {{"path", {{"type", "string"}, {"description", "File path"}}},
-                {"content", {{"type", "string"}, {"description", "Content to write"}}}}},
+            {{"path", {{"type", "string"}, {"description", "File path"}}}, {"content", {{"type", "string"}, {"description", "Content to write"}}}}},
         {"required", {"path", "content"}}};
 
     t.execute = [safe_dir_ptr, on_file_modified](const json& args) -> Result<std::string> {
@@ -128,8 +121,7 @@ Tool make_write_file_tool(
     return t;
 }
 
-Tool make_edit_file_tool(
-    std::shared_ptr<std::string> safe_dir_ptr, FileModifiedCallback on_file_modified) {
+Tool make_edit_file_tool(std::shared_ptr<std::string> safe_dir_ptr, FileModifiedCallback on_file_modified) {
     Tool t;
     t.name = "edit_file";
     t.description = "Edit a file by searching for an exact string and replacing it. "
@@ -146,9 +138,7 @@ Tool make_edit_file_tool(
                             "Exact string to search for; must match exactly once in the file. "
                             "Include surrounding context (unique nearby lines) to guarantee a "
                             "single match."}}},
-                {"replace",
-                    {{"type", "string"},
-                        {"description", "String to replace the matched occurrence with"}}}}},
+                {"replace", {{"type", "string"}, {"description", "String to replace the matched occurrence with"}}}}},
         {"required", {"path", "search", "replace"}}};
 
     t.execute = [safe_dir_ptr, on_file_modified](const json& args) -> Result<std::string> {
@@ -166,8 +156,7 @@ Tool make_edit_file_tool(
         }
 
         std::error_code ec;
-        if (std::filesystem::exists(*resolved, ec) &&
-            !std::filesystem::is_regular_file(*resolved, ec)) {
+        if (std::filesystem::exists(*resolved, ec) && !std::filesystem::is_regular_file(*resolved, ec)) {
             return std::unexpected("Not a regular file: " + *resolved);
         }
 
@@ -176,8 +165,7 @@ Tool make_edit_file_tool(
         if (!file.is_open()) {
             return std::unexpected("Failed to read file: " + *resolved);
         }
-        std::string content(
-            (std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
         file.close();
 
         // Count occurrences of the search string
@@ -231,10 +219,7 @@ Tool make_edit_file_tool(
         std::string diff_text;
         {
             git_diff_options diff_opts = GIT_DIFF_OPTIONS_INIT;
-            auto print_cb = [](const git_diff_delta* /*delta*/,
-                                const git_diff_hunk* /*hunk*/,
-                                const git_diff_line* line,
-                                void* payload) -> int {
+            auto print_cb = [](const git_diff_delta* /*delta*/, const git_diff_hunk* /*hunk*/, const git_diff_line* line, void* payload) -> int {
                 auto* output = static_cast<std::string*>(payload);
                 // Prepend origin character for +/-/context lines
                 if (line->origin == '+' || line->origin == '-' || line->origin == ' ') {
@@ -260,9 +245,8 @@ Tool make_edit_file_tool(
             }
         }
 
-        std::string result = "ok (replaced 1 occurrence at line " + std::to_string(line_num) +
-            ", " + std::to_string(search.size()) + " bytes -> " + std::to_string(replace.size()) +
-            " bytes)";
+        std::string result = "ok (replaced 1 occurrence at line " + std::to_string(line_num) + ", " + std::to_string(search.size()) + " bytes -> " +
+            std::to_string(replace.size()) + " bytes)";
         if (!diff_text.empty()) {
             result += " diff follows:\n" + diff_text;
         }

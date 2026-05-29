@@ -55,8 +55,7 @@ class McpClient {
 
     /// Connect to a Streamable HTTP MCP endpoint.
     /// This performs an immediate initialize handshake to verify connectivity.
-    Result<void> start_http(
-        const std::string& url, const std::string& api_key = "", int timeout_sec = 60);
+    Result<void> start_http(const std::string& url, const std::string& api_key = "", int timeout_sec = 60);
 
     // ── MCP Lifecycle ────────────────────────────────────────────────
 

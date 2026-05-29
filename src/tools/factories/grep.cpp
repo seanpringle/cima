@@ -26,17 +26,14 @@ Tool make_grep_files_tool(const Config& config,
     t.parameters = {{"type", "object"},
         {"properties",
             {{"pattern", {{"type", "string"}, {"description", "Regex pattern to search for"}}},
-                {"path",
-                    {{"type", "string"},
-                        {"description", "File or directory to search in (defaults to .)"}}},
+                {"path", {{"type", "string"}, {"description", "File or directory to search in (defaults to .)"}}},
                 {"depth",
                     {{"type", "integer"},
                         {"description",
                             "Maximum recursion depth (-1 = unlimited, 0 = root only, default "
                             "-1)"}}}}},
         {"required", {"pattern"}}};
-    t.execute = [safe_dir_ptr, read_only_paths, cancelled](
-                    const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr, read_only_paths, cancelled](const json& args) -> Result<std::string> {
         auto pattern = args.value("pattern", std::string());
         if (pattern.empty()) {
             return std::unexpected(std::string("pattern is required"));
@@ -85,8 +82,7 @@ Tool make_grep_files_tool(const Config& config,
                     repo_workdir = std::filesystem::path(wd);
             }
         }
-        auto repo_cleanup = std::unique_ptr<git_repository, decltype(&git_repository_free)>(
-            repo, git_repository_free);
+        auto repo_cleanup = std::unique_ptr<git_repository, decltype(&git_repository_free)>(repo, git_repository_free);
 
         std::error_code ec;
         auto status = std::filesystem::status(*resolved, ec);
@@ -101,8 +97,7 @@ Tool make_grep_files_tool(const Config& config,
                 }
             }
         } else if (std::filesystem::is_directory(status)) {
-            auto it = std::filesystem::recursive_directory_iterator(
-                *resolved, std::filesystem::directory_options::skip_permission_denied, ec);
+            auto it = std::filesystem::recursive_directory_iterator(*resolved, std::filesystem::directory_options::skip_permission_denied, ec);
             auto end = std::filesystem::recursive_directory_iterator{};
             for (; it != end; it.increment(ec)) {
                 if (cancelled && *cancelled) {
@@ -163,20 +158,11 @@ Tool make_find_files_tool(const Config& config,
     t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},
         {"properties",
-            {{"path",
-                 {{"type", "string"},
-                     {"description", "Directory path to search in (defaults to .)"}}},
-                {"pattern",
-                    {{"type", "string"},
-                        {"description",
-                            "Regex pattern to match against entry basename (filename)"}}},
-                {"depth",
-                    {{"type", "integer"},
-                        {"description",
-                            "Maximum recursion depth (1 = immediate children only, default 1)"}}}}},
+            {{"path", {{"type", "string"}, {"description", "Directory path to search in (defaults to .)"}}},
+                {"pattern", {{"type", "string"}, {"description", "Regex pattern to match against entry basename (filename)"}}},
+                {"depth", {{"type", "integer"}, {"description", "Maximum recursion depth (1 = immediate children only, default 1)"}}}}},
         {"required", {"pattern"}}};
-    t.execute = [safe_dir_ptr, read_only_paths, cancelled](
-                    const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr, read_only_paths, cancelled](const json& args) -> Result<std::string> {
         auto pattern = args.value("pattern", std::string());
         if (pattern.empty()) {
             return std::unexpected(std::string("pattern is required"));
@@ -207,8 +193,7 @@ Tool make_find_files_tool(const Config& config,
                     repo_workdir = std::filesystem::path(wd);
             }
         }
-        auto repo_cleanup = std::unique_ptr<git_repository, decltype(&git_repository_free)>(
-            repo, git_repository_free);
+        auto repo_cleanup = std::unique_ptr<git_repository, decltype(&git_repository_free)>(repo, git_repository_free);
 
         std::error_code ec;
         auto status = std::filesystem::status(*resolved, ec);
@@ -228,8 +213,7 @@ Tool make_find_files_tool(const Config& config,
                 try {
                     if (std::regex_search(filename, re)) {
                         // Show relative path from safe_dir
-                        auto rel = std::filesystem::path(*resolved).lexically_relative(
-                            std::filesystem::path(safe_dir));
+                        auto rel = std::filesystem::path(*resolved).lexically_relative(std::filesystem::path(safe_dir));
                         result += rel.generic_string() + '\n';
                     }
                 } catch (const std::regex_error&) {
@@ -237,8 +221,7 @@ Tool make_find_files_tool(const Config& config,
             }
         } else if (std::filesystem::is_directory(status)) {
             // Helper to compute relative path and append '/' for dirs
-            auto format_entry = [&](const std::filesystem::path& abs_path,
-                                    bool is_dir) -> std::string {
+            auto format_entry = [&](const std::filesystem::path& abs_path, bool is_dir) -> std::string {
                 auto rel = abs_path.lexically_relative(std::filesystem::path(safe_dir));
                 std::string s = rel.generic_string();
                 if (is_dir)
@@ -246,8 +229,7 @@ Tool make_find_files_tool(const Config& config,
                 return s;
             };
 
-            auto it = std::filesystem::recursive_directory_iterator(
-                *resolved, std::filesystem::directory_options::skip_permission_denied, ec);
+            auto it = std::filesystem::recursive_directory_iterator(*resolved, std::filesystem::directory_options::skip_permission_denied, ec);
             auto end = std::filesystem::recursive_directory_iterator{};
             for (; it != end; it.increment(ec)) {
                 if (cancelled && *cancelled) {

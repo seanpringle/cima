@@ -6,9 +6,7 @@
 // Path sandbox
 // ===================================================================
 
-Result<std::string> resolve_path(const std::string& raw_path,
-    const std::string& safe_dir,
-    const std::vector<std::string>& extra_allowed) {
+Result<std::string> resolve_path(const std::string& raw_path, const std::string& safe_dir, const std::vector<std::string>& extra_allowed) {
     if (raw_path.empty()) {
         return std::unexpected(std::string("path is required"));
     }

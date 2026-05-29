@@ -151,8 +151,7 @@ void SessionData::from_json(const json& j) {
     // call_subagent is intentionally skipped — subagents must not recurse.
     rw_subagent_tool_gates.clear();
     if (j.contains("rw_subagent_tool_gates") && j["rw_subagent_tool_gates"].is_object()) {
-        for (auto it = j["rw_subagent_tool_gates"].begin(); it != j["rw_subagent_tool_gates"].end();
-            ++it) {
+        for (auto it = j["rw_subagent_tool_gates"].begin(); it != j["rw_subagent_tool_gates"].end(); ++it) {
             if (it.value().is_boolean()) {
                 auto name = it.key();
                 if (name == "call_subagent")
@@ -165,8 +164,7 @@ void SessionData::from_json(const json& j) {
     // Deserialise ro_subagent_tool_gates map
     ro_subagent_tool_gates.clear();
     if (j.contains("ro_subagent_tool_gates") && j["ro_subagent_tool_gates"].is_object()) {
-        for (auto it = j["ro_subagent_tool_gates"].begin(); it != j["ro_subagent_tool_gates"].end();
-            ++it) {
+        for (auto it = j["ro_subagent_tool_gates"].begin(); it != j["ro_subagent_tool_gates"].end(); ++it) {
             if (it.value().is_boolean()) {
                 auto name = it.key();
                 if (name == "call_subagent")

@@ -25,9 +25,7 @@ Tool make_web_search_tool(const Config& config, int timeout, CancellationToken c
                     "space them out — parallel calls are serialized with enforced delays.";
     t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},
-        {"properties",
-            {{"query",
-                {{"type", "string"}, {"description", "Search query (max 500 characters)"}}}}},
+        {"properties", {{"query", {{"type", "string"}, {"description", "Search query (max 500 characters)"}}}}},
         {"required", {"query"}}};
     t.execute = [cancelled, timeout](const json& args) -> Result<std::string> {
         auto query = args.value("query", std::string());
@@ -199,8 +197,7 @@ Tool make_web_fetch_tool(const Config& config, int timeout, CancellationToken ca
                 allowed = true;
 
             if (!allowed) {
-                return std::unexpected("web_fetch: unsupported Content-Type '" + ct +
-                    "' — only text-based content can be fetched");
+                return std::unexpected("web_fetch: unsupported Content-Type '" + ct + "' — only text-based content can be fetched");
             }
         }
 
@@ -226,8 +223,7 @@ Tool make_web_fetch_tool(const Config& config, int timeout, CancellationToken ca
                 // Check first non-whitespace character is '<' and there's a
                 // known HTML tag or DOCTYPE declaration early in the body.
                 std::size_t remaining = body.size() - start;
-                is_html = (remaining >= 7 && body.compare(start, 7, "<!DOCTYPE") == 0) ||
-                    (remaining >= 6 && body.compare(start, 6, "<html ") == 0) ||
+                is_html = (remaining >= 7 && body.compare(start, 7, "<!DOCTYPE") == 0) || (remaining >= 6 && body.compare(start, 6, "<html ") == 0) ||
                     (remaining >= 6 && body.compare(start, 6, "<html>") == 0);
             }
         }

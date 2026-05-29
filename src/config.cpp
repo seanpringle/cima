@@ -5,42 +5,40 @@
 #include <set>
 #include <string>
 
-std::string Config::SYSTEM_PROMPT =
-    "You are an AI coding assistant running in a harness called Cima.\n"
-    "Use markdown with a neat, clear and concise layout for all output.\n"
-    "All of commonmark and github tables supported, but generally prefer lists over tables.\n"
-    "\n"
-    "## Plan tools\n"
-    "\n"
-    "* You have a **Plan document** shared with the user and subagents.\n"
-    "* When given a task, research it thoroughly and write the Plan with `write_plan()`.\n"
-    "* Go back and check the Plan at any time with `read_plan()`.\n"
-    "* Ask the user to review and approve the Plan before implementation!\n"
-    "* The Plan is managed by the Cima session. Do not try to write it to a file. Strictly use the "
-    "plan tools.\n"
-    "\n"
-    "## Sub Agents\n"
-    "\n"
-    "* Call subagents with `call_subagent()`.\n"
-    "* Use the read-only Explore subagent for code and web research and exploration tasks.\n"
-    "* Use the read-write General subagent for general development tasks that need not clutter "
-    "your context window.\n"
-    "* See tool description for other available subagents.\n"
-    "* Subagents can read the Plan but not write to it.\n"
-    "\n";
+std::string Config::SYSTEM_PROMPT = "You are an AI coding assistant running in a harness called Cima.\n"
+                                    "Use markdown with a neat, clear and concise layout for all output.\n"
+                                    "All of commonmark and github tables supported, but generally prefer lists over tables.\n"
+                                    "\n"
+                                    "## Plan tools\n"
+                                    "\n"
+                                    "* You have a **Plan document** shared with the user and subagents.\n"
+                                    "* When given a task, research it thoroughly and write the Plan with `write_plan()`.\n"
+                                    "* Go back and check the Plan at any time with `read_plan()`.\n"
+                                    "* Ask the user to review and approve the Plan before implementation!\n"
+                                    "* The Plan is managed by the Cima session. Do not try to write it to a file. Strictly use the "
+                                    "plan tools.\n"
+                                    "\n"
+                                    "## Sub Agents\n"
+                                    "\n"
+                                    "* Call subagents with `call_subagent()`.\n"
+                                    "* Use the read-only Explore subagent for code and web research and exploration tasks.\n"
+                                    "* Use the read-write General subagent for general development tasks that need not clutter "
+                                    "your context window.\n"
+                                    "* See tool description for other available subagents.\n"
+                                    "* Subagents can read the Plan but not write to it.\n"
+                                    "\n";
 
-std::string Config::SUBAGENT_SYSTEM_PROMPT =
-    "You are an AI coding assistant working as a subagent in a harness call Cima.\n"
-    "Use markdown with a neat, clear and concise layout for all output.\n"
-    "All of commonmark and github tables supported.\n"
-    "\n"
-    "## Plan tool\n"
-    "\n"
-    "* There is a **Plan document** shared with the user and primary agent.\n"
-    "* When asked to read or review the Plan, use the `read_plan()` tool.\n"
-    "* The Plan is managed by the Cima session. Do not try to read it from a file. Strictly use "
-    "the plan tool.\n"
-    "\n";
+std::string Config::SUBAGENT_SYSTEM_PROMPT = "You are an AI coding assistant working as a subagent in a harness call Cima.\n"
+                                             "Use markdown with a neat, clear and concise layout for all output.\n"
+                                             "All of commonmark and github tables supported.\n"
+                                             "\n"
+                                             "## Plan tool\n"
+                                             "\n"
+                                             "* There is a **Plan document** shared with the user and primary agent.\n"
+                                             "* When asked to read or review the Plan, use the `read_plan()` tool.\n"
+                                             "* The Plan is managed by the Cima session. Do not try to read it from a file. Strictly use "
+                                             "the plan tool.\n"
+                                             "\n";
 
 // ---------------------------------------------------------------------------
 // Config file path
@@ -140,8 +138,7 @@ static void load_snippet_files(std::map<std::string, std::string>& snippets) {
             std::cerr << "Warning: cannot read snippet file: " << path.string() << std::endl;
             continue;
         }
-        std::string content(
-            (std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
         snippets[name] = std::move(content);
     }
 }
@@ -160,8 +157,7 @@ Config Config::load() {
         try {
             file >> j;
         } catch (...) {
-            std::cerr << "Warning: " << path.string()
-                      << " is corrupt or unreadable — proceeding with defaults\n";
+            std::cerr << "Warning: " << path.string() << " is corrupt or unreadable — proceeding with defaults\n";
         }
 
         // ── Parse providers array ──
@@ -199,8 +195,7 @@ Config Config::load() {
             throw std::runtime_error(msg);
         }
         if (cfg.providers.empty()) {
-            throw std::runtime_error(
-                "cima.json must contain at least one provider in the \"providers\" array");
+            throw std::runtime_error("cima.json must contain at least one provider in the \"providers\" array");
         }
 
         // ── Parse MCP servers array ──

@@ -18,9 +18,7 @@ using json = nlohmann::json;
 // Worker threads hold a copy of the shared_ptr and periodically check *token.
 using CancellationToken = std::shared_ptr<std::atomic<bool>>;
 
-inline CancellationToken make_cancellation_token() {
-    return std::make_shared<std::atomic<bool>>(false);
-}
+inline CancellationToken make_cancellation_token() { return std::make_shared<std::atomic<bool>>(false); }
 
 template <typename T> using Result = std::expected<T, std::string>;
 
@@ -50,9 +48,8 @@ struct McpEndpoint {
 };
 
 inline bool operator==(const McpEndpoint& a, const McpEndpoint& b) {
-    return a.name == b.name && a.transport == b.transport && a.command == b.command &&
-        a.args == b.args && a.cwd == b.cwd && a.url == b.url && a.api_key == b.api_key &&
-        a.description == b.description && a.env == b.env && a.timeout_sec == b.timeout_sec;
+    return a.name == b.name && a.transport == b.transport && a.command == b.command && a.args == b.args && a.cwd == b.cwd && a.url == b.url &&
+        a.api_key == b.api_key && a.description == b.description && a.env == b.env && a.timeout_sec == b.timeout_sec;
 }
 
 /// A single subagent definition from cima.json.
@@ -66,9 +63,9 @@ struct Provider {
     std::string name;     // unique identifier, e.g. "opencode.go"
     std::string api_base; // e.g. "https://api.opencode.go/v1"
     std::string api_key;
-    std::string api_type = "openai"; // "openai" | "anthropic" (default for sessions)
-    std::string model;               // default model for this provider
-    std::string reasoning_effort;    // reasoning effort (empty = not set / omit from API)
+    std::string api_type = "openai";            // "openai" | "anthropic" (default for sessions)
+    std::string model;                          // default model for this provider
+    std::string reasoning_effort;               // reasoning effort (empty = not set / omit from API)
     std::vector<std::string> reasoning_efforts; // allowed values for the dropdown
     int context_limit = 300000;                 // model context window (tokens)
     int max_tokens = 0;                         // 0 = auto-derive from context_limit / 4

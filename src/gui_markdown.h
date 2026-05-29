@@ -21,5 +21,4 @@ enum class RenderToolResult {
 void render_content(const std::string& text);
 
 /// Render a single display entry (user text, reasoning, content, or tool call).
-void render_display_entry(
-    const ChatUIState& ui, const DisplayEntry& entry, size_t& i, const std::string& you);
+void render_display_entry(const ChatUIState& ui, const DisplayEntry& entry, size_t& i, const std::string& you);

@@ -45,9 +45,7 @@ void Conversation::append_system(const std::string& content) {
 
 std::string Conversation::get_appended_system() const { return appended_system_; }
 
-int64_t Conversation::add_assistant(const std::string& content,
-    const std::string& reasoning,
-    const std::vector<ToolCall>& tool_calls) {
+int64_t Conversation::add_assistant(const std::string& content, const std::string& reasoning, const std::vector<ToolCall>& tool_calls) {
     Message msg;
     msg.role = "assistant";
     msg.reasoning_content = reasoning;
@@ -65,8 +63,7 @@ int64_t Conversation::add_assistant(const std::string& content,
     return id;
 }
 
-void Conversation::add_tool(
-    int64_t message_id, const std::string& tool_call_id, const std::string& content) {
+void Conversation::add_tool(int64_t message_id, const std::string& tool_call_id, const std::string& content) {
     // Find the message by id (we use vector index + 1 as id)
     // message_id is 1-based, vector is 0-based
     size_t idx = static_cast<size_t>(message_id - 1);
@@ -155,8 +152,7 @@ json Conversation::build_anthropic_payload(const std::string& system_prompt) con
 
         if (msg.role == "user") {
             // User message: plain text for now
-            messages.push_back(
-                {{"role", "user"}, {"content", sanitize_utf8(msg.content.value_or(""))}});
+            messages.push_back({{"role", "user"}, {"content", sanitize_utf8(msg.content.value_or(""))}});
         } else if (msg.role == "assistant" && !msg.tool_calls.empty()) {
             // Assistant with tool calls → content blocks with tool_use entries
             json content_blocks = json::array();
@@ -174,23 +170,19 @@ json Conversation::build_anthropic_payload(const std::string& system_prompt) con
                 } catch (...) {
                     args = json::object();
                 }
-                content_blocks.push_back(
-                    {{"type", "tool_use"}, {"id", tc.id}, {"name", tc.name}, {"input", args}});
+                content_blocks.push_back({{"type", "tool_use"}, {"id", tc.id}, {"name", tc.name}, {"input", args}});
             }
             messages.push_back({{"role", "assistant"}, {"content", std::move(content_blocks)}});
 
             // Tool results: emit as a user message with tool_result blocks
             json result_blocks = json::array();
             for (const auto& tc : msg.tool_calls) {
-                result_blocks.push_back({{"type", "tool_result"},
-                    {"tool_use_id", tc.id},
-                    {"content", sanitize_utf8(tc.result)}});
+                result_blocks.push_back({{"type", "tool_result"}, {"tool_use_id", tc.id}, {"content", sanitize_utf8(tc.result)}});
             }
             messages.push_back({{"role", "user"}, {"content", std::move(result_blocks)}});
         } else if (msg.role == "assistant") {
             // Plain assistant message
-            messages.push_back(
-                {{"role", "assistant"}, {"content", sanitize_utf8(msg.content.value_or(""))}});
+            messages.push_back({{"role", "assistant"}, {"content", sanitize_utf8(msg.content.value_or(""))}});
         }
         // ignore "tool" role messages — they are handled inline with tool_calls above
     }

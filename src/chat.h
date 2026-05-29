@@ -179,9 +179,8 @@ class ChatSession {
     /// the tool description with available names.
     /// The primary pointer and configs are stored so the tool can be re-registered
     /// with a different timeout later (see reregister_call_subagent_tool).
-    void register_call_subagent_tool(PrimaryAgent& primary,
-        const std::vector<SubagentConfig>& subagent_configs = {},
-        int timeout_sec = kDefaultSubagentTimeout) {
+    void register_call_subagent_tool(
+        PrimaryAgent& primary, const std::vector<SubagentConfig>& subagent_configs = {}, int timeout_sec = kDefaultSubagentTimeout) {
         call_subagent_primary_ = &primary;
         call_subagent_configs_ = subagent_configs;
         tools_.add(make_call_subagent_tool(primary, subagent_configs, timeout_sec));
@@ -192,8 +191,7 @@ class ChatSession {
     void reregister_call_subagent_tool(int timeout_sec) {
         tools_.remove("call_subagent");
         if (call_subagent_primary_) {
-            tools_.add(make_call_subagent_tool(
-                *call_subagent_primary_, call_subagent_configs_, timeout_sec));
+            tools_.add(make_call_subagent_tool(*call_subagent_primary_, call_subagent_configs_, timeout_sec));
         }
     }
 
@@ -205,9 +203,7 @@ class ChatSession {
     }
 
     /// Register the load_skill tool in this session's tool registry.
-    void register_load_skill_tool(SkillRegistry& registry) {
-        tools_.add(make_load_skill_tool(registry, *this));
-    }
+    void register_load_skill_tool(SkillRegistry& registry) { tools_.add(make_load_skill_tool(registry, *this)); }
 
     /// Override the max tool iterations (session knob).
     void set_max_iterations(int n) { max_iterations_ = n; }
@@ -250,8 +246,7 @@ class ChatSession {
     /// parallel for read-only, single for one call.
     /// Results are added to the conversation via add_tool().
     /// Returns an error only if the user cancels (caller should rollback).
-    Result<void> execute_tool_calls(
-        int64_t msg_id, const std::vector<ToolCall>& calls, int remaining_iters);
+    Result<void> execute_tool_calls(int64_t msg_id, const std::vector<ToolCall>& calls, int remaining_iters);
     ConfigPtr config_;
     PlanBoardPtr plan_;
     std::string model_;

@@ -7,8 +7,7 @@
 #include <thread>
 #include <chrono>
 
-ChatClient::ChatClient(std::string api_base, std::string api_key)
-    : api_base_(std::move(api_base)), api_key_(std::move(api_key)) {
+ChatClient::ChatClient(std::string api_base, std::string api_key) : api_base_(std::move(api_base)), api_key_(std::move(api_key)) {
     while (!api_base_.empty() && api_base_.back() == '/') {
         api_base_.pop_back();
     }
@@ -46,19 +45,12 @@ size_t ChatClient::write_stream(char* ptr, size_t size, size_t nmemb, void* user
     return size * nmemb;
 }
 
-static int progress_cb(void* clientp,
-    curl_off_t /*dltotal*/,
-    curl_off_t /*dlnow*/,
-    curl_off_t /*ultotal*/,
-    curl_off_t /*ulnow*/) {
+static int progress_cb(void* clientp, curl_off_t /*dltotal*/, curl_off_t /*dlnow*/, curl_off_t /*ultotal*/, curl_off_t /*ulnow*/) {
     auto* cancelled = static_cast<std::atomic<bool>*>(clientp);
     return (cancelled && *cancelled) ? 1 : 0;
 }
 
-static CURL* setup_curl(const std::string& url,
-    struct curl_slist* headers,
-    const std::string& payload_str,
-    std::atomic<bool>* cancelled = nullptr) {
+static CURL* setup_curl(const std::string& url, struct curl_slist* headers, const std::string& payload_str, std::atomic<bool>* cancelled = nullptr) {
     CURL* curl = curl_easy_init();
     if (!curl)
         return nullptr;
@@ -96,9 +88,7 @@ static CURL* setup_curl(const std::string& url,
     return curl;
 }
 
-bool ChatClient::should_retry(long http_code) const {
-    return http_code == 429 || (http_code >= 500 && http_code < 600);
-}
+bool ChatClient::should_retry(long http_code) const { return http_code == 429 || (http_code >= 500 && http_code < 600); }
 
 /// Returns a random delay in [0.5*base, 1.5*base] to add jitter to retries.
 static double jittered_delay(double base_sec) {
@@ -123,14 +113,12 @@ CURLcode ChatClient::perform_with_retry(CURL* curl, long& http_code, std::string
         if (attempt == kMaxRetries - 1)
             return res;
 
-        bool recoverable = (res == CURLE_OK && should_retry(http_code)) ||
-            res == CURLE_SEND_ERROR || res == CURLE_RECV_ERROR || res == CURLE_OPERATION_TIMEDOUT ||
-            res == CURLE_COULDNT_CONNECT;
+        bool recoverable = (res == CURLE_OK && should_retry(http_code)) || res == CURLE_SEND_ERROR || res == CURLE_RECV_ERROR ||
+            res == CURLE_OPERATION_TIMEDOUT || res == CURLE_COULDNT_CONNECT;
         if (!recoverable)
             return res;
 
-        std::this_thread::sleep_for(
-            std::chrono::duration<double>(jittered_delay(kBaseDelaySec * (1 << attempt))));
+        std::this_thread::sleep_for(std::chrono::duration<double>(jittered_delay(kBaseDelaySec * (1 << attempt))));
     }
     return CURLE_OK;
 }
@@ -190,8 +178,7 @@ Result<std::string> ChatClient::http_get(const std::string& url) {
 // Converts named-event Anthropic SSE streams into OpenAI-format
 // JSON callbacks so ChatSession can share the same on_data logic.
 
-Result<void> ChatClient::stream_chat_anthropic(
-    const json& payload, SSEParser::Callbacks callbacks) {
+Result<void> ChatClient::stream_chat_anthropic(const json& payload, SSEParser::Callbacks callbacks) {
     std::string payload_str = payload.dump();
     long http_code = 0;
 
@@ -216,8 +203,7 @@ Result<void> ChatClient::stream_chat_anthropic(
     // Capture the error callback reference for use inside on_data
     auto& err_cb = callbacks.on_error;
 
-    guarded.on_data = [&data_delivered, &err_cb, s = state, cb = std::move(callbacks.on_data)](
-                          const std::string& event, const json& j) {
+    guarded.on_data = [&data_delivered, &err_cb, s = state, cb = std::move(callbacks.on_data)](const std::string& event, const json& j) {
         data_delivered = true;
 
         // Some providers omit SSE event: lines and embed the type into
@@ -248,8 +234,7 @@ Result<void> ChatClient::stream_chat_anthropic(
                 const auto& u = j["message"]["usage"];
                 int in = u.value("input_tokens", 0);
                 int out = u.value("output_tokens", 0);
-                json usage_obj = {
-                    {"prompt_tokens", in}, {"completion_tokens", out}, {"total_tokens", in + out}};
+                json usage_obj = {{"prompt_tokens", in}, {"completion_tokens", out}, {"total_tokens", in + out}};
                 if (cb)
                     cb("", {{"usage", std::move(usage_obj)}});
             }
@@ -308,8 +293,7 @@ Result<void> ChatClient::stream_chat_anthropic(
                 const auto& u = j["usage"];
                 int out = u.value("output_tokens", 0);
                 int in = 0; // cumulative input tokens not included in delta
-                json usage_obj = {
-                    {"prompt_tokens", in}, {"completion_tokens", out}, {"total_tokens", in + out}};
+                json usage_obj = {{"prompt_tokens", in}, {"completion_tokens", out}, {"total_tokens", in + out}};
                 if (cb)
                     cb("", {{"usage", std::move(usage_obj)}});
             }
@@ -333,8 +317,7 @@ Result<void> ChatClient::stream_chat_anthropic(
         };
     }
     if (callbacks.on_error) {
-        guarded.on_error = [&data_delivered, cb = std::move(callbacks.on_error)](
-                               const std::string& s) {
+        guarded.on_error = [&data_delivered, cb = std::move(callbacks.on_error)](const std::string& s) {
             data_delivered = true;
             cb(s);
         };
@@ -371,14 +354,12 @@ Result<void> ChatClient::stream_chat_anthropic(
         if (data_delivered)
             break;
 
-        bool recoverable = (res == CURLE_OK && should_retry(http_code)) ||
-            res == CURLE_SEND_ERROR || res == CURLE_RECV_ERROR || res == CURLE_OPERATION_TIMEDOUT ||
-            res == CURLE_COULDNT_CONNECT;
+        bool recoverable = (res == CURLE_OK && should_retry(http_code)) || res == CURLE_SEND_ERROR || res == CURLE_RECV_ERROR ||
+            res == CURLE_OPERATION_TIMEDOUT || res == CURLE_COULDNT_CONNECT;
         if (!recoverable)
             break;
 
-        std::this_thread::sleep_for(
-            std::chrono::duration<double>(jittered_delay(kBaseDelaySec * (1 << attempt))));
+        std::this_thread::sleep_for(std::chrono::duration<double>(jittered_delay(kBaseDelaySec * (1 << attempt))));
     }
 
     parser.flush();
@@ -389,8 +370,7 @@ Result<void> ChatClient::stream_chat_anthropic(
 
     if (res != CURLE_OK) {
         if (!raw_response_.empty()) {
-            std::cerr << "curl error raw response (" << curl_easy_strerror(res) << "):\n"
-                      << raw_response_ << std::endl;
+            std::cerr << "curl error raw response (" << curl_easy_strerror(res) << "):\n" << raw_response_ << std::endl;
         }
         auto msg = std::string("curl error: ") + curl_easy_strerror(res);
         if (!raw_response_.empty()) {
@@ -408,8 +388,7 @@ Result<void> ChatClient::stream_chat_anthropic(
             }
         } else {
             if (!raw_response_.empty()) {
-                std::cerr << "HTTP " << http_code << " response body:\n"
-                          << raw_response_ << std::endl;
+                std::cerr << "HTTP " << http_code << " response body:\n" << raw_response_ << std::endl;
             }
         }
         auto msg = "HTTP " + std::to_string(http_code);
@@ -586,8 +565,7 @@ Result<void> ChatClient::stream_chat(const json& payload, SSEParser::Callbacks c
     bool data_delivered = false;
     SSEParser::Callbacks guarded;
     if (callbacks.on_data) {
-        guarded.on_data = [&data_delivered, cb = std::move(callbacks.on_data)](
-                              const std::string& ev, const json& j) {
+        guarded.on_data = [&data_delivered, cb = std::move(callbacks.on_data)](const std::string& ev, const json& j) {
             data_delivered = true;
             cb(ev, j);
         };
@@ -599,8 +577,7 @@ Result<void> ChatClient::stream_chat(const json& payload, SSEParser::Callbacks c
         };
     }
     if (callbacks.on_error) {
-        guarded.on_error = [&data_delivered, cb = std::move(callbacks.on_error)](
-                               const std::string& s) {
+        guarded.on_error = [&data_delivered, cb = std::move(callbacks.on_error)](const std::string& s) {
             data_delivered = true;
             cb(s);
         };
@@ -639,14 +616,12 @@ Result<void> ChatClient::stream_chat(const json& payload, SSEParser::Callbacks c
         if (data_delivered)
             break;
 
-        bool recoverable = (res == CURLE_OK && should_retry(http_code)) ||
-            res == CURLE_SEND_ERROR || res == CURLE_RECV_ERROR || res == CURLE_OPERATION_TIMEDOUT ||
-            res == CURLE_COULDNT_CONNECT;
+        bool recoverable = (res == CURLE_OK && should_retry(http_code)) || res == CURLE_SEND_ERROR || res == CURLE_RECV_ERROR ||
+            res == CURLE_OPERATION_TIMEDOUT || res == CURLE_COULDNT_CONNECT;
         if (!recoverable)
             break;
 
-        std::this_thread::sleep_for(
-            std::chrono::duration<double>(jittered_delay(kBaseDelaySec * (1 << attempt))));
+        std::this_thread::sleep_for(std::chrono::duration<double>(jittered_delay(kBaseDelaySec * (1 << attempt))));
     }
 
     parser.flush();
@@ -658,8 +633,7 @@ Result<void> ChatClient::stream_chat(const json& payload, SSEParser::Callbacks c
     if (res != CURLE_OK) {
         // Log the full raw response to stderr for debugging.
         if (!raw_response_.empty()) {
-            std::cerr << "curl error raw response (" << curl_easy_strerror(res) << "):\n"
-                      << raw_response_ << std::endl;
+            std::cerr << "curl error raw response (" << curl_easy_strerror(res) << "):\n" << raw_response_ << std::endl;
         }
         auto msg = std::string("curl error: ") + curl_easy_strerror(res);
         if (!raw_response_.empty()) {
@@ -679,8 +653,7 @@ Result<void> ChatClient::stream_chat(const json& payload, SSEParser::Callbacks c
         } else {
             // Log just the response body for other errors
             if (!raw_response_.empty()) {
-                std::cerr << "HTTP " << http_code << " response body:\n"
-                          << raw_response_ << std::endl;
+                std::cerr << "HTTP " << http_code << " response body:\n" << raw_response_ << std::endl;
             }
         }
         auto msg = "HTTP " + std::to_string(http_code);

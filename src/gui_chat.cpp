@@ -57,9 +57,8 @@ void render_history_tab(PrimaryAgent& tab) {
 // ── Tag expansion for !snippet-name references ──
 // Expands !snippetname to the full snippet content.  Non-matching tags are left as-is.
 // Session snippets take precedence over config snippets when names collide.
-static std::string expand_tags(std::string input,
-    const std::map<std::string, std::string>& session_snippets,
-    const std::map<std::string, std::string>& config_snippets) {
+static std::string expand_tags(
+    std::string input, const std::map<std::string, std::string>& session_snippets, const std::map<std::string, std::string>& config_snippets) {
     std::string result;
     size_t i = 0;
     while (i < input.size()) {
@@ -245,31 +244,22 @@ void render_chat_ui(PrimaryAgent& tab, bool& done) {
         SetKeyboardFocusHere();
     }
 
-    uint32_t inputFlags = ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_WordWrap |
-        ImGuiInputTextFlags_CallbackAlways;
+    uint32_t inputFlags = ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_WordWrap | ImGuiInputTextFlags_CallbackAlways;
 
     ImVec2 inputSize(0, GetContentRegionAvail().y - GetFrameHeight());
 
-    if (InputTextMultiline("##input",
-            buffer.data(),
-            buffer.size(),
-            inputSize,
-            inputFlags,
-            InputTextCallback,
-            &ui.cursor_pos) &&
-        !chat.running && !tab.chat_state->compact_running) {
+    if (InputTextMultiline("##input", buffer.data(), buffer.size(), inputSize, inputFlags, InputTextCallback, &ui.cursor_pos) && !chat.running &&
+        !tab.chat_state->compact_running) {
         string input(trimWhite(buffer.data()));
         if (input.size()) {
             // Normal user message
             ui.push_entry(EntryType::UserText, input, false);
             // Expand !snippet-name tags before sending to the agent
             // Session snippets take precedence over config snippets.
-            string expanded =
-                expand_tags(input, tab.session_.session_data().snippets, tab.cfg_->snippets);
+            string expanded = expand_tags(input, tab.session_.session_data().snippets, tab.cfg_->snippets);
             tab.start_chat(expanded);
         }
-        for (auto it = history.begin(); it != history.end();
-            it = *it == input ? history.erase(it) : ++it)
+        for (auto it = history.begin(); it != history.end(); it = *it == input ? history.erase(it) : ++it)
             ;
         history.push_back(input);
         buffer.front() = 0;
@@ -337,8 +327,7 @@ void render_chat_ui(PrimaryAgent& tab, bool& done) {
         ImVec2 pos = GetCursorScreenPos() + ImVec2(GetContentRegionAvail().x, 0);
 
         pos = pos - ImVec2(branchSize.x, 0);
-        GetForegroundDrawList()->AddText(
-            pos, ImColor(IM_COL32(255, 180, 50, 255)), branchInfo.c_str());
+        GetForegroundDrawList()->AddText(pos, ImColor(IM_COL32(255, 180, 50, 255)), branchInfo.c_str());
 
         pos = pos - ImVec2(sepSize.x, 0);
         GetForegroundDrawList()->AddText(pos, GetColorU32(ImGuiCol_TextDisabled), sep.c_str());

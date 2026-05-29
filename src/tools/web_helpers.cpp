@@ -18,11 +18,7 @@ size_t web_search_write_cb(char* ptr, size_t size, size_t nmemb, void* userdata)
     return size * nmemb;
 }
 
-int web_search_progress_cb(void* clientp,
-    curl_off_t /*dltotal*/,
-    curl_off_t /*dlnow*/,
-    curl_off_t /*ultotal*/,
-    curl_off_t /*ulnow*/) {
+int web_search_progress_cb(void* clientp, curl_off_t /*dltotal*/, curl_off_t /*dlnow*/, curl_off_t /*ultotal*/, curl_off_t /*ulnow*/) {
     auto* cancelled = static_cast<std::atomic<bool>*>(clientp);
     return (cancelled && *cancelled) ? 1 : 0;
 }
@@ -33,8 +29,7 @@ std::mutex g_ddg_mutex;
 
 // ── Shared HTTP GET helper (used by web_search and web_fetch) ──
 // Returns (body, http_code) or an error string.
-Result<std::pair<std::string, long>> http_get(
-    const std::string& url, int timeout_sec, std::atomic<bool>* cancelled) {
+Result<std::pair<std::string, long>> http_get(const std::string& url, int timeout_sec, std::atomic<bool>* cancelled) {
     CURL* curl = curl_easy_init();
     if (!curl)
         return std::unexpected("curl_easy_init failed");
@@ -91,10 +86,8 @@ std::unordered_map<std::string, std::string> g_fetch_cache;
 // HTTP POST with form-encoded body (for DDG HTML search)
 // ===================================================================
 
-Result<std::pair<std::string, long>> http_post_form(const std::string& url,
-    const std::string& form_data,
-    int timeout_sec,
-    std::atomic<bool>* cancelled) {
+Result<std::pair<std::string, long>> http_post_form(
+    const std::string& url, const std::string& form_data, int timeout_sec, std::atomic<bool>* cancelled) {
     CURL* curl = curl_easy_init();
     if (!curl)
         return std::unexpected("curl_easy_init failed");
@@ -158,8 +151,7 @@ std::string extract_uddg_url(const std::string& ddg_url) {
 
     // URL-decode using curl
     int decoded_len = 0;
-    char* decoded = curl_easy_unescape(
-        nullptr, encoded.c_str(), static_cast<int>(encoded.size()), &decoded_len);
+    char* decoded = curl_easy_unescape(nullptr, encoded.c_str(), static_cast<int>(encoded.size()), &decoded_len);
     if (!decoded)
         return {};
 
@@ -239,11 +231,8 @@ Result<std::string> ddg_html_parse(const std::string& html) {
     // Suppress libxml2 error messages to stderr
     xmlSetGenericErrorFunc(nullptr, ddg_html_parse_err_func);
 
-    htmlDocPtr doc = htmlReadMemory(html.data(),
-        static_cast<int>(html.size()),
-        nullptr,
-        "UTF-8",
-        HTML_PARSE_RECOVER | HTML_PARSE_NOERROR | HTML_PARSE_NOWARNING);
+    htmlDocPtr doc =
+        htmlReadMemory(html.data(), static_cast<int>(html.size()), nullptr, "UTF-8", HTML_PARSE_RECOVER | HTML_PARSE_NOERROR | HTML_PARSE_NOWARNING);
 
     if (!doc) {
         xmlResetLastError();
@@ -269,8 +258,7 @@ Result<std::string> ddg_html_parse(const std::string& html) {
     std::function<void(xmlNode*)> walk = [&](xmlNode* node) {
         for (xmlNode* cur = node; cur; cur = cur->next) {
             if (cur->type == XML_ELEMENT_NODE && reinterpret_cast<const char*>(cur->name) &&
-                strcmp(reinterpret_cast<const char*>(cur->name), "div") == 0 &&
-                has_class(cur, "web-result")) {
+                strcmp(reinterpret_cast<const char*>(cur->name), "div") == 0 && has_class(cur, "web-result")) {
                 // Found a result div. Extract title, snippet, URL.
                 ResultItem item;
 
@@ -280,8 +268,7 @@ Result<std::string> ddg_html_parse(const std::string& html) {
                     extract_text_recursive(title_a->children, item.title);
                     // Trim whitespace
                     while (!item.title.empty() &&
-                        (item.title.back() == ' ' || item.title.back() == '\n' ||
-                            item.title.back() == '\r' || item.title.back() == '\t'))
+                        (item.title.back() == ' ' || item.title.back() == '\n' || item.title.back() == '\r' || item.title.back() == '\t'))
                         item.title.pop_back();
                     // Extract href for URL
                     std::string href = get_attr(title_a, "href");
@@ -295,8 +282,7 @@ Result<std::string> ddg_html_parse(const std::string& html) {
                 if (snippet_a) {
                     extract_text_recursive(snippet_a->children, item.snippet);
                     while (!item.snippet.empty() &&
-                        (item.snippet.back() == ' ' || item.snippet.back() == '\n' ||
-                            item.snippet.back() == '\r' || item.snippet.back() == '\t'))
+                        (item.snippet.back() == ' ' || item.snippet.back() == '\n' || item.snippet.back() == '\r' || item.snippet.back() == '\t'))
                         item.snippet.pop_back();
                 }
 

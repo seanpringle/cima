@@ -6,8 +6,7 @@
 // Tool: call_subagent
 // ===================================================================
 
-Tool make_call_subagent_tool(
-    PrimaryAgent& primary, const std::vector<SubagentConfig>& subagent_configs, int timeout_sec) {
+Tool make_call_subagent_tool(PrimaryAgent& primary, const std::vector<SubagentConfig>& subagent_configs, int timeout_sec) {
     Tool t;
     t.name = "call_subagent";
 
@@ -35,9 +34,7 @@ Tool make_call_subagent_tool(
     t.parameters = {{"type", "object"},
         {"properties",
             {{"name", {{"type", "string"}, {"description", "Name of the subagent to invoke"}}},
-                {"request",
-                    {{"type", "string"},
-                        {"description", "The request/prompt to send to the subagent"}}}}},
+                {"request", {{"type", "string"}, {"description", "The request/prompt to send to the subagent"}}}}},
         {"required", {"name", "request"}}};
     t.execute = [&primary](const json& args) -> Result<std::string> {
         auto name = args.value("name", std::string());
@@ -70,8 +67,7 @@ Tool make_call_subagent_tool(
             // Already running — reset the future we just set (nobody can be waiting
             // on it because running was false).
             subagent.chat_state->future = std::future<Result<ChatResult>>();
-            return std::unexpected(
-                "subagent \"" + name + "\" is already running — wait for it to finish");
+            return std::unexpected("subagent \"" + name + "\" is already running — wait for it to finish");
         }
 
         // Reset subagent state: clear conversation, pending output, UI entries,

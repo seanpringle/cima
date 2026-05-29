@@ -85,15 +85,13 @@ class McpRegistry {
     /// Build the namespaced name for a tool.
     /// Uses underscores so the result matches OpenAI's required pattern
     /// ^[a-zA-Z0-9_-]+$.
-    static std::string tool_namespace(
-        const std::string& server_name, const std::string& tool_name) {
+    static std::string tool_namespace(const std::string& server_name, const std::string& tool_name) {
         return "mcp_" + sanitize_name(server_name) + "_" + sanitize_name(tool_name);
     }
 
     /// Parse a namespaced name back into server and tool parts.
     /// Returns false if the name is not in the expected format.
-    static bool parse_namespaced(
-        const std::string& namespaced, std::string& server_name, std::string& tool_name) {
+    static bool parse_namespaced(const std::string& namespaced, std::string& server_name, std::string& tool_name) {
         // Format: "mcp_<server>_<tool>"
         if (namespaced.rfind("mcp_", 0) != 0)
             return false;

@@ -19,9 +19,7 @@ using json = nlohmann::json;
 // ---------------------------------------------------------------------------
 // Path sandbox
 // ---------------------------------------------------------------------------
-Result<std::string> resolve_path(const std::string& raw_path,
-    const std::string& safe_dir,
-    const std::vector<std::string>& extra_allowed = {});
+Result<std::string> resolve_path(const std::string& raw_path, const std::string& safe_dir, const std::vector<std::string>& extra_allowed = {});
 
 // ---------------------------------------------------------------------------
 // ToolPermission — which permission category a tool belongs to
@@ -54,16 +52,11 @@ class ToolRegistry {
     void set_cancelled(CancellationToken t) { cancelled_ = std::move(t); }
 
     void add(Tool tool);
-    void add_defaults(std::shared_ptr<std::string> safe_dir,
-        const Config& config,
-        bool include_write = true,
-        FileModifiedCallback on_file_modified = nullptr);
+    void add_defaults(
+        std::shared_ptr<std::string> safe_dir, const Config& config, bool include_write = true, FileModifiedCallback on_file_modified = nullptr);
 
     // Convenience overload: accepts a plain string safe_dir (wraps in shared_ptr internally).
-    void add_defaults(const std::string& safe_dir,
-        const Config& config,
-        bool include_write = true,
-        FileModifiedCallback on_file_modified = nullptr);
+    void add_defaults(const std::string& safe_dir, const Config& config, bool include_write = true, FileModifiedCallback on_file_modified = nullptr);
 
     json to_openai_tools() const;
     /// Return tools for OpenAI, filtered to only include tools whose names
@@ -115,9 +108,7 @@ char status_char_for_workdir(unsigned int flags);
 /// @param repo      An open git_repository*, or nullptr (returns false).
 /// @param abs_path  Absolute filesystem path to check.
 /// @param workdir   The repository worktree root (from git_repository_workdir()).
-bool is_gitignored(git_repository* repo,
-    const std::filesystem::path& abs_path,
-    const std::filesystem::path& workdir);
+bool is_gitignored(git_repository* repo, const std::filesystem::path& abs_path, const std::filesystem::path& workdir);
 
 /// Get the current git branch name at the given repository path.
 /// Returns the branch name, or a description like "(detached HEAD at <hash>)"
@@ -132,12 +123,10 @@ Result<std::string> get_current_git_branch(const std::string& repo_path);
 /// Callback for curl to write response body into a std::string.
 size_t web_search_write_cb(char* ptr, size_t size, size_t nmemb, void* userdata);
 /// Progress callback for curl to support cancellation.
-int web_search_progress_cb(
-    void* clientp, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow);
+int web_search_progress_cb(void* clientp, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow);
 
 /// Shared HTTP GET helper.
-Result<std::pair<std::string, long>> http_get(
-    const std::string& url, int timeout_sec = 15, std::atomic<bool>* cancelled = nullptr);
+Result<std::pair<std::string, long>> http_get(const std::string& url, int timeout_sec = 15, std::atomic<bool>* cancelled = nullptr);
 
 /// Returns true if the scheme is http or https (case-insensitive).
 bool is_valid_fetch_scheme(const std::string& url);
@@ -152,10 +141,8 @@ extern std::unordered_map<std::string, std::string> g_fetch_cache;
 // ── DDG HTML search interface ──
 
 /// HTTP POST with URL-encoded form data (used for DDG HTML search).
-Result<std::pair<std::string, long>> http_post_form(const std::string& url,
-    const std::string& form_data,
-    int timeout_sec,
-    std::atomic<bool>* cancelled);
+Result<std::pair<std::string, long>> http_post_form(
+    const std::string& url, const std::string& form_data, int timeout_sec, std::atomic<bool>* cancelled);
 
 /// Parse DuckDuckGo HTML search results and return a formatted numbered list
 /// of titles, snippets, and URLs.
@@ -169,8 +156,7 @@ std::string extract_uddg_url(const std::string& ddg_url);
 // ---------------------------------------------------------------------------
 // Tool factory declarations (used by ToolRegistry::add_defaults)
 // ---------------------------------------------------------------------------
-Tool make_read_file_tool(
-    std::shared_ptr<std::string> safe_dir_ptr, const std::vector<std::string>& read_only_paths);
+Tool make_read_file_tool(std::shared_ptr<std::string> safe_dir_ptr, const std::vector<std::string>& read_only_paths);
 Tool make_grep_files_tool(const Config& config,
     std::shared_ptr<std::string> safe_dir_ptr,
     const std::vector<std::string>& read_only_paths,
@@ -181,10 +167,8 @@ Tool make_find_files_tool(const Config& config,
     const std::vector<std::string>& read_only_paths,
     int timeout,
     CancellationToken cancelled = nullptr);
-Tool make_write_file_tool(
-    std::shared_ptr<std::string> safe_dir_ptr, FileModifiedCallback on_file_modified = nullptr);
-Tool make_edit_file_tool(
-    std::shared_ptr<std::string> safe_dir_ptr, FileModifiedCallback on_file_modified = nullptr);
+Tool make_write_file_tool(std::shared_ptr<std::string> safe_dir_ptr, FileModifiedCallback on_file_modified = nullptr);
+Tool make_edit_file_tool(std::shared_ptr<std::string> safe_dir_ptr, FileModifiedCallback on_file_modified = nullptr);
 Tool make_run_bwrap_tool(const Config& config,
     std::shared_ptr<std::string> safe_dir_ptr,
     int timeout,
@@ -200,8 +184,7 @@ class SkillRegistry; // forward decl for skill tool
 struct PrimaryAgent;
 
 // ── Subagent tool ──
-Tool make_call_subagent_tool(
-    PrimaryAgent&, const std::vector<SubagentConfig>& subagent_configs = {}, int timeout_sec = 600);
+Tool make_call_subagent_tool(PrimaryAgent&, const std::vector<SubagentConfig>& subagent_configs = {}, int timeout_sec = 600);
 
 // ── Skill tool ──
 Tool make_load_skill_tool(SkillRegistry& registry, ChatSession& session);

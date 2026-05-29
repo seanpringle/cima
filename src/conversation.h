@@ -21,9 +21,7 @@ class Conversation {
     /// Add an assistant message. If tool_calls is non-empty, the message
     /// content is set to nullopt and the calls are stored on the message.
     /// Returns the new message id.
-    int64_t add_assistant(const std::string& content,
-        const std::string& reasoning = {},
-        const std::vector<ToolCall>& tool_calls = {});
+    int64_t add_assistant(const std::string& content, const std::string& reasoning = {}, const std::vector<ToolCall>& tool_calls = {});
 
     /// Add a notice message (user role, droppable suggested_retention).
     int64_t add_notice(const std::string& content);

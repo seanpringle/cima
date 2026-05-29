@@ -21,8 +21,7 @@ std::string sanitize_utf8(const std::string& s) {
         if (b <= 0x7F) {
             result += s[i];
             i += 1;
-        } else if (b >= 0xC2 && b <= 0xDF && i + 1 < s.size() &&
-            static_cast<unsigned char>(s[i + 1]) >= 0x80 &&
+        } else if (b >= 0xC2 && b <= 0xDF && i + 1 < s.size() && static_cast<unsigned char>(s[i + 1]) >= 0x80 &&
             static_cast<unsigned char>(s[i + 1]) <= 0xBF) {
             result.append(s, i, 2); // Optimized
             i += 2;
@@ -46,8 +45,7 @@ std::string sanitize_utf8(const std::string& s) {
             auto c1 = static_cast<unsigned char>(s[i + 1]);
             auto c2 = static_cast<unsigned char>(s[i + 2]);
             auto c3 = static_cast<unsigned char>(s[i + 3]);
-            bool ok =
-                (c1 >= 0x80 && c1 <= 0xBF && c2 >= 0x80 && c2 <= 0xBF && c3 >= 0x80 && c3 <= 0xBF);
+            bool ok = (c1 >= 0x80 && c1 <= 0xBF && c2 >= 0x80 && c2 <= 0xBF && c3 >= 0x80 && c3 <= 0xBF);
             if (b == 0xF0)
                 ok = ok && (c1 >= 0x90);
             if (b == 0xF4)
@@ -144,9 +142,7 @@ std::vector<ToolCall> ToolAccumulator::finalize() const {
     for (const auto& [idx, tc] : calls_) {
         result.push_back(tc);
     }
-    std::sort(result.begin(), result.end(), [](const ToolCall& a, const ToolCall& b) {
-        return a.index < b.index;
-    });
+    std::sort(result.begin(), result.end(), [](const ToolCall& a, const ToolCall& b) { return a.index < b.index; });
     return result;
 }
 
@@ -186,8 +182,7 @@ void SSEParser::process_line(std::string line) {
 
     // Track event: lines (SSE named events)
     constexpr std::string_view event_prefix = "event: ";
-    if (line.size() > event_prefix.size() &&
-        std::string_view(line).substr(0, event_prefix.size()) == event_prefix) {
+    if (line.size() > event_prefix.size() && std::string_view(line).substr(0, event_prefix.size()) == event_prefix) {
         current_event_ = line.substr(event_prefix.size());
         return;
     }
@@ -197,8 +192,7 @@ void SSEParser::process_line(std::string line) {
     // Some providers (opencode) omit the space for Anthropic-format
     // events while including it for OpenAI-format chunks.
     constexpr std::string_view prefix_nospace = "data:";
-    if (line.size() >= prefix_nospace.size() &&
-        std::string_view(line).substr(0, prefix_nospace.size()) == prefix_nospace) {
+    if (line.size() >= prefix_nospace.size() && std::string_view(line).substr(0, prefix_nospace.size()) == prefix_nospace) {
         // Skip "data:" and optional whitespace
         size_t payload_start = prefix_nospace.size();
         if (payload_start < line.size() && line[payload_start] == ' ')

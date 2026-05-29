@@ -51,8 +51,7 @@ Tool make_write_plan_tool(PlanBoard& board) {
     t.permission = ToolPermission::Write;
 
     t.parameters = {{"type", "object"},
-        {"properties",
-            {{"content", {{"type", "string"}, {"description", "Markdown content of the plan"}}}}},
+        {"properties", {{"content", {{"type", "string"}, {"description", "Markdown content of the plan"}}}}},
         {"required", {"content"}}};
 
     t.execute = [&board](const json& args) -> Result<std::string> {
@@ -84,8 +83,7 @@ Tool make_read_plan_tool(PlanBoard& board) {
     t.name = "read_plan";
     t.description = "Read the Plan markdown document.";
     t.permission = ToolPermission::ReadOnly;
-    t.parameters = {
-        {"type", "object"}, {"properties", json::object()}, {"required", json::array()}};
+    t.parameters = {{"type", "object"}, {"properties", json::object()}, {"required", json::array()}};
     t.execute = [&board](const json& /*args*/) -> Result<std::string> { return board.read_plan(); };
     return t;
 }

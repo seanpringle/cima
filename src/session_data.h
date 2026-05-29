@@ -22,17 +22,17 @@ struct SessionData {
     std::string api_type;         // "openai" or "anthropic"
     std::string reasoning_effort; // reasoning effort override
     // workspace_path removed — safe_dir is always the cwd at startup
-    json conversation;                       // serialized Conversation (array of message objects)
-    json chat_log;                           // serialized chat log entries (array of entry objects)
-    json plan;                               // { "plan": "...", "comments": [...] }
-    std::map<std::string, bool> mcp_enabled; // per-server MCP enabled state
-    std::map<std::string, bool> tool_gates;  // per-tool enabled overrides (persisted)
+    json conversation;                                  // serialized Conversation (array of message objects)
+    json chat_log;                                      // serialized chat log entries (array of entry objects)
+    json plan;                                          // { "plan": "...", "comments": [...] }
+    std::map<std::string, bool> mcp_enabled;            // per-server MCP enabled state
+    std::map<std::string, bool> tool_gates;             // per-tool enabled overrides (persisted)
     std::map<std::string, bool> rw_subagent_tool_gates; // read-write subagent gates (persisted)
     std::map<std::string, bool> ro_subagent_tool_gates; // read-only subagent gates (persisted)
-    std::map<std::string, std::string> snippets; // session-local snippet overrides (persisted)
-    std::vector<McpEndpoint> custom_mcp_servers; // session-local custom MCP servers (persisted)
-    std::vector<std::string> input_history;      // per-tab input history (persisted)
-    std::vector<std::string> loaded_skills;      // skills loaded via load_skill tool (persisted)
+    std::map<std::string, std::string> snippets;        // session-local snippet overrides (persisted)
+    std::vector<McpEndpoint> custom_mcp_servers;        // session-local custom MCP servers (persisted)
+    std::vector<std::string> input_history;             // per-tab input history (persisted)
+    std::vector<std::string> loaded_skills;             // skills loaded via load_skill tool (persisted)
 
     // ── Knob overrides (0 = use code default from Config) ──
     int max_tool_iterations = 0;

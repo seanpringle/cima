@@ -34,8 +34,7 @@ Result<void> McpRegistry::start_server(const McpEndpoint& config) {
 
     if (config.transport == "stdio" || config.transport.empty()) {
         // Stdio transport.
-        start_result = client->start_stdio(
-            config.command, config.args, config.cwd, config.env, config.timeout_sec);
+        start_result = client->start_stdio(config.command, config.args, config.cwd, config.env, config.timeout_sec);
     } else if (config.transport == "streamable-http") {
         // HTTP transport.
         start_result = client->start_http(config.url, config.api_key, config.timeout_sec);
@@ -44,16 +43,14 @@ Result<void> McpRegistry::start_server(const McpEndpoint& config) {
     }
 
     if (!start_result) {
-        return std::unexpected(std::string("Failed to start MCP server '") + config.name +
-            "': " + start_result.error());
+        return std::unexpected(std::string("Failed to start MCP server '") + config.name + "': " + start_result.error());
     }
 
     // Discover tools.
     auto tools_result = client->list_tools();
     if (!tools_result) {
         client->shutdown();
-        return std::unexpected(std::string("Failed to list tools from MCP server '") + config.name +
-            "': " + tools_result.error());
+        return std::unexpected(std::string("Failed to list tools from MCP server '") + config.name + "': " + tools_result.error());
     }
 
     // Namespace the tools.
@@ -143,12 +140,10 @@ std::vector<Tool> McpRegistry::all_tools() const {
     return all;
 }
 
-Result<std::string> McpRegistry::execute_tool(
-    const std::string& namespaced_name, const json& args) {
+Result<std::string> McpRegistry::execute_tool(const std::string& namespaced_name, const json& args) {
     std::string server_name, tool_name;
     if (!parse_namespaced(namespaced_name, server_name, tool_name)) {
-        return std::unexpected(std::string("Invalid namespaced tool name: ") + namespaced_name +
-            " (expected format: mcp_<server>_<tool>)");
+        return std::unexpected(std::string("Invalid namespaced tool name: ") + namespaced_name + " (expected format: mcp_<server>_<tool>)");
     }
 
     auto it = servers_.find(server_name);
@@ -161,8 +156,7 @@ Result<std::string> McpRegistry::execute_tool(
     }
 
     if (!it->second.client) {
-        return std::unexpected(
-            std::string("MCP client not initialized for server: ") + server_name);
+        return std::unexpected(std::string("MCP client not initialized for server: ") + server_name);
     }
 
     return it->second.client->call_tool(tool_name, args);

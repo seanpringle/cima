@@ -109,8 +109,7 @@ Result<void> McpClient::start_stdio(const std::string& command,
     return initialize();
 }
 
-Result<void> McpClient::start_http(
-    const std::string& url, const std::string& api_key, int timeout_sec) {
+Result<void> McpClient::start_http(const std::string& url, const std::string& api_key, int timeout_sec) {
     http_url_ = url;
     http_api_key_ = api_key;
     start_timeout_sec_ = timeout_sec;
@@ -146,9 +145,8 @@ Result<void> McpClient::connect(int read_fd, int write_fd) {
 Result<void> McpClient::initialize() {
     if (http_mode_) {
         // ── HTTP transport: POST the initialize request ──
-        json init_params = {{"protocolVersion", "2025-11-25"},
-            {"capabilities", json::object()},
-            {"clientInfo", {{"name", "cima"}, {"version", "1.0"}}}};
+        json init_params = {
+            {"protocolVersion", "2025-11-25"}, {"capabilities", json::object()}, {"clientInfo", {{"name", "cima"}, {"version", "1.0"}}}};
 
         auto resp = http_request("initialize", std::move(init_params), start_timeout_sec_);
         if (!resp) {
@@ -179,9 +177,7 @@ Result<void> McpClient::initialize() {
     running_ = true;
     start_reader_thread();
 
-    json init_params = {{"protocolVersion", "2025-11-25"},
-        {"capabilities", json::object()},
-        {"clientInfo", {{"name", "cima"}, {"version", "1.0"}}}};
+    json init_params = {{"protocolVersion", "2025-11-25"}, {"capabilities", json::object()}, {"clientInfo", {{"name", "cima"}, {"version", "1.0"}}}};
 
     auto resp = send_request("initialize", std::move(init_params), start_timeout_sec_);
     if (!resp) {
@@ -234,9 +230,7 @@ Result<std::vector<Tool>> McpClient::list_tools() {
                     tool.parameters["type"] = "object";
                 }
             } else {
-                tool.parameters = json::object({{"type", "object"},
-                    {"properties", json::object()},
-                    {"required", json::array()}});
+                tool.parameters = json::object({{"type", "object"}, {"properties", json::object()}, {"required", json::array()}});
             }
             tools.push_back(std::move(tool));
         }
@@ -560,8 +554,7 @@ Result<json> McpClient::http_request(const std::string& method, json params, int
     }
 
     if (http_code < 200 || http_code >= 300) {
-        return std::unexpected(
-            std::string("MCP HTTP error: ") + std::to_string(http_code) + " " + response_body);
+        return std::unexpected(std::string("MCP HTTP error: ") + std::to_string(http_code) + " " + response_body);
     }
 
     // Check for MCP-Session-Id in response headers.
@@ -580,8 +573,7 @@ Result<json> McpClient::http_request(const std::string& method, json params, int
     try {
         response = json::parse(response_body);
     } catch (...) {
-        return std::unexpected(
-            std::string("MCP HTTP response is not valid JSON: ") + response_body);
+        return std::unexpected(std::string("MCP HTTP response is not valid JSON: ") + response_body);
     }
 
     // Check for JSON-RPC error.
@@ -660,8 +652,7 @@ Result<json> McpClient::send_request(const std::string& method, json params, int
                 }
                 pending_.erase(it);
             }
-            return std::unexpected(
-                std::string("MCP request was cancelled (method: ") + method + ")");
+            return std::unexpected(std::string("MCP request was cancelled (method: ") + method + ")");
         }
 
         // Check remaining time.
@@ -676,15 +667,12 @@ Result<json> McpClient::send_request(const std::string& method, json params, int
                 }
                 pending_.erase(it);
             }
-            return std::unexpected(std::string("MCP request timed out after ") +
-                std::to_string(timeout_sec) + "s (method: " + method + ")");
+            return std::unexpected(std::string("MCP request timed out after ") + std::to_string(timeout_sec) + "s (method: " + method + ")");
         }
 
         // Wait for the future with a short timeout so we can poll.
-        auto remaining =
-            std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
-        auto wait_time =
-            std::min(poll_interval, std::chrono::milliseconds(std::max(remaining, 1L)));
+        auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
+        auto wait_time = std::min(poll_interval, std::chrono::milliseconds(std::max(remaining, 1L)));
 
         auto status = future.wait_for(wait_time);
         if (status == std::future_status::ready) {
@@ -694,8 +682,7 @@ Result<json> McpClient::send_request(const std::string& method, json params, int
 
     json response = future.get();
     if (!running_) {
-        return std::unexpected(
-            std::string("MCP server connection closed while waiting for response"));
+        return std::unexpected(std::string("MCP server connection closed while waiting for response"));
     }
 
     // Check for JSON-RPC error response.
@@ -763,9 +750,7 @@ std::optional<std::string> McpClient::read_line(int timeout_ms) {
     char tmp[4096];
 
     while (true) {
-        auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
-            deadline - std::chrono::steady_clock::now())
-                             .count();
+        auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now()).count();
         if (remaining < 0)
             return std::nullopt; // timeout
 

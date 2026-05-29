@@ -204,9 +204,8 @@ static void render_frame(PrimaryAgent& primary, bool& done, PlanBoard& plan) {
     SetNextWindowSize(GetIO().DisplaySize);
     Begin("cima",
         nullptr,
-        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
-            ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoDecoration |
-            ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus |
+            ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
     // 40% session tabs (left) + 60% Chat (right)
     {
@@ -220,10 +219,7 @@ static void render_frame(PrimaryAgent& primary, bool& done, PlanBoard& plan) {
         auto chatSize = ImVec2(-1, space.y);
         // Left panel: session tabs
         SetCursorPos(planPos);
-        BeginChild("##left-session-tabs",
-            planSize,
-            ImGuiChildFlags_None,
-            ImGuiWindowFlags_AlwaysVerticalScrollbar);
+        BeginChild("##left-session-tabs", planSize, ImGuiChildFlags_None, ImGuiWindowFlags_AlwaysVerticalScrollbar);
 
         if (BeginTabBar("##session-tabs")) {
             if (BeginTabItem("   Plan   ")) {
@@ -279,8 +275,7 @@ static void render_frame(PrimaryAgent& primary, bool& done, PlanBoard& plan) {
 
             for (auto& sa_tab : primary.subagents) {
                 PushID(sa_tab.id);
-                if (BeginTabItem(
-                        ("   " + sa_tab.title + "   ##sa-" + std::to_string(sa_tab.id)).c_str())) {
+                if (BeginTabItem(("   " + sa_tab.title + "   ##sa-" + std::to_string(sa_tab.id)).c_str())) {
                     render_provider_model_inline(sa_tab, *sa_tab.session);
                     render_subagent_chat(sa_tab);
                     EndTabItem();

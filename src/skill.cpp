@@ -93,8 +93,7 @@ void SkillRegistry::scan() {
 
         // Locate body start (skip closing --- and following newline)
         size_t body_start = end_front + 4; // skip "\n---"
-        if (body_start < content.size() &&
-            (content[body_start] == '\n' || content[body_start] == '\r'))
+        if (body_start < content.size() && (content[body_start] == '\n' || content[body_start] == '\r'))
             body_start++;
 
         // Extract and clean body
@@ -107,9 +106,8 @@ void SkillRegistry::scan() {
             skill.body.erase(0, 1);
 
         // Trim trailing whitespace from body
-        while (!skill.body.empty() &&
-            (skill.body.back() == ' ' || skill.body.back() == '\t' || skill.body.back() == '\n' ||
-                skill.body.back() == '\r'))
+        while (
+            !skill.body.empty() && (skill.body.back() == ' ' || skill.body.back() == '\t' || skill.body.back() == '\n' || skill.body.back() == '\r'))
             skill.body.pop_back();
 
         // Parse key-value pairs from frontmatter

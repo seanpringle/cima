@@ -104,9 +104,8 @@ static int enter_block_cb(MD_BLOCKTYPE type, void* detail, void* userdata) {
 
         float width = GetContentRegionAvail().x - GetStyle().ItemSpacing.x;
 
-        GetWindowDrawList()->AddRectFilled(GetCursorScreenPos(),
-            GetCursorScreenPos() + ImVec2(width, GetFrameHeight()),
-            GetColorU32(ImGuiCol_TableHeaderBg));
+        GetWindowDrawList()->AddRectFilled(
+            GetCursorScreenPos(), GetCursorScreenPos() + ImVec2(width, GetFrameHeight()), GetColorU32(ImGuiCol_TableHeaderBg));
 
         auto header_color = [&]() {
             if (h->level == 1)
@@ -128,9 +127,8 @@ static int enter_block_cb(MD_BLOCKTYPE type, void* detail, void* userdata) {
                 header_color());
         }
 
-        SetCursorPos(
-            ImVec2(GetCursorPosX() + bar * h->level * 2 - bar - bar + GetStyle().ItemSpacing.x,
-                GetCursorPosY() + (GetFrameHeight() - GetTextLineHeight()) / 2));
+        SetCursorPos(ImVec2(GetCursorPosX() + bar * h->level * 2 - bar - bar + GetStyle().ItemSpacing.x,
+            GetCursorPosY() + (GetFrameHeight() - GetTextLineHeight()) / 2));
 
         PushTextWrapPos(0);
         ctx.style_depth++;
@@ -175,13 +173,10 @@ static int enter_block_cb(MD_BLOCKTYPE type, void* detail, void* userdata) {
         auto* table = static_cast<MD_BLOCK_TABLE_DETAIL*>(detail);
         string tid = "##tbl" + std::to_string(++ctx.tables);
         ImVec2 size(GetContentRegionAvail().x - GetStyle().ItemSpacing.x, 0);
-        BeginTable(
-            tid.c_str(), table->col_count, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg, size);
+        BeginTable(tid.c_str(), table->col_count, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg, size);
         for (unsigned i = 0; i < table->col_count; i++) {
             string cid = "##c" + std::to_string(i);
-            ImGuiTableColumnFlags flags = (i == table->col_count - 1)
-                ? ImGuiTableColumnFlags_WidthStretch
-                : ImGuiTableColumnFlags_None;
+            ImGuiTableColumnFlags flags = (i == table->col_count - 1) ? ImGuiTableColumnFlags_WidthStretch : ImGuiTableColumnFlags_None;
             TableSetupColumn(cid.c_str(), flags);
         }
         break;
@@ -502,9 +497,7 @@ static void render_tool_call_group(const ChatUIState& ui, size_t& i) {
 
     render_pair();
 
-    auto next_is_toolcall = [&]() {
-        return i + 1 < ui.entries.size() && ui.entries[i + 1].type == EntryType::ToolCall;
-    };
+    auto next_is_toolcall = [&]() { return i + 1 < ui.entries.size() && ui.entries[i + 1].type == EntryType::ToolCall; };
 
     while (next_is_toolcall()) {
         i++;
@@ -524,9 +517,7 @@ void render_content(const string& text) {
         trim.remove_suffix(1);
 
     string clean(trim);
-    clean.erase(
-        std::remove_if(clean.begin(), clean.end(), [](auto c) { return c == '\r' || c == '\0'; }),
-        clean.end());
+    clean.erase(std::remove_if(clean.begin(), clean.end(), [](auto c) { return c == '\r' || c == '\0'; }), clean.end());
     if (clean.empty())
         return;
 
@@ -553,8 +544,7 @@ void render_content(const string& text) {
     }
 }
 
-void render_display_entry(
-    const ChatUIState& ui, const DisplayEntry& entry, size_t& i, const string& you) {
+void render_display_entry(const ChatUIState& ui, const DisplayEntry& entry, size_t& i, const string& you) {
     switch (entry.type) {
     case EntryType::UserText: {
         PushStyleColor(ImGuiCol_Text, IM_COL32(100, 180, 255, 255));

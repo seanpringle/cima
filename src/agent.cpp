@@ -23,8 +23,7 @@ void Agent::cancel_and_wait() {
 }
 
 std::optional<Result<ChatResult>> Agent::check_finished() {
-    if (chat_state->running && chat_state->future.valid() &&
-        chat_state->future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+    if (chat_state->running && chat_state->future.valid() && chat_state->future.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
         chat_state->running = false;
         try {
             return chat_state->future.get();
@@ -104,8 +103,7 @@ PrimaryAgent::~PrimaryAgent() {
     session_.session_data().tool_gates = tool_gates;
     session_.session_data().rw_subagent_tool_gates = rw_subagent_tool_gates;
     session_.session_data().ro_subagent_tool_gates = ro_subagent_tool_gates;
-    session_.session_data().input_history.assign(
-        ui_state.input_history.begin(), ui_state.input_history.end());
+    session_.session_data().input_history.assign(ui_state.input_history.begin(), ui_state.input_history.end());
 
     std::error_code ec;
     auto cwd = std::filesystem::current_path(ec);
@@ -133,8 +131,7 @@ void PrimaryAgent::create_chat_session() {
     const auto& provider = cfg_->providers[0];
 
     chat_state = std::make_unique<AsyncChatState>();
-    session = std::make_unique<ChatSession>(
-        cfg_, provider, chat_state->cancelled, nullptr, &session_.plan());
+    session = std::make_unique<ChatSession>(cfg_, provider, chat_state->cancelled, nullptr, &session_.plan());
     session->set_agent_name("Assistant");
     session->set_output_callback([cs = chat_state.get()](const std::string& text, OutputType type) {
         std::lock_guard<std::mutex> lock(cs->mutex);
@@ -266,9 +263,7 @@ void PrimaryAgent::restore_session_data() {
 
 const std::vector<SubagentConfig>& PrimaryAgent::builtin_subagent_configs() {
     static const std::vector<SubagentConfig> configs = {
-        {"Explore",
-            "Subagent for code and web exploration tasks, with read-only code access.",
-            true},
+        {"Explore", "Subagent for code and web exploration tasks, with read-only code access.", true},
         {"General", "Subagent for general tasks with read-write access to all tools.", false},
     };
     return configs;
@@ -297,18 +292,12 @@ void PrimaryAgent::create_subagents() {
         sub_agent.chat_state = std::make_unique<AsyncChatState>();
         // Each subagent gets its own GatingState (independent from primary)
         // so gate toggles in the Tool Calls table affect each mode separately.
-        sub_agent.session = ChatSession::create_subagent(cfg_,
-            provider,
-            sa.read_only,
-            sub_agent.chat_state->cancelled,
-            nullptr,
-            &session_.plan());
+        sub_agent.session = ChatSession::create_subagent(cfg_, provider, sa.read_only, sub_agent.chat_state->cancelled, nullptr, &session_.plan());
         sub_agent.session->set_agent_name(sa.name);
-        sub_agent.session->set_output_callback(
-            [cs = sub_agent.chat_state.get()](const std::string& text, OutputType type) {
-                std::lock_guard<std::mutex> lock(cs->mutex);
-                cs->pending.emplace_back(text, type);
-            });
+        sub_agent.session->set_output_callback([cs = sub_agent.chat_state.get()](const std::string& text, OutputType type) {
+            std::lock_guard<std::mutex> lock(cs->mutex);
+            cs->pending.emplace_back(text, type);
+        });
 
         // Apply the appropriate gate map to this subagent.
         const auto& gates = sa.read_only ? ro_subagent_tool_gates : rw_subagent_tool_gates;
@@ -346,18 +335,12 @@ void PrimaryAgent::create_subagents() {
         sub_agent.reasoning_effort = provider.reasoning_effort;
 
         sub_agent.chat_state = std::make_unique<AsyncChatState>();
-        sub_agent.session = ChatSession::create_subagent(cfg_,
-            provider,
-            bsa.read_only,
-            sub_agent.chat_state->cancelled,
-            nullptr,
-            &session_.plan());
+        sub_agent.session = ChatSession::create_subagent(cfg_, provider, bsa.read_only, sub_agent.chat_state->cancelled, nullptr, &session_.plan());
         sub_agent.session->set_agent_name(bsa.name);
-        sub_agent.session->set_output_callback(
-            [cs = sub_agent.chat_state.get()](const std::string& text, OutputType type) {
-                std::lock_guard<std::mutex> lock(cs->mutex);
-                cs->pending.emplace_back(text, type);
-            });
+        sub_agent.session->set_output_callback([cs = sub_agent.chat_state.get()](const std::string& text, OutputType type) {
+            std::lock_guard<std::mutex> lock(cs->mutex);
+            cs->pending.emplace_back(text, type);
+        });
 
         // Apply the appropriate gate map to this subagent.
         const auto& gates = bsa.read_only ? ro_subagent_tool_gates : rw_subagent_tool_gates;
@@ -419,8 +402,7 @@ void ChatUIState::finalize_streaming_entry() {
 void Agent::start_chat(std::string input) {
     chat_state->running = true;
     *chat_state->cancelled = false;
-    chat_state->future = std::async(std::launch::async,
-        [this, input = std::move(input)]() { return session->run_once(input); });
+    chat_state->future = std::async(std::launch::async, [this, input = std::move(input)]() { return session->run_once(input); });
 }
 
 void Agent::drain_pending() {
@@ -439,10 +421,8 @@ void Agent::drain_pending() {
                 }
             }
         } else {
-            auto entry_type =
-                (type == OutputType::Reasoning) ? EntryType::Reasoning : EntryType::Content;
-            if (!ui.entries.empty() && ui.entries.back().is_streaming &&
-                ui.entries.back().type == entry_type) {
+            auto entry_type = (type == OutputType::Reasoning) ? EntryType::Reasoning : EntryType::Content;
+            if (!ui.entries.empty() && ui.entries.back().is_streaming && ui.entries.back().type == entry_type) {
                 ui.entries.back().text += pending_text;
             } else {
                 ui.finalize_streaming_entry();
@@ -459,9 +439,7 @@ void Agent::validate_current_model() {
     if (entry.fetched && !ui.models_validated && !entry.models.empty()) {
         ui.models_validated = true;
         const auto& current = session->model();
-        bool found = std::any_of(entry.models.begin(),
-            entry.models.end(),
-            [&current](const std::string& m) { return m == current; });
+        bool found = std::any_of(entry.models.begin(), entry.models.end(), [&current](const std::string& m) { return m == current; });
         if (!found) {
             session->set_model(entry.models.front());
             model_name = entry.models.front();
@@ -476,8 +454,7 @@ std::optional<Result<void>> Agent::poll_compact() {
     if (ui.compact_requested && !chat_state->compact_running) {
         ui.compact_requested = false;
         chat_state->compact_running = true;
-        chat_state->compact_future =
-            std::async(std::launch::async, [this]() { return session->compact(); });
+        chat_state->compact_future = std::async(std::launch::async, [this]() { return session->compact(); });
     }
 
     // Poll for completion if compact is in-flight

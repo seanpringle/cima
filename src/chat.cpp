@@ -10,22 +10,13 @@
 #include <unordered_map>
 #include <unordered_set>
 
-ChatSession::ChatSession(ConfigPtr config,
-    const Provider& provider,
-    CancellationToken cancelled,
-    std::shared_ptr<GatingState> gates,
-    PlanBoard* plan)
-    : config_(std::move(config)),
-      plan_(plan ? PlanBoardPtr(plan, [](PlanBoard*) {}) : std::make_shared<PlanBoard>()),
-      model_(provider.model), reasoning_effort_(provider.reasoning_effort),
-      provider_name_(provider.name),
-      safe_dir_(std::make_shared<std::string>(std::filesystem::current_path().string())),
-      api_base_(provider.api_base), api_key_(provider.api_key), api_type_(provider.api_type),
-      max_tokens_(provider.max_tokens), max_iterations_(kDefaultMaxToolIterations),
-      context_limit_(provider.context_limit), system_prompt_(config_->SYSTEM_PROMPT),
-      client_(provider.api_base, provider.api_key),
-      file_modified_cb_(std::make_shared<FileModifiedCallback>()),
-      cancelled_(cancelled ? std::move(cancelled) : make_cancellation_token()),
+ChatSession::ChatSession(ConfigPtr config, const Provider& provider, CancellationToken cancelled, std::shared_ptr<GatingState> gates, PlanBoard* plan)
+    : config_(std::move(config)), plan_(plan ? PlanBoardPtr(plan, [](PlanBoard*) {}) : std::make_shared<PlanBoard>()), model_(provider.model),
+      reasoning_effort_(provider.reasoning_effort), provider_name_(provider.name),
+      safe_dir_(std::make_shared<std::string>(std::filesystem::current_path().string())), api_base_(provider.api_base), api_key_(provider.api_key),
+      api_type_(provider.api_type), max_tokens_(provider.max_tokens), max_iterations_(kDefaultMaxToolIterations),
+      context_limit_(provider.context_limit), system_prompt_(config_->SYSTEM_PROMPT), client_(provider.api_base, provider.api_key),
+      file_modified_cb_(std::make_shared<FileModifiedCallback>()), cancelled_(cancelled ? std::move(cancelled) : make_cancellation_token()),
       gates_(gates ? std::move(gates) : std::make_shared<GatingState>()) {
     // Set the api_type on the client
     client_.set_api_type(provider.api_type);
@@ -44,12 +35,8 @@ ChatSession::ChatSession(ConfigPtr config,
 // Subagent factory
 // ===================================================================
 
-std::unique_ptr<ChatSession> ChatSession::create_subagent(ConfigPtr config,
-    const Provider& provider,
-    bool read_only,
-    CancellationToken cancelled,
-    std::shared_ptr<GatingState> gates,
-    PlanBoard* plan) {
+std::unique_ptr<ChatSession> ChatSession::create_subagent(
+    ConfigPtr config, const Provider& provider, bool read_only, CancellationToken cancelled, std::shared_ptr<GatingState> gates, PlanBoard* plan) {
     // Build a simpler system prompt for subagents
     std::string sp = Config::SUBAGENT_SYSTEM_PROMPT;
 
@@ -58,8 +45,7 @@ std::unique_ptr<ChatSession> ChatSession::create_subagent(ConfigPtr config,
     }
 
     // Create the session with the given gates (nullptr = fresh default).
-    auto session = std::make_unique<ChatSession>(
-        config, provider, std::move(cancelled), std::move(gates), plan);
+    auto session = std::make_unique<ChatSession>(config, provider, std::move(cancelled), std::move(gates), plan);
     session->system_prompt_ = std::move(sp);
     session->is_read_only_ = read_only;
 
@@ -208,9 +194,7 @@ json ChatSession::build_payload(const std::set<std::string>& allowed_tools) cons
         payload["model"] = model_;
         payload["system"] = ap["system"];
         payload["messages"] = ap["messages"];
-        payload["max_tokens"] = max_tokens_ > 0
-            ? max_tokens_
-            : (context_limit_ > 0 ? std::min(context_limit_ / 4, 8192) : 4096);
+        payload["max_tokens"] = max_tokens_ > 0 ? max_tokens_ : (context_limit_ > 0 ? std::min(context_limit_ / 4, 8192) : 4096);
         payload["stream"] = true;
         auto tools = tools_.to_anthropic_tools(&allowed_tools);
         if (!tools.empty())
@@ -306,8 +290,7 @@ Result<ChatSession::StreamResult> ChatSession::stream_chat(const json& payload) 
     return result;
 }
 
-Result<void> ChatSession::execute_tool_calls(
-    int64_t msg_id, const std::vector<ToolCall>& calls, int remaining_iters) {
+Result<void> ChatSession::execute_tool_calls(int64_t msg_id, const std::vector<ToolCall>& calls, int remaining_iters) {
     (void)remaining_iters;
 
     if (*cancelled_) {
@@ -324,9 +307,7 @@ Result<void> ChatSession::execute_tool_calls(
     }
 
     // Helper: produce an error result for a disabled tool
-    auto disabled = [&](const ToolCall& call) -> Result<std::string> {
-        return std::unexpected("tool '" + call.name + "' is disabled");
-    };
+    auto disabled = [&](const ToolCall& call) -> Result<std::string> { return std::unexpected("tool '" + call.name + "' is disabled"); };
 
     if (calls.size() <= 1) {
         // Single call — simple execution
@@ -335,8 +316,7 @@ Result<void> ChatSession::execute_tool_calls(
                 return std::unexpected("Interrupted during tool execution");
             }
             if (output_cb_) {
-                output_cb_("\xE2\x86\x92 " + call.name + "(" + call.arguments + ")",
-                    OutputType::ToolInvocation);
+                output_cb_("\xE2\x86\x92 " + call.name + "(" + call.arguments + ")", OutputType::ToolInvocation);
             }
             Result<std::string> tr;
             if (!is_tool_allowed(call.name)) {
@@ -361,8 +341,7 @@ Result<void> ChatSession::execute_tool_calls(
                 return std::unexpected("Interrupted during tool execution");
             }
             if (output_cb_) {
-                output_cb_("\xE2\x86\x92 " + call.name + "(" + call.arguments + ")",
-                    OutputType::ToolInvocation);
+                output_cb_("\xE2\x86\x92 " + call.name + "(" + call.arguments + ")", OutputType::ToolInvocation);
             }
             Result<std::string> tr;
             if (!is_tool_allowed(call.name)) {
@@ -392,8 +371,7 @@ Result<void> ChatSession::execute_tool_calls(
             std::string tool_args = calls[i].arguments;
             futures.push_back(std::async(std::launch::async, [this, tool_name, tool_args] {
                 if (!this->is_tool_allowed(tool_name))
-                    return Result<std::string>(
-                        std::unexpected("tool '" + tool_name + "' is disabled"));
+                    return Result<std::string>(std::unexpected("tool '" + tool_name + "' is disabled"));
                 return this->tools_.execute(tool_name, tool_args);
             }));
         }
@@ -414,11 +392,9 @@ Result<void> ChatSession::execute_tool_calls(
 
         for (size_t i = 0; i < calls.size(); i++) {
             if (output_cb_) {
-                output_cb_("\xE2\x86\x92 " + calls[i].name + "(" + calls[i].arguments + ")",
-                    OutputType::ToolInvocation);
+                output_cb_("\xE2\x86\x92 " + calls[i].name + "(" + calls[i].arguments + ")", OutputType::ToolInvocation);
             }
-            conversation_.add_tool(
-                msg_id, calls[i].id, results[i] ? *results[i] : results[i].error());
+            conversation_.add_tool(msg_id, calls[i].id, results[i] ? *results[i] : results[i].error());
             if (output_cb_) {
                 output_cb_(results[i] ? *results[i] : results[i].error(), OutputType::ToolResult);
             }
@@ -486,8 +462,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
     }
 
     if (!produced_content) {
-        std::string msg =
-            "Tool call budget exhausted (" + std::to_string(max_iterations_) + " iterations).";
+        std::string msg = "Tool call budget exhausted (" + std::to_string(max_iterations_) + " iterations).";
         conversation_.add_assistant(msg, "");
         last_content = msg;
         last_reasoning = "";
@@ -501,8 +476,7 @@ Result<ChatResult> ChatSession::run_once(const std::string& user_input) {
         auto compact_result = compact();
         if (!compact_result) {
             if (output_cb_)
-                output_cb_(
-                    "compact() failed: " + compact_result.error(), OutputType::ToolInvocation);
+                output_cb_("compact() failed: " + compact_result.error(), OutputType::ToolInvocation);
         }
     }
 
@@ -534,8 +508,7 @@ Result<void> ChatSession::compact() {
 
     // Second pass: truncate tool results older than the last max_tool_results
     size_t result_count = 0;
-    size_t truncate_before =
-        (total_tool_calls > max_tool_results) ? (total_tool_calls - max_tool_results) : 0;
+    size_t truncate_before = (total_tool_calls > max_tool_results) ? (total_tool_calls - max_tool_results) : 0;
     for (auto& msg : msgs) {
         for (auto& tc : msg.tool_calls) {
             if (result_count < truncate_before && tc.result.size() > 500) {
@@ -546,19 +519,17 @@ Result<void> ChatSession::compact() {
     }
 
     // ── Build a proper multi-message payload for the summarization request ──
-    const std::string compact_sys_prompt =
-        "You are summarizing a conversation for context retention. "
-        "Provide a comprehensive, detailed summary that preserves ALL significant "
-        "context from the entire conversation — not just the most recent exchanges. "
-        "Include important decisions, code changes, file paths, tool outputs, and "
-        "outstanding tasks. The summary must be detailed enough that another session "
-        "can continue seamlessly from this point.";
+    const std::string compact_sys_prompt = "You are summarizing a conversation for context retention. "
+                                           "Provide a comprehensive, detailed summary that preserves ALL significant "
+                                           "context from the entire conversation — not just the most recent exchanges. "
+                                           "Include important decisions, code changes, file paths, tool outputs, and "
+                                           "outstanding tasks. The summary must be detailed enough that another session "
+                                           "can continue seamlessly from this point.";
 
-    const std::string compact_user_msg =
-        "Please provide a comprehensive summary of the conversation above. "
-        "Preserve all important context, decisions, code changes, file paths, "
-        "and outstanding tasks. Be detailed enough that the conversation can "
-        "continue seamlessly from this summary.";
+    const std::string compact_user_msg = "Please provide a comprehensive summary of the conversation above. "
+                                         "Preserve all important context, decisions, code changes, file paths, "
+                                         "and outstanding tasks. Be detailed enough that the conversation can "
+                                         "continue seamlessly from this summary.";
 
     json payload;
     if (effective_api_type() == "anthropic") {
@@ -570,9 +541,7 @@ Result<void> ChatSession::compact() {
         payload["messages"] = ap["messages"];
         // Append the summarization user message
         payload["messages"].push_back({{"role", "user"}, {"content", compact_user_msg}});
-        payload["max_tokens"] = max_tokens_ > 0
-            ? max_tokens_
-            : (context_limit_ > 0 ? std::min(context_limit_ / 4, 8192) : 4096);
+        payload["max_tokens"] = max_tokens_ > 0 ? max_tokens_ : (context_limit_ > 0 ? std::min(context_limit_ / 4, 8192) : 4096);
         payload["stream"] = true;
         auto tools = tools_.to_anthropic_tools();
         if (!tools.empty())
@@ -684,8 +653,7 @@ Result<void> ChatSession::compact() {
 Result<void> ChatSession::start_mcp_server(const McpEndpoint& config) {
     auto result = mcp_registry_.start_server(config);
     if (!result) {
-        return std::unexpected(
-            std::string("Failed to start MCP server '") + config.name + "': " + result.error());
+        return std::unexpected(std::string("Failed to start MCP server '") + config.name + "': " + result.error());
     }
 
     // Register all discovered tools in the ToolRegistry,
@@ -693,9 +661,7 @@ Result<void> ChatSession::start_mcp_server(const McpEndpoint& config) {
     auto tools = mcp_registry_.all_tools();
     for (auto& tool : tools) {
         std::string namespaced_name = tool.name;
-        tool.execute = [this, namespaced_name](const json& args) -> Result<std::string> {
-            return mcp_registry_.execute_tool(namespaced_name, args);
-        };
+        tool.execute = [this, namespaced_name](const json& args) -> Result<std::string> { return mcp_registry_.execute_tool(namespaced_name, args); };
         tools_.add(std::move(tool));
     }
 
@@ -718,9 +684,7 @@ void ChatSession::stop_mcp_server(const std::string& name) {
     mcp_registry_.stop_server(name);
 }
 
-Result<void> ChatSession::start_custom_mcp_server(const McpEndpoint& config) {
-    return start_mcp_server(config);
-}
+Result<void> ChatSession::start_custom_mcp_server(const McpEndpoint& config) { return start_mcp_server(config); }
 
 void ChatSession::stop_custom_mcp_server(const std::string& name) { stop_mcp_server(name); }
 

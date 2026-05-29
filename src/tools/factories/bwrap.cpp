@@ -11,12 +11,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-Tool make_run_bwrap_tool(const Config& config,
-    std::shared_ptr<std::string> safe_dir_ptr,
-    int timeout,
-    CancellationToken cancelled,
-    bool read_only,
-    bool allow_network) {
+Tool make_run_bwrap_tool(
+    const Config& config, std::shared_ptr<std::string> safe_dir_ptr, int timeout, CancellationToken cancelled, bool read_only, bool allow_network) {
     Tool t;
     const std::string& safe_dir = *safe_dir_ptr;
     if (read_only) {
@@ -39,13 +35,9 @@ Tool make_run_bwrap_tool(const Config& config,
     t.parameters = {{"type", "object"},
         {"properties",
             {{"command", {{"type", "string"}, {"description", "Shell command to execute"}}},
-                {"cwd",
-                    {{"type", "string"},
-                        {"description",
-                            "Working directory for the command (default: " + safe_dir + ")"}}}}},
+                {"cwd", {{"type", "string"}, {"description", "Working directory for the command (default: " + safe_dir + ")"}}}}},
         {"required", {"command"}}};
-    t.execute = [safe_dir_ptr, timeout, cancelled, read_only, allow_network](
-                    const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr, timeout, cancelled, read_only, allow_network](const json& args) -> Result<std::string> {
         auto command = args.value("command", std::string());
         if (command.empty()) {
             return std::unexpected(std::string("command is required"));
@@ -175,8 +167,7 @@ Tool make_run_bwrap_tool(const Config& config,
             execvp("bwrap", const_cast<char**>(argv));
 
             // If execvp returns, bwrap wasn't found
-            static const char msg[] =
-                "error: bwrap not found — install bubblewrap (apt install bubblewrap)\n";
+            static const char msg[] = "error: bwrap not found — install bubblewrap (apt install bubblewrap)\n";
             write(STDOUT_FILENO, msg, sizeof(msg) - 1);
             _exit(127);
         }
@@ -231,8 +222,7 @@ Tool make_run_bwrap_tool(const Config& config,
                 break; // EOF
             } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
                 struct pollfd pfd = {pipefd[0], POLLIN, 0};
-                auto remaining =
-                    std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
+                auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
                 if (remaining > 0) {
                     poll(&pfd, 1, std::min(remaining, 100L));
                 }
