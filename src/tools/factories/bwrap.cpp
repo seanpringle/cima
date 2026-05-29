@@ -73,27 +73,24 @@ Tool make_run_bwrap_tool(
                 close(devnull);
             }
 
-            // Ensure grandchildren are killed when this child dies
+            // Ensure grandchildren are killed when this child dies,
+            // and create a new process group so we can kill the whole tree.
             prctl(PR_SET_PDEATHSIG, SIGKILL);
-
-            // Create new process group so we can kill the whole process tree.
             setpgid(0, 0);
 
-            // Build the bwrap command
+            // ── Build the bwrap command ──
+            // bwrap arguments are order-sensitive; do not re-arrange groups.
             const std::string& safe_dir = *safe_dir_ptr;
             // Resolve working directory: use user-provided cwd, or default to safe_dir.
             std::string work_dir = cwd.empty() ? safe_dir : cwd;
 
-            // We have 15 arguments plus 2 for the final command (sh, -c) plus
-            // the command string itself = 18 fixed args + safe_dir twice + command.
-            // Dynamically allocate at least 30 entries.
             const int max_args = 64;
             const char* argv[max_args];
             int argc = 0;
 
             argv[argc++] = "bwrap";
 
-            // Read-only system paths
+            // ── Read-only system paths ──
             argv[argc++] = "--ro-bind";
             argv[argc++] = "/usr";
             argv[argc++] = "/usr";
@@ -139,7 +136,7 @@ Tool make_run_bwrap_tool(
                 argv[argc++] = work_dir.c_str();
             }
 
-            // Namespace isolation
+            // ── Namespace isolation ──
             if (allow_network) {
                 // Unshare all namespaces except network, so commands can
                 // access the network (e.g. CMake FetchContent).
@@ -150,6 +147,8 @@ Tool make_run_bwrap_tool(
             }
             argv[argc++] = "--new-session";
             argv[argc++] = "--die-with-parent";
+
+            // ── Command to execute ──
 
             // The command to run
             argv[argc++] = "sh";
@@ -177,6 +176,8 @@ Tool make_run_bwrap_tool(
         // Both parent and child call setpgid to avoid a race (whichever
         // runs first succeeds; the other gets EACCES which we ignore).
         setpgid(pid, pid);
+
+        // ── Read child output with timeout and cancellation ──
 
         std::string output;
         char buf[4096];

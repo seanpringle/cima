@@ -98,10 +98,10 @@ void render_subagent_chat(SubAgent& tab) {
     auto& ui = tab.ui_state;
     auto& chat = *tab.chat_state;
 
-    // Drain any pending streaming output first
+    // ── Drain any pending streaming output first ──
     tab.drain_pending();
 
-    // Check if subagent chat finished
+    // ── Check if subagent chat finished ──
     {
         auto finished = tab.check_finished();
         if (finished && !*finished) {
@@ -109,7 +109,7 @@ void render_subagent_chat(SubAgent& tab) {
         }
     }
 
-    // Render entries (same style as main chat in render_chat_ui)
+    // ── Render entries (same style as main chat in render_chat_ui) ──
     BeginChild("##subagent-chat", ImVec2(0, 0), ImGuiChildFlags_None, ImGuiWindowFlags_None);
     for (size_t i = 0; i < ui.entries.size(); i++) {
         auto& entry = ui.entries[i];

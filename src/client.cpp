@@ -63,11 +63,14 @@ static CURL* setup_curl(const std::string& url, struct curl_slist* headers, cons
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 3600L);
 
+    // NOSIGNAL prevents curl from raising SIGPIPE on e.g. dropped connections.
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+    // Keep-alive to detect half-open TCP connections during long streaming reads.
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPALIVE, 1L);
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPIDLE, 60L);
     curl_easy_setopt(curl, CURLOPT_TCP_KEEPINTVL, 30L);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "cima/1.0");
+    // Try HTTP/2 for multiplexed streaming; falls back to HTTP/1.1 automatically.
     curl_easy_setopt(curl, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_2TLS);
 
     // Enable SSL/TLS verification when using HTTPS.
@@ -88,6 +91,8 @@ static CURL* setup_curl(const std::string& url, struct curl_slist* headers, cons
     return curl;
 }
 
+// Retry on rate-limit (429) or server errors (5xx) — but not 4xx client errors
+// which indicate a malformed request that will keep failing.
 bool ChatClient::should_retry(long http_code) const { return http_code == 429 || (http_code >= 500 && http_code < 600); }
 
 /// Returns a random delay in [0.5*base, 1.5*base] to add jitter to retries.
@@ -113,6 +118,8 @@ CURLcode ChatClient::perform_with_retry(CURL* curl, long& http_code, std::string
         if (attempt == kMaxRetries - 1)
             return res;
 
+        // Recoverable: HTTP-level errors on successful connections (e.g. 5xx, 429)
+        // plus transient transport failures that may succeed on retry.
         bool recoverable = (res == CURLE_OK && should_retry(http_code)) || res == CURLE_SEND_ERROR || res == CURLE_RECV_ERROR ||
             res == CURLE_OPERATION_TIMEDOUT || res == CURLE_COULDNT_CONNECT;
         if (!recoverable)

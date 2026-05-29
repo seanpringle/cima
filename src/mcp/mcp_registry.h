@@ -72,11 +72,12 @@ class McpRegistry {
     };
 
     /// Replace characters not allowed in OpenAI tool names with safe ones.
-    /// Keeps [a-zA-Z0-9_-], replaces '.' and ' ' with '-'.
+    /// Keeps [a-zA-Z0-9_-], replaces '.' and ' ', and also replaces '_'
+    /// with '-' to avoid ambiguity with the '_' namespace separator.
     static std::string sanitize_name(const std::string& name) {
         std::string s = name;
         for (auto& c : s) {
-            if (c == '.' || c == ' ')
+            if (c == '.' || c == ' ' || c == '_')
                 c = '-';
         }
         return s;
@@ -90,6 +91,9 @@ class McpRegistry {
     }
 
     /// Parse a namespaced name back into server and tool parts.
+    /// Assumes both server and tool names have been sanitize_name()'d so
+    /// they contain no underscores — the first '_' after the "mcp_" prefix
+    /// is the unambiguous separator.
     /// Returns false if the name is not in the expected format.
     static bool parse_namespaced(const std::string& namespaced, std::string& server_name, std::string& tool_name) {
         // Format: "mcp_<server>_<tool>"

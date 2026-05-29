@@ -103,7 +103,11 @@ size_t estimate_tokens(const Message& msg) {
 }
 
 // ---------------------------------------------------------------------------
-// ToolAccumulator
+// ToolAccumulator — merges streaming tool_call deltas across SSE chunks
+//
+// OpenAI streaming format emits tool_calls as incremental delta fragments.
+// Each chunk carries an "index" to identify which call it belongs to, and
+// "arguments" are accumulated by appending successive string fragments.
 // ---------------------------------------------------------------------------
 
 void ToolAccumulator::apply(const json& delta) {

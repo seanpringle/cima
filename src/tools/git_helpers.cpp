@@ -4,6 +4,7 @@
 
 // Initialize libgit2 at module load time.
 // git_libgit2_init() is ref-counted and safe to call multiple times.
+// The bool itself is unused; the comma-expression calls git_libgit2_init() for its side-effect.
 static const bool g_git_init = (git_libgit2_init(), true);
 
 // ===================================================================

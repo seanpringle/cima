@@ -16,6 +16,7 @@ void Agent::cancel_and_wait() {
             try {
                 chat_state->future.get();
             } catch (...) {
+                // Ignore errors during cancellation — we're shutting down anyway.
             }
         }
         chat_state->running = false;

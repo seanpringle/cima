@@ -19,6 +19,9 @@ Result<std::string> resolve_path(const std::string& raw_path, const std::string&
         p = std::filesystem::path(safe_dir) / p;
     }
 
+    // First try weakly_canonical (resolves symlinks, requires existing path).
+    // If the path doesn't exist yet (e.g. about to create a file), fall back
+    // to lexically_normal which handles "."/".." without I/O.
     p = std::filesystem::weakly_canonical(p, ec);
     if (ec) {
         p = std::filesystem::path(raw_path).lexically_normal();

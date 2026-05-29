@@ -28,6 +28,8 @@ json PlanBoard::to_json() const {
 }
 
 void PlanBoard::from_json(const json& j) {
+    // Silence: tolerate non-object input (empty plan) for backwards
+    // compatibility with earlier formats that may not have a plan key.
     if (!j.is_object())
         return;
     plan_.clear();

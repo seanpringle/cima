@@ -96,6 +96,8 @@ void ChatSession::discover_context_limit() {
     if (context_limit_discovered_)
         return;
 
+    // Process-wide cache: all sessions share discovered limits
+    // (keyed by URL + model + API type).
     static std::mutex cache_mutex;
     static std::unordered_map<std::string, int> cache;
 
@@ -194,6 +196,8 @@ json ChatSession::build_payload(const std::set<std::string>& allowed_tools) cons
         payload["model"] = model_;
         payload["system"] = ap["system"];
         payload["messages"] = ap["messages"];
+        // max_tokens: use explicit override if set, else derive from context limit,
+        // else hard-coded fallback.
         payload["max_tokens"] = max_tokens_ > 0 ? max_tokens_ : (context_limit_ > 0 ? std::min(context_limit_ / 4, 8192) : 4096);
         payload["stream"] = true;
         auto tools = tools_.to_anthropic_tools(&allowed_tools);

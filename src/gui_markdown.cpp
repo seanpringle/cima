@@ -104,11 +104,12 @@ static int enter_block_cb(MD_BLOCKTYPE type, void* detail, void* userdata) {
     case MD_BLOCK_H: {
         auto* h = static_cast<MD_BLOCK_H_DETAIL*>(detail);
 
+        // Full-width background rect for the heading row
         float width = GetContentRegionAvail().x - GetStyle().ItemSpacing.x;
-
         GetWindowDrawList()->AddRectFilled(
             GetCursorScreenPos(), GetCursorScreenPos() + ImVec2(width, GetFrameHeight()), GetColorU32(ImGuiCol_TableHeaderBg));
 
+        // Level-based colour: h1=white, h2=blue, h3=green, h4=red, others=gray
         auto header_color = [&]() {
             if (h->level == 1)
                 return IM_COL32(255, 255, 255, 255);
@@ -121,14 +122,16 @@ static int enter_block_cb(MD_BLOCKTYPE type, void* detail, void* userdata) {
             return IM_COL32(100, 100, 100, 255);
         };
 
+        // Draw small colour bars at the left edge, one per heading level
+        // Each bar is positioned at bar*2*i (i.e. stacked with a gap equal to bar width)
         float bar = GetStyle().ItemSpacing.x / 4;
-
         for (int i = 0; i < h->level; i++) {
-            GetWindowDrawList()->AddRectFilled(GetCursorScreenPos() + ImVec2(bar * i + bar * i, 0),
-                GetCursorScreenPos() + ImVec2(bar * i + bar * i + bar, GetFrameHeight()),
+            GetWindowDrawList()->AddRectFilled(GetCursorScreenPos() + ImVec2(bar * i * 2, 0),
+                GetCursorScreenPos() + ImVec2(bar * i * 2 + bar, GetFrameHeight()),
                 header_color());
         }
 
+        // Indent text to the right of the colour bars, vertically centred
         SetCursorPos(ImVec2(GetCursorPosX() + bar * h->level * 2 - bar - bar + GetStyle().ItemSpacing.x,
             GetCursorPosY() + (GetFrameHeight() - GetTextLineHeight()) / 2));
 
