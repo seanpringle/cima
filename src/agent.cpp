@@ -133,7 +133,8 @@ void PrimaryAgent::create_chat_session() {
     const auto& provider = cfg_->providers[0];
 
     chat_state = std::make_unique<AsyncChatState>();
-    session = std::make_unique<ChatSession>(cfg_, provider, chat_state->cancelled, nullptr, &session_.plan());
+    session = std::make_unique<ChatSession>(
+        cfg_, provider, chat_state->cancelled, nullptr, &session_.plan());
     session->set_agent_name("Assistant");
     session->set_output_callback([cs = chat_state.get()](const std::string& text, OutputType type) {
         std::lock_guard<std::mutex> lock(cs->mutex);
@@ -268,9 +269,7 @@ const std::vector<SubagentConfig>& PrimaryAgent::builtin_subagent_configs() {
         {"Explore",
             "Subagent for code and web exploration tasks, with read-only code access.",
             true},
-        {"General",
-            "Subagent for general tasks with read-write access to all tools.",
-            false},
+        {"General", "Subagent for general tasks with read-write access to all tools.", false},
     };
     return configs;
 }
@@ -298,8 +297,12 @@ void PrimaryAgent::create_subagents() {
         sub_agent.chat_state = std::make_unique<AsyncChatState>();
         // Each subagent gets its own GatingState (independent from primary)
         // so gate toggles in the Tool Calls table affect each mode separately.
-        sub_agent.session = ChatSession::create_subagent(
-            cfg_, provider, sa.read_only, sub_agent.chat_state->cancelled, nullptr, &session_.plan());
+        sub_agent.session = ChatSession::create_subagent(cfg_,
+            provider,
+            sa.read_only,
+            sub_agent.chat_state->cancelled,
+            nullptr,
+            &session_.plan());
         sub_agent.session->set_agent_name(sa.name);
         sub_agent.session->set_output_callback(
             [cs = sub_agent.chat_state.get()](const std::string& text, OutputType type) {
@@ -343,8 +346,12 @@ void PrimaryAgent::create_subagents() {
         sub_agent.reasoning_effort = provider.reasoning_effort;
 
         sub_agent.chat_state = std::make_unique<AsyncChatState>();
-        sub_agent.session = ChatSession::create_subagent(
-            cfg_, provider, bsa.read_only, sub_agent.chat_state->cancelled, nullptr, &session_.plan());
+        sub_agent.session = ChatSession::create_subagent(cfg_,
+            provider,
+            bsa.read_only,
+            sub_agent.chat_state->cancelled,
+            nullptr,
+            &session_.plan());
         sub_agent.session->set_agent_name(bsa.name);
         sub_agent.session->set_output_callback(
             [cs = sub_agent.chat_state.get()](const std::string& text, OutputType type) {
@@ -386,7 +393,8 @@ void PrimaryAgent::register_subagent_tools() {
     // Compute the effective subagent timeout from the session knob (if set).
     int effective_timeout = kDefaultSubagentTimeout;
     int knob = session_.subagent_timeout();
-    if (knob > 0) effective_timeout = knob;
+    if (knob > 0)
+        effective_timeout = knob;
     session->register_call_subagent_tool(*this, all_configs, effective_timeout);
 
     // Register the load_skill tool (available only if skills were discovered).
@@ -468,9 +476,8 @@ std::optional<Result<void>> Agent::poll_compact() {
     if (ui.compact_requested && !chat_state->compact_running) {
         ui.compact_requested = false;
         chat_state->compact_running = true;
-        chat_state->compact_future = std::async(std::launch::async, [this]() {
-            return session->compact();
-        });
+        chat_state->compact_future =
+            std::async(std::launch::async, [this]() { return session->compact(); });
     }
 
     // Poll for completion if compact is in-flight

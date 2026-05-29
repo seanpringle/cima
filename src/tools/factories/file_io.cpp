@@ -6,33 +6,35 @@
 #include <fstream>
 #include <string>
 
-Tool make_read_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
-    const std::vector<std::string>& read_only_paths) {
+Tool make_read_file_tool(
+    std::shared_ptr<std::string> safe_dir_ptr, const std::vector<std::string>& read_only_paths) {
 
     Tool t;
     t.name = "read_file";
 
     t.description = "Read a block of lines from a file."
-        " Start with any small range; the discovered total line count will be reported."
-        " Lines are prefixed with line numbers, 1-based."
-    ;
+                    " Start with any small range; the discovered total line count will be reported."
+                    " Lines are prefixed with line numbers, 1-based.";
 
-    t.parameters = {
-        {"type", "object"},
-        {"properties", {
-            {"path", {{"type", "string"}, {"description", "Path to the file to read."}}},
-            {"start_line", {{"type", "integer"}, {"description", "Beginning of range, 1-based"}}},
-            {"end_line", {{"type", "integer"}, {"description", "End of range (inclusive): 1-based"}}},
-        }},
-        {"required", {"path","start_line","end_line"}}
-    };
+    t.parameters = {{"type", "object"},
+        {"properties",
+            {
+                {"path", {{"type", "string"}, {"description", "Path to the file to read."}}},
+                {"start_line",
+                    {{"type", "integer"}, {"description", "Beginning of range, 1-based"}}},
+                {"end_line",
+                    {{"type", "integer"}, {"description", "End of range (inclusive): 1-based"}}},
+            }},
+        {"required", {"path", "start_line", "end_line"}}};
 
     t.execute = [safe_dir_ptr, read_only_paths](const json& args) -> Result<std::string> {
-
-        for (auto& el: args.items()) {
-            if (el.key() == "path") continue;
-            if (el.key() == "start_line") continue;
-            if (el.key() == "end_line") continue;
+        for (auto& el : args.items()) {
+            if (el.key() == "path")
+                continue;
+            if (el.key() == "start_line")
+                continue;
+            if (el.key() == "end_line")
+                continue;
             return std::unexpected("unknown argument: " + el.key());
         }
 
@@ -71,11 +73,10 @@ Tool make_read_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
 
         std::stringstream ss;
         ss << "read_file " << raw << '\n'
-           << "lines " << start_line << ':' << end_line
-           << " of " << lines.size() << '\n';
+           << "lines " << start_line << ':' << end_line << " of " << lines.size() << '\n';
 
         for (int i = start_line; i <= end_line; i++) {
-            ss << i << ": " << lines[i-1] << '\n';
+            ss << i << ": " << lines[i - 1] << '\n';
         }
 
         return ss.str();
@@ -83,20 +84,17 @@ Tool make_read_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
     return t;
 }
 
-Tool make_write_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
-    FileModifiedCallback on_file_modified) {
+Tool make_write_file_tool(
+    std::shared_ptr<std::string> safe_dir_ptr, FileModifiedCallback on_file_modified) {
     Tool t;
     t.name = "write_file";
     t.description = "Write content to a file, creating parent directories if needed";
 
-    t.parameters = {
-        {"type", "object"},
-        {"properties", {
-            {"path", {{"type", "string"}, {"description", "File path"}}},
-            {"content", {{"type", "string"}, {"description", "Content to write"}}}
-        }},
-        {"required", {"path", "content"}}
-    };
+    t.parameters = {{"type", "object"},
+        {"properties",
+            {{"path", {{"type", "string"}, {"description", "File path"}}},
+                {"content", {{"type", "string"}, {"description", "Content to write"}}}}},
+        {"required", {"path", "content"}}};
 
     t.execute = [safe_dir_ptr, on_file_modified](const json& args) -> Result<std::string> {
         auto raw = args.value("path", std::string());
@@ -130,8 +128,8 @@ Tool make_write_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
     return t;
 }
 
-Tool make_edit_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
-    FileModifiedCallback on_file_modified) {
+Tool make_edit_file_tool(
+    std::shared_ptr<std::string> safe_dir_ptr, FileModifiedCallback on_file_modified) {
     Tool t;
     t.name = "edit_file";
     t.description = "Edit a file by searching for an exact string and replacing it. "
@@ -139,23 +137,19 @@ Tool make_edit_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
                     "are safe and unambiguous. "
                     "Use this to make targeted surgical edits instead of rewriting entire files.";
 
-    t.parameters = {
-        {"type", "object"},
-        {"properties", {
-            {"path", {
-                {"type", "string"}, {"description", "File path to edit"}}},
-            {"search", {
-                {"type", "string"},
-                {"description",
-                    "Exact string to search for; must match exactly once in the file. "
-                    "Include surrounding context (unique nearby lines) to guarantee a "
-                    "single match."}}},
-            {"replace", {
-                {"type", "string"},
-                {"description", "String to replace the matched occurrence with"}}}
-        }},
-        {"required", {"path", "search", "replace"}}
-    };
+    t.parameters = {{"type", "object"},
+        {"properties",
+            {{"path", {{"type", "string"}, {"description", "File path to edit"}}},
+                {"search",
+                    {{"type", "string"},
+                        {"description",
+                            "Exact string to search for; must match exactly once in the file. "
+                            "Include surrounding context (unique nearby lines) to guarantee a "
+                            "single match."}}},
+                {"replace",
+                    {{"type", "string"},
+                        {"description", "String to replace the matched occurrence with"}}}}},
+        {"required", {"path", "search", "replace"}}};
 
     t.execute = [safe_dir_ptr, on_file_modified](const json& args) -> Result<std::string> {
         auto raw = args.value("path", std::string());
@@ -238,9 +232,9 @@ Tool make_edit_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
         {
             git_diff_options diff_opts = GIT_DIFF_OPTIONS_INIT;
             auto print_cb = [](const git_diff_delta* /*delta*/,
-                               const git_diff_hunk* /*hunk*/,
-                               const git_diff_line* line,
-                               void* payload) -> int {
+                                const git_diff_hunk* /*hunk*/,
+                                const git_diff_line* line,
+                                void* payload) -> int {
                 auto* output = static_cast<std::string*>(payload);
                 // Prepend origin character for +/-/context lines
                 if (line->origin == '+' || line->origin == '-' || line->origin == ' ') {
@@ -249,20 +243,26 @@ Tool make_edit_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
                 output->append(line->content, line->content_len);
                 return 0;
             };
-            int err = git_diff_buffers(
-                old_content.data(), old_content.size(), resolved->c_str(),
-                content.data(), content.size(), resolved->c_str(),
+            int err = git_diff_buffers(old_content.data(),
+                old_content.size(),
+                resolved->c_str(),
+                content.data(),
+                content.size(),
+                resolved->c_str(),
                 &diff_opts,
-                nullptr, nullptr, nullptr,
-                print_cb, &diff_text);
+                nullptr,
+                nullptr,
+                nullptr,
+                print_cb,
+                &diff_text);
             if (err) {
                 diff_text.clear(); // fall back to no diff
             }
         }
 
         std::string result = "ok (replaced 1 occurrence at line " + std::to_string(line_num) +
-            ", " + std::to_string(search.size()) + " bytes -> " +
-            std::to_string(replace.size()) + " bytes)";
+            ", " + std::to_string(search.size()) + " bytes -> " + std::to_string(replace.size()) +
+            " bytes)";
         if (!diff_text.empty()) {
             result += " diff follows:\n" + diff_text;
         }
@@ -270,5 +270,3 @@ Tool make_edit_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
     };
     return t;
 }
-
-

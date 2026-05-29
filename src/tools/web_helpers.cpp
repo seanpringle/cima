@@ -33,8 +33,8 @@ std::mutex g_ddg_mutex;
 
 // ── Shared HTTP GET helper (used by web_search and web_fetch) ──
 // Returns (body, http_code) or an error string.
-Result<std::pair<std::string, long>> http_get(const std::string& url, int timeout_sec,
-    std::atomic<bool>* cancelled) {
+Result<std::pair<std::string, long>> http_get(
+    const std::string& url, int timeout_sec, std::atomic<bool>* cancelled) {
     CURL* curl = curl_easy_init();
     if (!curl)
         return std::unexpected("curl_easy_init failed");
@@ -63,8 +63,7 @@ Result<std::pair<std::string, long>> http_get(const std::string& url, int timeou
     curl_easy_cleanup(curl);
 
     if (res != CURLE_OK) {
-        return std::unexpected(std::string("web_search curl error: ") +
-            curl_easy_strerror(res));
+        return std::unexpected(std::string("web_search curl error: ") + curl_easy_strerror(res));
     }
     return std::make_pair(std::move(body), http_code);
 }
@@ -75,9 +74,11 @@ Result<std::pair<std::string, long>> http_get(const std::string& url, int timeou
 // Rejects file://, ftp://, data:, javascript:, etc.
 bool is_valid_fetch_scheme(const std::string& url) {
     auto pos = url.find(':');
-    if (pos == std::string::npos) return false;
+    if (pos == std::string::npos)
+        return false;
     std::string scheme = url.substr(0, pos);
-    for (auto& c : scheme) c = char(std::tolower((unsigned char)c));
+    for (auto& c : scheme)
+        c = char(std::tolower((unsigned char)c));
     return scheme == "http" || scheme == "https";
 }
 
@@ -157,7 +158,8 @@ std::string extract_uddg_url(const std::string& ddg_url) {
 
     // URL-decode using curl
     int decoded_len = 0;
-    char* decoded = curl_easy_unescape(nullptr, encoded.c_str(), static_cast<int>(encoded.size()), &decoded_len);
+    char* decoded = curl_easy_unescape(
+        nullptr, encoded.c_str(), static_cast<int>(encoded.size()), &decoded_len);
     if (!decoded)
         return {};
 
@@ -237,9 +239,10 @@ Result<std::string> ddg_html_parse(const std::string& html) {
     // Suppress libxml2 error messages to stderr
     xmlSetGenericErrorFunc(nullptr, ddg_html_parse_err_func);
 
-    htmlDocPtr doc = htmlReadMemory(
-        html.data(), static_cast<int>(html.size()),
-        nullptr, "UTF-8",
+    htmlDocPtr doc = htmlReadMemory(html.data(),
+        static_cast<int>(html.size()),
+        nullptr,
+        "UTF-8",
         HTML_PARSE_RECOVER | HTML_PARSE_NOERROR | HTML_PARSE_NOWARNING);
 
     if (!doc) {
@@ -265,11 +268,9 @@ Result<std::string> ddg_html_parse(const std::string& html) {
     // We do a recursive traversal.
     std::function<void(xmlNode*)> walk = [&](xmlNode* node) {
         for (xmlNode* cur = node; cur; cur = cur->next) {
-            if (cur->type == XML_ELEMENT_NODE &&
-                reinterpret_cast<const char*>(cur->name) &&
+            if (cur->type == XML_ELEMENT_NODE && reinterpret_cast<const char*>(cur->name) &&
                 strcmp(reinterpret_cast<const char*>(cur->name), "div") == 0 &&
-                has_class(cur, "web-result"))
-            {
+                has_class(cur, "web-result")) {
                 // Found a result div. Extract title, snippet, URL.
                 ResultItem item;
 
@@ -278,7 +279,9 @@ Result<std::string> ddg_html_parse(const std::string& html) {
                 if (title_a) {
                     extract_text_recursive(title_a->children, item.title);
                     // Trim whitespace
-                    while (!item.title.empty() && (item.title.back() == ' ' || item.title.back() == '\n' || item.title.back() == '\r' || item.title.back() == '\t'))
+                    while (!item.title.empty() &&
+                        (item.title.back() == ' ' || item.title.back() == '\n' ||
+                            item.title.back() == '\r' || item.title.back() == '\t'))
                         item.title.pop_back();
                     // Extract href for URL
                     std::string href = get_attr(title_a, "href");
@@ -291,7 +294,9 @@ Result<std::string> ddg_html_parse(const std::string& html) {
                 xmlNode* snippet_a = find_descendant_by_class(cur, "result__snippet");
                 if (snippet_a) {
                     extract_text_recursive(snippet_a->children, item.snippet);
-                    while (!item.snippet.empty() && (item.snippet.back() == ' ' || item.snippet.back() == '\n' || item.snippet.back() == '\r' || item.snippet.back() == '\t'))
+                    while (!item.snippet.empty() &&
+                        (item.snippet.back() == ' ' || item.snippet.back() == '\n' ||
+                            item.snippet.back() == '\r' || item.snippet.back() == '\t'))
                         item.snippet.pop_back();
                 }
 

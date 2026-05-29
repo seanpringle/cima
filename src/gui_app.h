@@ -39,8 +39,6 @@ struct AsyncChatState {
     // Compaction state (runs in background thread)
     std::future<Result<void>> compact_future;
     bool compact_running = false;
-
-
 };
 
 struct ImFont;

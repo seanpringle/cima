@@ -5,12 +5,15 @@
 #include <vector>
 
 // UTF-16/32 BOMs that contain NUL bytes — detect these as text, not binary.
-static const struct { unsigned char bytes[4]; std::size_t n; } boms[] = {
+static const struct {
+    unsigned char bytes[4];
+    std::size_t n;
+} boms[] = {
     {{0xFF, 0xFE, 0x00, 0x00}, 4}, // UTF-32LE
     {{0x00, 0x00, 0xFE, 0xFF}, 4}, // UTF-32BE
-    {{0xFF, 0xFE},               2}, // UTF-16LE
-    {{0xFE, 0xFF},               2}, // UTF-16BE
-    {{0xEF, 0xBB, 0xBF},         3}, // UTF-8 BOM
+    {{0xFF, 0xFE}, 2},             // UTF-16LE
+    {{0xFE, 0xFF}, 2},             // UTF-16BE
+    {{0xEF, 0xBB, 0xBF}, 3},       // UTF-8 BOM
 };
 
 FileKind detect_text_file(const std::string& path) {

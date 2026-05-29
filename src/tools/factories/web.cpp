@@ -17,13 +17,12 @@ using namespace std::chrono_literals;
 Tool make_web_search_tool(const Config& config, int timeout, CancellationToken cancelled) {
     Tool t;
     t.name = "web_search";
-    t.description =
-        "Search the web using DuckDuckGo. "
-        "Returns up to 10 results with titles, snippets, and URLs. "
-        "No API key required. "
-        "DuckDuckGo aggressively rate-limits requests; at least 3 seconds "
-        "must elapse between successive calls. If you need multiple searches, "
-        "space them out — parallel calls are serialized with enforced delays.";
+    t.description = "Search the web using DuckDuckGo. "
+                    "Returns up to 10 results with titles, snippets, and URLs. "
+                    "No API key required. "
+                    "DuckDuckGo aggressively rate-limits requests; at least 3 seconds "
+                    "must elapse between successive calls. If you need multiple searches, "
+                    "space them out — parallel calls are serialized with enforced delays.";
     t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},
         {"properties",
@@ -75,11 +74,10 @@ Tool make_web_search_tool(const Config& config, int timeout, CancellationToken c
 Tool make_web_fetch_tool(const Config& config, int timeout, CancellationToken cancelled) {
     Tool t;
     t.name = "web_fetch";
-    t.description =
-        "Fetch the content of a URL. Returns the response body as text. "
-        "HTML pages are automatically converted to clean Markdown. "
-        "Use this to read documentation, API references, or web pages. "
-        "For search results use web_search.";
+    t.description = "Fetch the content of a URL. Returns the response body as text. "
+                    "HTML pages are automatically converted to clean Markdown. "
+                    "Use this to read documentation, API references, or web pages. "
+                    "For search results use web_search.";
     t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},
         {"properties",
@@ -152,8 +150,7 @@ Tool make_web_fetch_tool(const Config& config, int timeout, CancellationToken ca
         curl_easy_cleanup(curl);
 
         if (res != CURLE_OK) {
-            return std::unexpected(std::string("web_fetch curl error: ") +
-                curl_easy_strerror(res));
+            return std::unexpected(std::string("web_fetch curl error: ") + curl_easy_strerror(res));
         }
 
         if (http_code != 200) {
@@ -170,11 +167,13 @@ Tool make_web_fetch_tool(const Config& config, int timeout, CancellationToken ca
         if (!content_type.empty()) {
             std::string ct = content_type;
             // Convert to lowercase for comparison
-            for (auto& c : ct) c = char(std::tolower((unsigned char)c));
+            for (auto& c : ct)
+                c = char(std::tolower((unsigned char)c));
 
             // Strip parameters like charset=utf-8
             auto semi = ct.find(';');
-            if (semi != std::string::npos) ct = ct.substr(0, semi);
+            if (semi != std::string::npos)
+                ct = ct.substr(0, semi);
 
             // Trim trailing whitespace
             while (!ct.empty() && (ct.back() == ' ' || ct.back() == '\t'))
@@ -182,18 +181,25 @@ Tool make_web_fetch_tool(const Config& config, int timeout, CancellationToken ca
 
             // Allowed content types
             bool allowed = false;
-            if (ct.find("text/") == 0) allowed = true;
-            else if (ct == "application/json") allowed = true;
-            else if (ct == "application/xml") allowed = true;
-            else if (ct == "application/javascript") allowed = true;
-            else if (ct == "application/x-javascript") allowed = true;
-            else if (ct == "application/atom+xml") allowed = true;
-            else if (ct == "application/rss+xml") allowed = true;
-            else if (ct == "application/xhtml+xml") allowed = true;
+            if (ct.find("text/") == 0)
+                allowed = true;
+            else if (ct == "application/json")
+                allowed = true;
+            else if (ct == "application/xml")
+                allowed = true;
+            else if (ct == "application/javascript")
+                allowed = true;
+            else if (ct == "application/x-javascript")
+                allowed = true;
+            else if (ct == "application/atom+xml")
+                allowed = true;
+            else if (ct == "application/rss+xml")
+                allowed = true;
+            else if (ct == "application/xhtml+xml")
+                allowed = true;
 
             if (!allowed) {
-                return std::unexpected(
-                    "web_fetch: unsupported Content-Type '" + ct +
+                return std::unexpected("web_fetch: unsupported Content-Type '" + ct +
                     "' — only text-based content can be fetched");
             }
         }
@@ -208,11 +214,9 @@ Tool make_web_fetch_tool(const Config& config, int timeout, CancellationToken ca
             auto semi = ct_lower.find(';');
             if (semi != std::string::npos)
                 ct_lower = ct_lower.substr(0, semi);
-            while (!ct_lower.empty() &&
-                   (ct_lower.back() == ' ' || ct_lower.back() == '\t'))
+            while (!ct_lower.empty() && (ct_lower.back() == ' ' || ct_lower.back() == '\t'))
                 ct_lower.pop_back();
-            is_html = (ct_lower == "text/html" ||
-                       ct_lower == "application/xhtml+xml");
+            is_html = (ct_lower == "text/html" || ct_lower == "application/xhtml+xml");
         }
         // Heuristic: if Content-Type is missing or text/* but body looks like
         // HTML, convert it anyway (handles misconfigured servers).
@@ -222,8 +226,7 @@ Tool make_web_fetch_tool(const Config& config, int timeout, CancellationToken ca
                 // Check first non-whitespace character is '<' and there's a
                 // known HTML tag or DOCTYPE declaration early in the body.
                 std::size_t remaining = body.size() - start;
-                is_html =
-                    (remaining >= 7 && body.compare(start, 7, "<!DOCTYPE") == 0) ||
+                is_html = (remaining >= 7 && body.compare(start, 7, "<!DOCTYPE") == 0) ||
                     (remaining >= 6 && body.compare(start, 6, "<html ") == 0) ||
                     (remaining >= 6 && body.compare(start, 6, "<html>") == 0);
             }

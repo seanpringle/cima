@@ -6,9 +6,8 @@
 // Tool: call_subagent
 // ===================================================================
 
-Tool make_call_subagent_tool(PrimaryAgent& primary,
-    const std::vector<SubagentConfig>& subagent_configs,
-    int timeout_sec) {
+Tool make_call_subagent_tool(
+    PrimaryAgent& primary, const std::vector<SubagentConfig>& subagent_configs, int timeout_sec) {
     Tool t;
     t.name = "call_subagent";
 
@@ -30,13 +29,12 @@ Tool make_call_subagent_tool(PrimaryAgent& primary,
     }
     t.description = desc;
 
-    t.permission = ToolPermission::Write;  // serialise to prevent concurrent subagent runs
+    t.permission = ToolPermission::Write; // serialise to prevent concurrent subagent runs
     t.timeout_sec = timeout_sec;
 
     t.parameters = {{"type", "object"},
         {"properties",
-            {{"name",
-                 {{"type", "string"}, {"description", "Name of the subagent to invoke"}}},
+            {{"name", {{"type", "string"}, {"description", "Name of the subagent to invoke"}}},
                 {"request",
                     {{"type", "string"},
                         {"description", "The request/prompt to send to the subagent"}}}}},
@@ -72,8 +70,8 @@ Tool make_call_subagent_tool(PrimaryAgent& primary,
             // Already running — reset the future we just set (nobody can be waiting
             // on it because running was false).
             subagent.chat_state->future = std::future<Result<ChatResult>>();
-            return std::unexpected("subagent \"" + name +
-                                   "\" is already running — wait for it to finish");
+            return std::unexpected(
+                "subagent \"" + name + "\" is already running — wait for it to finish");
         }
 
         // Reset subagent state: clear conversation, pending output, UI entries,
@@ -88,8 +86,7 @@ Tool make_call_subagent_tool(PrimaryAgent& primary,
         subagent.ui_state.entries.clear();
 
         // Push the primary agent's request as a UserText entry in the subagent chat
-        subagent.ui_state.entries.push_back(
-            {EntryType::UserText, request, false});
+        subagent.ui_state.entries.push_back({EntryType::UserText, request, false});
 
         // Run the request (may throw only in truly exceptional cases — bad_alloc etc.)
         Result<ChatResult> result;

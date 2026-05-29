@@ -15,14 +15,15 @@ ChatSession::ChatSession(ConfigPtr config,
     CancellationToken cancelled,
     std::shared_ptr<GatingState> gates,
     PlanBoard* plan)
-    : config_(std::move(config)), plan_(plan ? PlanBoardPtr(plan, [](PlanBoard*){}) : std::make_shared<PlanBoard>()), model_(provider.model), reasoning_effort_(provider.reasoning_effort),
+    : config_(std::move(config)),
+      plan_(plan ? PlanBoardPtr(plan, [](PlanBoard*) {}) : std::make_shared<PlanBoard>()),
+      model_(provider.model), reasoning_effort_(provider.reasoning_effort),
       provider_name_(provider.name),
       safe_dir_(std::make_shared<std::string>(std::filesystem::current_path().string())),
-      api_base_(provider.api_base), api_key_(provider.api_key),
-      api_type_(provider.api_type),
-      max_tokens_(provider.max_tokens),
-      max_iterations_(kDefaultMaxToolIterations), context_limit_(provider.context_limit),
-      system_prompt_(config_->SYSTEM_PROMPT), client_(provider.api_base, provider.api_key),
+      api_base_(provider.api_base), api_key_(provider.api_key), api_type_(provider.api_type),
+      max_tokens_(provider.max_tokens), max_iterations_(kDefaultMaxToolIterations),
+      context_limit_(provider.context_limit), system_prompt_(config_->SYSTEM_PROMPT),
+      client_(provider.api_base, provider.api_key),
       file_modified_cb_(std::make_shared<FileModifiedCallback>()),
       cancelled_(cancelled ? std::move(cancelled) : make_cancellation_token()),
       gates_(gates ? std::move(gates) : std::make_shared<GatingState>()) {
@@ -57,8 +58,8 @@ std::unique_ptr<ChatSession> ChatSession::create_subagent(ConfigPtr config,
     }
 
     // Create the session with the given gates (nullptr = fresh default).
-    auto session =
-        std::make_unique<ChatSession>(config, provider, std::move(cancelled), std::move(gates), plan);
+    auto session = std::make_unique<ChatSession>(
+        config, provider, std::move(cancelled), std::move(gates), plan);
     session->system_prompt_ = std::move(sp);
     session->is_read_only_ = read_only;
 
@@ -207,7 +208,9 @@ json ChatSession::build_payload(const std::set<std::string>& allowed_tools) cons
         payload["model"] = model_;
         payload["system"] = ap["system"];
         payload["messages"] = ap["messages"];
-        payload["max_tokens"] = max_tokens_ > 0 ? max_tokens_ : (context_limit_ > 0 ? std::min(context_limit_ / 4, 8192) : 4096);
+        payload["max_tokens"] = max_tokens_ > 0
+            ? max_tokens_
+            : (context_limit_ > 0 ? std::min(context_limit_ / 4, 8192) : 4096);
         payload["stream"] = true;
         auto tools = tools_.to_anthropic_tools(&allowed_tools);
         if (!tools.empty())
@@ -215,7 +218,8 @@ json ChatSession::build_payload(const std::set<std::string>& allowed_tools) cons
         // Map reasoning_effort to Anthropic thinking budget.
         if (!reasoning_effort_.empty() && reasoning_effort_ != "low") {
             int budget = 2000;
-            if (reasoning_effort_ == "high") budget = 4000;
+            if (reasoning_effort_ == "high")
+                budget = 4000;
             payload["thinking"] = {{"type", "enabled"}, {"budget_tokens", budget}};
         }
         return payload;
@@ -386,12 +390,12 @@ Result<void> ChatSession::execute_tool_calls(
             // Capture by value to avoid dangling references in the async thread.
             std::string tool_name = calls[i].name;
             std::string tool_args = calls[i].arguments;
-            futures.push_back(std::async(std::launch::async,
-                [this, tool_name, tool_args] {
-                    if (!this->is_tool_allowed(tool_name))
-                        return Result<std::string>(std::unexpected("tool '" + tool_name + "' is disabled"));
-                    return this->tools_.execute(tool_name, tool_args);
-                }));
+            futures.push_back(std::async(std::launch::async, [this, tool_name, tool_args] {
+                if (!this->is_tool_allowed(tool_name))
+                    return Result<std::string>(
+                        std::unexpected("tool '" + tool_name + "' is disabled"));
+                return this->tools_.execute(tool_name, tool_args);
+            }));
         }
 
         std::vector<Result<std::string>> results;
@@ -530,8 +534,8 @@ Result<void> ChatSession::compact() {
 
     // Second pass: truncate tool results older than the last max_tool_results
     size_t result_count = 0;
-    size_t truncate_before = (total_tool_calls > max_tool_results)
-        ? (total_tool_calls - max_tool_results) : 0;
+    size_t truncate_before =
+        (total_tool_calls > max_tool_results) ? (total_tool_calls - max_tool_results) : 0;
     for (auto& msg : msgs) {
         for (auto& tc : msg.tool_calls) {
             if (result_count < truncate_before && tc.result.size() > 500) {
@@ -566,16 +570,20 @@ Result<void> ChatSession::compact() {
         payload["messages"] = ap["messages"];
         // Append the summarization user message
         payload["messages"].push_back({{"role", "user"}, {"content", compact_user_msg}});
-        payload["max_tokens"] = max_tokens_ > 0 ? max_tokens_ : (context_limit_ > 0 ? std::min(context_limit_ / 4, 8192) : 4096);
+        payload["max_tokens"] = max_tokens_ > 0
+            ? max_tokens_
+            : (context_limit_ > 0 ? std::min(context_limit_ / 4, 8192) : 4096);
         payload["stream"] = true;
         auto tools = tools_.to_anthropic_tools();
-        if (!tools.empty()) payload["tools"] = tools;
+        if (!tools.empty())
+            payload["tools"] = tools;
     } else {
         json messages = json::array();
         messages.push_back({{"role", "system"}, {"content", compact_sys_prompt}});
 
         for (const auto& msg : msgs) {
-            if (msg.role == "system") continue;
+            if (msg.role == "system")
+                continue;
             if (msg.tool_calls.empty()) {
                 json m{{"role", msg.role}};
                 m["content"] = msg.content.value_or("");
@@ -724,5 +732,3 @@ void ChatSession::clear() {
     conversation_.clear();
     last_usage_ = Usage{}; // reset so context pct falls back to estimate(0)
 }
-
-

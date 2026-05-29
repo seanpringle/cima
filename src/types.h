@@ -118,5 +118,3 @@ class SSEParser {
     std::string raw_;
     std::string current_event_;
 };
-
-

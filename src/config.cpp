@@ -16,13 +16,15 @@ std::string Config::SYSTEM_PROMPT =
     "* When given a task, research it thoroughly and write the Plan with `write_plan()`.\n"
     "* Go back and check the Plan at any time with `read_plan()`.\n"
     "* Ask the user to review and approve the Plan before implementation!\n"
-    "* The Plan is managed by the Cima session. Do not try to write it to a file. Strictly use the plan tools.\n"
+    "* The Plan is managed by the Cima session. Do not try to write it to a file. Strictly use the "
+    "plan tools.\n"
     "\n"
     "## Sub Agents\n"
     "\n"
     "* Call subagents with `call_subagent()`.\n"
     "* Use the read-only Explore subagent for code and web research and exploration tasks.\n"
-    "* Use the read-write General subagent for general development tasks that need not clutter your context window.\n"
+    "* Use the read-write General subagent for general development tasks that need not clutter "
+    "your context window.\n"
     "* See tool description for other available subagents.\n"
     "* Subagents can read the Plan but not write to it.\n"
     "\n";
@@ -36,7 +38,8 @@ std::string Config::SUBAGENT_SYSTEM_PROMPT =
     "\n"
     "* There is a **Plan document** shared with the user and primary agent.\n"
     "* When asked to read or review the Plan, use the `read_plan()` tool.\n"
-    "* The Plan is managed by the Cima session. Do not try to read it from a file. Strictly use the plan tool.\n"
+    "* The Plan is managed by the Cima session. Do not try to read it from a file. Strictly use "
+    "the plan tool.\n"
     "\n";
 
 // ---------------------------------------------------------------------------

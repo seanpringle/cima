@@ -23,8 +23,7 @@ Result<void> McpRegistry::start_server(const McpEndpoint& config) {
     // Check for duplicate server names.
     if (servers_.count(config.name)) {
         if (servers_[config.name].running) {
-            return std::unexpected(
-                std::string("MCP server already running: ") + config.name);
+            return std::unexpected(std::string("MCP server already running: ") + config.name);
         }
         // Server exists but not running — remove it so we can recreate.
         servers_.erase(config.name);
@@ -39,16 +38,13 @@ Result<void> McpRegistry::start_server(const McpEndpoint& config) {
             config.command, config.args, config.cwd, config.env, config.timeout_sec);
     } else if (config.transport == "streamable-http") {
         // HTTP transport.
-        start_result = client->start_http(
-            config.url, config.api_key, config.timeout_sec);
+        start_result = client->start_http(config.url, config.api_key, config.timeout_sec);
     } else {
-        return std::unexpected(
-            std::string("Unknown MCP transport: ") + config.transport);
+        return std::unexpected(std::string("Unknown MCP transport: ") + config.transport);
     }
 
     if (!start_result) {
-        return std::unexpected(
-            std::string("Failed to start MCP server '") + config.name +
+        return std::unexpected(std::string("Failed to start MCP server '") + config.name +
             "': " + start_result.error());
     }
 
@@ -56,8 +52,7 @@ Result<void> McpRegistry::start_server(const McpEndpoint& config) {
     auto tools_result = client->list_tools();
     if (!tools_result) {
         client->shutdown();
-        return std::unexpected(
-            std::string("Failed to list tools from MCP server '") + config.name +
+        return std::unexpected(std::string("Failed to list tools from MCP server '") + config.name +
             "': " + tools_result.error());
     }
 
@@ -148,24 +143,21 @@ std::vector<Tool> McpRegistry::all_tools() const {
     return all;
 }
 
-Result<std::string> McpRegistry::execute_tool(const std::string& namespaced_name,
-                                               const json& args) {
+Result<std::string> McpRegistry::execute_tool(
+    const std::string& namespaced_name, const json& args) {
     std::string server_name, tool_name;
     if (!parse_namespaced(namespaced_name, server_name, tool_name)) {
-        return std::unexpected(
-            std::string("Invalid namespaced tool name: ") + namespaced_name +
+        return std::unexpected(std::string("Invalid namespaced tool name: ") + namespaced_name +
             " (expected format: mcp_<server>_<tool>)");
     }
 
     auto it = servers_.find(server_name);
     if (it == servers_.end()) {
-        return std::unexpected(
-            std::string("MCP server not found: ") + server_name);
+        return std::unexpected(std::string("MCP server not found: ") + server_name);
     }
 
     if (!it->second.running) {
-        return std::unexpected(
-            std::string("MCP server is not running: ") + server_name);
+        return std::unexpected(std::string("MCP server is not running: ") + server_name);
     }
 
     if (!it->second.client) {

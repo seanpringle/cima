@@ -17,7 +17,10 @@ void ToolRegistry::add_defaults(const std::string& safe_dir,
     const Config& config,
     bool include_write,
     FileModifiedCallback on_file_modified) {
-    add_defaults(std::make_shared<std::string>(safe_dir), config, include_write, std::move(on_file_modified));
+    add_defaults(std::make_shared<std::string>(safe_dir),
+        config,
+        include_write,
+        std::move(on_file_modified));
 }
 
 void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
@@ -28,7 +31,8 @@ void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
 
     // ── Read-only tools (receive whitelist for extra path access) ──
     {
-        auto t = make_run_bwrap_tool(config, safe_dir_ptr, kDefaultBashTimeout, cancelled_, /*read_only=*/true);
+        auto t = make_run_bwrap_tool(
+            config, safe_dir_ptr, kDefaultBashTimeout, cancelled_, /*read_only=*/true);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
@@ -38,12 +42,14 @@ void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
         add(std::move(t));
     }
     {
-        auto t = make_grep_files_tool(config, safe_dir_ptr, read_only_paths, kDefaultGrepTimeout, cancelled_);
+        auto t = make_grep_files_tool(
+            config, safe_dir_ptr, read_only_paths, kDefaultGrepTimeout, cancelled_);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
     {
-        auto t = make_find_files_tool(config, safe_dir_ptr, read_only_paths, kDefaultGrepTimeout, cancelled_);
+        auto t = make_find_files_tool(
+            config, safe_dir_ptr, read_only_paths, kDefaultGrepTimeout, cancelled_);
         t.permission = ToolPermission::ReadOnly;
         add(std::move(t));
     }
@@ -72,16 +78,19 @@ void ToolRegistry::add_defaults(std::shared_ptr<std::string> safe_dir_ptr,
         }
 
         {
-            auto t = make_run_bwrap_tool(config, safe_dir_ptr, kDefaultBashTimeout, cancelled_, /*read_only=*/false, /*allow_network=*/true);
+            auto t = make_run_bwrap_tool(config,
+                safe_dir_ptr,
+                kDefaultBashTimeout,
+                cancelled_,
+                /*read_only=*/false,
+                /*allow_network=*/true);
             t.permission = ToolPermission::Write;
             add(std::move(t));
         }
     }
 }
 
-json ToolRegistry::to_openai_tools() const {
-    return to_openai_tools(nullptr);
-}
+json ToolRegistry::to_openai_tools() const { return to_openai_tools(nullptr); }
 
 json ToolRegistry::to_openai_tools(const std::set<std::string>* only_these) const {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -96,9 +105,7 @@ json ToolRegistry::to_openai_tools(const std::set<std::string>* only_these) cons
     return arr;
 }
 
-json ToolRegistry::to_anthropic_tools() const {
-    return to_anthropic_tools(nullptr);
-}
+json ToolRegistry::to_anthropic_tools() const { return to_anthropic_tools(nullptr); }
 
 json ToolRegistry::to_anthropic_tools(const std::set<std::string>* only_these) const {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -106,11 +113,8 @@ json ToolRegistry::to_anthropic_tools(const std::set<std::string>* only_these) c
     for (const auto& t : tools_) {
         if (only_these && !only_these->count(t.name))
             continue;
-        arr.push_back({
-            {"name", t.name},
-            {"description", t.description},
-            {"input_schema", t.parameters}
-        });
+        arr.push_back(
+            {{"name", t.name}, {"description", t.description}, {"input_schema", t.parameters}});
     }
     return arr;
 }
@@ -146,7 +150,7 @@ Result<std::string> ToolRegistry::execute(const std::string& name, const std::st
         }
         tool_name = tool->name;
         timeout_sec = tool->timeout_sec;
-        exec_fn = tool->execute;  // copy — keeps callable alive after lock release
+        exec_fn = tool->execute; // copy — keeps callable alive after lock release
     }
 
     if (timeout_sec > 0) {
@@ -165,22 +169,20 @@ Result<std::string> ToolRegistry::execute(const std::string& name, const std::st
 
         auto status = future.wait_for(std::chrono::seconds(timeout_sec));
         if (status == std::future_status::timeout) {
-            return std::unexpected("tool '" + tool_name + "' timed out after " +
-                std::to_string(timeout_sec) + "s");
+            return std::unexpected(
+                "tool '" + tool_name + "' timed out after " + std::to_string(timeout_sec) + "s");
         }
         try {
             return future.get();
         } catch (const std::exception& e) {
-            return std::unexpected(
-                std::string("tool '") + tool_name + "' threw: " + e.what());
+            return std::unexpected(std::string("tool '") + tool_name + "' threw: " + e.what());
         }
     }
 
     try {
         return exec_fn(args);
     } catch (const std::exception& e) {
-        return std::unexpected(
-            std::string("tool '") + tool_name + "' threw: " + e.what());
+        return std::unexpected(std::string("tool '") + tool_name + "' threw: " + e.what());
     }
 }
 

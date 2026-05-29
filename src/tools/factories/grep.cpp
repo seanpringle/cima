@@ -12,27 +12,31 @@
 // grep_files
 // ===================================================================
 
-Tool make_grep_files_tool(const Config& config, std::shared_ptr<std::string> safe_dir_ptr,
-    const std::vector<std::string>& read_only_paths, int timeout, CancellationToken cancelled) {
+Tool make_grep_files_tool(const Config& config,
+    std::shared_ptr<std::string> safe_dir_ptr,
+    const std::vector<std::string>& read_only_paths,
+    int timeout,
+    CancellationToken cancelled) {
     Tool t;
     t.name = "grep_files";
-    t.description =
-        "Search file contents using a regex pattern. "
-        "Respects .gitignore rules when searching within a git repository. "
-        "Use depth=-1 (default) for unlimited recursion, or set depth=N to limit.";
+    t.description = "Search file contents using a regex pattern. "
+                    "Respects .gitignore rules when searching within a git repository. "
+                    "Use depth=-1 (default) for unlimited recursion, or set depth=N to limit.";
     t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},
         {"properties",
             {{"pattern", {{"type", "string"}, {"description", "Regex pattern to search for"}}},
-             {"path",
-                 {{"type", "string"},
-                  {"description", "File or directory to search in (defaults to .)"}}},
-             {"depth",
-                 {{"type", "integer"},
-                  {"description",
-                      "Maximum recursion depth (-1 = unlimited, 0 = root only, default -1)"}}}}},
+                {"path",
+                    {{"type", "string"},
+                        {"description", "File or directory to search in (defaults to .)"}}},
+                {"depth",
+                    {{"type", "integer"},
+                        {"description",
+                            "Maximum recursion depth (-1 = unlimited, 0 = root only, default "
+                            "-1)"}}}}},
         {"required", {"pattern"}}};
-    t.execute = [safe_dir_ptr, read_only_paths, cancelled](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr, read_only_paths, cancelled](
+                    const json& args) -> Result<std::string> {
         auto pattern = args.value("pattern", std::string());
         if (pattern.empty()) {
             return std::unexpected(std::string("pattern is required"));
@@ -77,7 +81,8 @@ Tool make_grep_files_tool(const Config& config, std::shared_ptr<std::string> saf
             if (repo_res) {
                 repo = *repo_res;
                 const char* wd = git_repository_workdir(repo);
-                if (wd) repo_workdir = std::filesystem::path(wd);
+                if (wd)
+                    repo_workdir = std::filesystem::path(wd);
             }
         }
         auto repo_cleanup = std::unique_ptr<git_repository, decltype(&git_repository_free)>(
@@ -144,31 +149,34 @@ Tool make_grep_files_tool(const Config& config, std::shared_ptr<std::string> saf
 // find_files
 // ===================================================================
 
-Tool make_find_files_tool(const Config& config, std::shared_ptr<std::string> safe_dir_ptr,
-    const std::vector<std::string>& read_only_paths, int timeout, CancellationToken cancelled) {
+Tool make_find_files_tool(const Config& config,
+    std::shared_ptr<std::string> safe_dir_ptr,
+    const std::vector<std::string>& read_only_paths,
+    int timeout,
+    CancellationToken cancelled) {
     Tool t;
     t.name = "find_files";
-    t.description =
-        "Find files and directories by name using a regex pattern. "
-        "Matches against the basename (filename) of each entry, not the full path. "
-        "Directory names are listed followed by a '/' character. "
-        "Respects .gitignore rules when searching within a git repository.";
+    t.description = "Find files and directories by name using a regex pattern. "
+                    "Matches against the basename (filename) of each entry, not the full path. "
+                    "Directory names are listed followed by a '/' character. "
+                    "Respects .gitignore rules when searching within a git repository.";
     t.timeout_sec = timeout;
     t.parameters = {{"type", "object"},
         {"properties",
             {{"path",
                  {{"type", "string"},
-                  {"description", "Directory path to search in (defaults to .)"}}},
-             {"pattern",
-                 {{"type", "string"},
-                  {"description",
-                      "Regex pattern to match against entry basename (filename)"}}},
-             {"depth",
-                 {{"type", "integer"},
-                  {"description",
-                      "Maximum recursion depth (1 = immediate children only, default 1)"}}}}},
+                     {"description", "Directory path to search in (defaults to .)"}}},
+                {"pattern",
+                    {{"type", "string"},
+                        {"description",
+                            "Regex pattern to match against entry basename (filename)"}}},
+                {"depth",
+                    {{"type", "integer"},
+                        {"description",
+                            "Maximum recursion depth (1 = immediate children only, default 1)"}}}}},
         {"required", {"pattern"}}};
-    t.execute = [safe_dir_ptr, read_only_paths, cancelled](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr, read_only_paths, cancelled](
+                    const json& args) -> Result<std::string> {
         auto pattern = args.value("pattern", std::string());
         if (pattern.empty()) {
             return std::unexpected(std::string("pattern is required"));
@@ -195,7 +203,8 @@ Tool make_find_files_tool(const Config& config, std::shared_ptr<std::string> saf
             if (repo_res) {
                 repo = *repo_res;
                 const char* wd = git_repository_workdir(repo);
-                if (wd) repo_workdir = std::filesystem::path(wd);
+                if (wd)
+                    repo_workdir = std::filesystem::path(wd);
             }
         }
         auto repo_cleanup = std::unique_ptr<git_repository, decltype(&git_repository_free)>(
@@ -228,7 +237,8 @@ Tool make_find_files_tool(const Config& config, std::shared_ptr<std::string> saf
             }
         } else if (std::filesystem::is_directory(status)) {
             // Helper to compute relative path and append '/' for dirs
-            auto format_entry = [&](const std::filesystem::path& abs_path, bool is_dir) -> std::string {
+            auto format_entry = [&](const std::filesystem::path& abs_path,
+                                    bool is_dir) -> std::string {
                 auto rel = abs_path.lexically_relative(std::filesystem::path(safe_dir));
                 std::string s = rel.generic_string();
                 if (is_dir)

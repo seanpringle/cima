@@ -11,28 +11,41 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-Tool make_run_bwrap_tool(const Config& config, std::shared_ptr<std::string> safe_dir_ptr,
-    int timeout, CancellationToken cancelled,
-    bool read_only, bool allow_network) {
+Tool make_run_bwrap_tool(const Config& config,
+    std::shared_ptr<std::string> safe_dir_ptr,
+    int timeout,
+    CancellationToken cancelled,
+    bool read_only,
+    bool allow_network) {
     Tool t;
     const std::string& safe_dir = *safe_dir_ptr;
     if (read_only) {
         t.name = "run_bwrap_ro";
-        t.description = "Read-only: run a bash command in a bwrap sandbox (restricted filesystem, no network, no writes). Default cwd: " + safe_dir;
+        t.description = "Read-only: run a bash command in a bwrap sandbox (restricted filesystem, "
+                        "no network, no writes). Default cwd: " +
+            safe_dir;
     } else if (allow_network) {
         t.name = "run_bwrap";
-        t.description = "Run a bash command in a bwrap sandbox (restricted filesystem, with network access). Default cwd: " + safe_dir;
+        t.description = "Run a bash command in a bwrap sandbox (restricted filesystem, with "
+                        "network access). Default cwd: " +
+            safe_dir;
     } else {
         t.name = "run_bwrap";
-        t.description = "Run a bash command in a bwrap sandbox (restricted filesystem, no network). Default cwd: " + safe_dir;
+        t.description = "Run a bash command in a bwrap sandbox (restricted filesystem, no "
+                        "network). Default cwd: " +
+            safe_dir;
     }
     t.timeout_sec = 0; // manages its own timeout internally
     t.parameters = {{"type", "object"},
         {"properties",
             {{"command", {{"type", "string"}, {"description", "Shell command to execute"}}},
-             {"cwd", {{"type", "string"}, {"description", "Working directory for the command (default: " + safe_dir + ")"}}}}},
+                {"cwd",
+                    {{"type", "string"},
+                        {"description",
+                            "Working directory for the command (default: " + safe_dir + ")"}}}}},
         {"required", {"command"}}};
-    t.execute = [safe_dir_ptr, timeout, cancelled, read_only, allow_network](const json& args) -> Result<std::string> {
+    t.execute = [safe_dir_ptr, timeout, cancelled, read_only, allow_network](
+                    const json& args) -> Result<std::string> {
         auto command = args.value("command", std::string());
         if (command.empty()) {
             return std::unexpected(std::string("command is required"));
@@ -162,7 +175,8 @@ Tool make_run_bwrap_tool(const Config& config, std::shared_ptr<std::string> safe
             execvp("bwrap", const_cast<char**>(argv));
 
             // If execvp returns, bwrap wasn't found
-            static const char msg[] = "error: bwrap not found — install bubblewrap (apt install bubblewrap)\n";
+            static const char msg[] =
+                "error: bwrap not found — install bubblewrap (apt install bubblewrap)\n";
             write(STDOUT_FILENO, msg, sizeof(msg) - 1);
             _exit(127);
         }

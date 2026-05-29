@@ -1,7 +1,7 @@
 #pragma once
 
-#include "config.h"            // for McpEndpoint
-#include "mcp/mcp_client.h"    // for McpClient, Tool
+#include "config.h"         // for McpEndpoint
+#include "mcp/mcp_client.h" // for McpClient, Tool
 
 #include <map>
 #include <memory>
@@ -19,9 +19,9 @@
 // ---------------------------------------------------------------------------
 
 class McpRegistry {
-public:
+  public:
     McpRegistry() = default;
-    ~McpRegistry();  // shuts down all running servers
+    ~McpRegistry(); // shuts down all running servers
 
     McpRegistry(const McpRegistry&) = delete;
     McpRegistry& operator=(const McpRegistry&) = delete;
@@ -57,18 +57,17 @@ public:
 
     /// Execute a namespaced tool.  The name must be in the form
     /// "mcp_<servername>_<toolname>".
-    Result<std::string> execute_tool(const std::string& namespaced_name,
-                                     const json& args);
+    Result<std::string> execute_tool(const std::string& namespaced_name, const json& args);
 
     /// Re-discover tools from all running servers (re-issue tools/list).
     /// Returns the union of all tools (namespaced).
     Result<std::vector<Tool>> refresh_tools();
 
-private:
+  private:
     struct McpServer {
         McpEndpoint config;
         std::unique_ptr<McpClient> client;
-        std::vector<Tool> tools;   // currently-discovered tools (namespaced)
+        std::vector<Tool> tools; // currently-discovered tools (namespaced)
         bool running = false;
     };
 
@@ -86,20 +85,19 @@ private:
     /// Build the namespaced name for a tool.
     /// Uses underscores so the result matches OpenAI's required pattern
     /// ^[a-zA-Z0-9_-]+$.
-    static std::string tool_namespace(const std::string& server_name,
-                                      const std::string& tool_name) {
+    static std::string tool_namespace(
+        const std::string& server_name, const std::string& tool_name) {
         return "mcp_" + sanitize_name(server_name) + "_" + sanitize_name(tool_name);
     }
 
     /// Parse a namespaced name back into server and tool parts.
     /// Returns false if the name is not in the expected format.
-    static bool parse_namespaced(const std::string& namespaced,
-                                 std::string& server_name,
-                                 std::string& tool_name) {
+    static bool parse_namespaced(
+        const std::string& namespaced, std::string& server_name, std::string& tool_name) {
         // Format: "mcp_<server>_<tool>"
         if (namespaced.rfind("mcp_", 0) != 0)
             return false;
-        auto rest = namespaced.substr(4);  // skip "mcp_"
+        auto rest = namespaced.substr(4); // skip "mcp_"
         auto sep = rest.find('_');
         if (sep == std::string::npos || sep == 0 || sep == rest.size() - 1)
             return false;

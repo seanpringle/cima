@@ -1,6 +1,6 @@
 #pragma once
 
-#include "tools.h"  // for Tool struct
+#include "tools.h" // for Tool struct
 
 #include <nlohmann/json.hpp>
 
@@ -32,7 +32,7 @@ using json = nlohmann::json;
 // ---------------------------------------------------------------------------
 
 class McpClient {
-public:
+  public:
     McpClient();
     ~McpClient();
 
@@ -43,10 +43,10 @@ public:
 
     /// Fork/exec an MCP server and perform the initialize handshake.
     Result<void> start_stdio(const std::string& command,
-                             const std::vector<std::string>& args,
-                             const std::string& cwd = "",
-                             const std::map<std::string, std::string>& env = {},
-                             int timeout_sec = 60);
+        const std::vector<std::string>& args,
+        const std::string& cwd = "",
+        const std::map<std::string, std::string>& env = {},
+        int timeout_sec = 60);
 
     /// Connect to already-established pipes (for testing).
     /// Takes the read end of the server's stdout, and the write end
@@ -55,9 +55,8 @@ public:
 
     /// Connect to a Streamable HTTP MCP endpoint.
     /// This performs an immediate initialize handshake to verify connectivity.
-    Result<void> start_http(const std::string& url,
-                            const std::string& api_key = "",
-                            int timeout_sec = 60);
+    Result<void> start_http(
+        const std::string& url, const std::string& api_key = "", int timeout_sec = 60);
 
     // ── MCP Lifecycle ────────────────────────────────────────────────
 
@@ -91,10 +90,9 @@ public:
     /// Set a cancellation token that will be checked during requests.
     void set_cancelled(std::shared_ptr<std::atomic<bool>> token) { cancelled_ = std::move(token); }
 
-private:
+  private:
     // Internal: send a request and wait for the matching response.
-    Result<json> send_request(const std::string& method, json params,
-                              int timeout_sec = 60);
+    Result<json> send_request(const std::string& method, json params, int timeout_sec = 60);
 
     // Start the background reader thread.
     void start_reader_thread();
@@ -105,8 +103,7 @@ private:
     std::optional<std::string> read_line(int timeout_ms);
 
     // HTTP transport: send a JSON-RPC message via POST.
-    Result<json> http_request(const std::string& method, json params,
-                              int timeout_sec);
+    Result<json> http_request(const std::string& method, json params, int timeout_sec);
 
     // Stored start parameters (for potential crash recovery).
     std::string start_command_;
@@ -118,12 +115,12 @@ private:
     // HTTP transport parameters.
     std::string http_url_;
     std::string http_api_key_;
-    std::string session_id_;   // MCP-Session-Id from server (if returned)
-    bool http_mode_ = false;   // true when using HTTP transport
+    std::string session_id_; // MCP-Session-Id from server (if returned)
+    bool http_mode_ = false; // true when using HTTP transport
 
     // Pipe fds (child's stdin/stdout from our perspective).
-    int write_fd_ = -1;  // write → child's stdin
-    int read_fd_ = -1;   // read  ← child's stdout
+    int write_fd_ = -1; // write → child's stdin
+    int read_fd_ = -1;  // read  ← child's stdout
 
     // Child process.
     pid_t child_pid_ = -1;
@@ -161,15 +158,13 @@ private:
 // ---------------------------------------------------------------------------
 
 /// Encode a JSON value as a single-line message with trailing newline.
-inline std::string mcp_encode(const json& msg) {
-    return msg.dump() + "\n";
-}
+inline std::string mcp_encode(const json& msg) { return msg.dump() + "\n"; }
 
 /// Try to decode one JSON message from a buffer.
 /// Returns nullopt if no complete line is available.
 struct McpDecoded {
     json message;
-    size_t consumed;  ///< bytes consumed (including the newline)
+    size_t consumed; ///< bytes consumed (including the newline)
 };
 
 inline std::optional<McpDecoded> mcp_decode(std::string_view buf) {
@@ -179,7 +174,7 @@ inline std::optional<McpDecoded> mcp_decode(std::string_view buf) {
 
     auto line = buf.substr(0, nl);
     if (line.empty())
-        return std::nullopt;  // skip empty lines
+        return std::nullopt; // skip empty lines
 
     try {
         json msg = json::parse(line);

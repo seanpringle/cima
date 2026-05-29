@@ -190,8 +190,8 @@ Result<std::string> ChatClient::http_get(const std::string& url) {
 // Converts named-event Anthropic SSE streams into OpenAI-format
 // JSON callbacks so ChatSession can share the same on_data logic.
 
-Result<void> ChatClient::stream_chat_anthropic(const json& payload,
-                                              SSEParser::Callbacks callbacks) {
+Result<void> ChatClient::stream_chat_anthropic(
+    const json& payload, SSEParser::Callbacks callbacks) {
     std::string payload_str = payload.dump();
     long http_code = 0;
 
@@ -199,7 +199,7 @@ Result<void> ChatClient::stream_chat_anthropic(const json& payload,
     // to the original callbacks.  State machine:
     struct AnthropicState {
         int active_block_index = -1;
-        std::string active_block_type;       // "text", "tool_use", "thinking"
+        std::string active_block_type; // "text", "tool_use", "thinking"
         std::string tool_id;
         std::string tool_name;
         std::string tool_partial_json;
@@ -237,7 +237,8 @@ Result<void> ChatClient::stream_chat_anthropic(const json& payload,
         // and pass them straight through to the OpenAI parser — they
         // just produce empty deltas and are harmless.
         if (j.contains("choices")) {
-            if (cb) cb("", j);
+            if (cb)
+                cb("", j);
             return;
         }
 
@@ -247,10 +248,10 @@ Result<void> ChatClient::stream_chat_anthropic(const json& payload,
                 const auto& u = j["message"]["usage"];
                 int in = u.value("input_tokens", 0);
                 int out = u.value("output_tokens", 0);
-                json usage_obj = {{"prompt_tokens", in},
-                                  {"completion_tokens", out},
-                                  {"total_tokens", in + out}};
-                if (cb) cb("", {{"usage", std::move(usage_obj)}});
+                json usage_obj = {
+                    {"prompt_tokens", in}, {"completion_tokens", out}, {"total_tokens", in + out}};
+                if (cb)
+                    cb("", {{"usage", std::move(usage_obj)}});
             }
         } else if (ev == "content_block_start") {
             s->active_block_index = j.value("index", 0);
@@ -273,15 +274,15 @@ Result<void> ChatClient::stream_chat_anthropic(const json& payload,
 
             if (dt == "text_delta") {
                 std::string text = delta.value("text", "");
-                json fake = {{"choices",
-                    {{{"delta", {{"content", text}}}}}}};
-                if (cb) cb("", fake);
+                json fake = {{"choices", {{{"delta", {{"content", text}}}}}}};
+                if (cb)
+                    cb("", fake);
             } else if (dt == "thinking_delta") {
                 std::string think = delta.value("thinking", "");
                 s->thinking_text += think;
-                json fake = {{"choices",
-                    {{{"delta", {{"reasoning_content", think}}}}}}};
-                if (cb) cb("", fake);
+                json fake = {{"choices", {{{"delta", {{"reasoning_content", think}}}}}}};
+                if (cb)
+                    cb("", fake);
             } else if (dt == "input_json_delta") {
                 s->tool_partial_json += delta.value("partial_json", "");
             } else if (dt == "signature_delta") {
@@ -292,18 +293,14 @@ Result<void> ChatClient::stream_chat_anthropic(const json& payload,
                 // Parse the accumulated partial JSON into the tool arguments
                 std::string args = s->tool_partial_json;
                 // The partial JSON may be a complete JSON object; use it directly
-                json tc_arr = json::array({{
-                    {"index", s->tool_call_counter},
+                json tc_arr = json::array({{{"index", s->tool_call_counter},
                     {"id", s->tool_id},
                     {"type", "function"},
-                    {"function",
-                        {{"name", s->tool_name},
-                         {"arguments", args}}}
-                }});
+                    {"function", {{"name", s->tool_name}, {"arguments", args}}}}});
                 s->tool_call_counter++;
-                json fake = {{"choices",
-                    {{{"delta", {{"tool_calls", std::move(tc_arr)}}}}}}};
-                if (cb) cb("", fake);
+                json fake = {{"choices", {{{"delta", {{"tool_calls", std::move(tc_arr)}}}}}}};
+                if (cb)
+                    cb("", fake);
             }
             s->active_block_type.clear();
         } else if (ev == "message_delta") {
@@ -311,10 +308,10 @@ Result<void> ChatClient::stream_chat_anthropic(const json& payload,
                 const auto& u = j["usage"];
                 int out = u.value("output_tokens", 0);
                 int in = 0; // cumulative input tokens not included in delta
-                json usage_obj = {{"prompt_tokens", in},
-                                  {"completion_tokens", out},
-                                  {"total_tokens", in + out}};
-                if (cb) cb("", {{"usage", std::move(usage_obj)}});
+                json usage_obj = {
+                    {"prompt_tokens", in}, {"completion_tokens", out}, {"total_tokens", in + out}};
+                if (cb)
+                    cb("", {{"usage", std::move(usage_obj)}});
             }
         } else if (ev == "message_stop") {
             // No additional data to emit; done signal handled by on_done
@@ -322,7 +319,8 @@ Result<void> ChatClient::stream_chat_anthropic(const json& payload,
             std::string msg = "Anthropic stream error";
             if (j.contains("error") && j["error"].is_object())
                 msg = j["error"].value("message", msg);
-            if (err_cb) err_cb(msg);
+            if (err_cb)
+                err_cb(msg);
         }
         // "ping" events are ignored
     };
@@ -374,8 +372,8 @@ Result<void> ChatClient::stream_chat_anthropic(const json& payload,
             break;
 
         bool recoverable = (res == CURLE_OK && should_retry(http_code)) ||
-            res == CURLE_SEND_ERROR || res == CURLE_RECV_ERROR ||
-            res == CURLE_OPERATION_TIMEDOUT || res == CURLE_COULDNT_CONNECT;
+            res == CURLE_SEND_ERROR || res == CURLE_RECV_ERROR || res == CURLE_OPERATION_TIMEDOUT ||
+            res == CURLE_COULDNT_CONNECT;
         if (!recoverable)
             break;
 

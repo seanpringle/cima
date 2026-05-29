@@ -26,11 +26,11 @@ template <typename T> using Result = std::expected<T, std::string>;
 
 // ── Default knob values (can be overridden per-session via SessionData) ──
 inline constexpr int kDefaultMaxToolIterations = 100;
-inline constexpr int kDefaultSubagentTimeout  = 600;
-inline constexpr int kDefaultBashTimeout      = 30;
-inline constexpr int kDefaultGrepTimeout      = 10;
+inline constexpr int kDefaultSubagentTimeout = 600;
+inline constexpr int kDefaultBashTimeout = 30;
+inline constexpr int kDefaultGrepTimeout = 10;
 inline constexpr int kDefaultWebSearchTimeout = 15;
-inline constexpr int kDefaultWebFetchTimeout  = 15;
+inline constexpr int kDefaultWebFetchTimeout = 15;
 
 /// A single MCP endpoint definition from cima.json.
 struct McpEndpoint {
@@ -44,7 +44,7 @@ struct McpEndpoint {
     std::string url;     // e.g. "http://localhost:3100/mcp"
     std::string api_key; // Bearer token for Authorization header
     // Common:
-    std::string description;                 // human-readable description (for prompt table)
+    std::string description;                // human-readable description (for prompt table)
     std::map<std::string, std::string> env; // extra env vars for stdio
     int timeout_sec = 60;
 };
@@ -67,8 +67,8 @@ struct Provider {
     std::string api_base; // e.g. "https://api.opencode.go/v1"
     std::string api_key;
     std::string api_type = "openai"; // "openai" | "anthropic" (default for sessions)
-    std::string model;            // default model for this provider
-    std::string reasoning_effort; // reasoning effort (empty = not set / omit from API)
+    std::string model;               // default model for this provider
+    std::string reasoning_effort;    // reasoning effort (empty = not set / omit from API)
     std::vector<std::string> reasoning_efforts; // allowed values for the dropdown
     int context_limit = 300000;                 // model context window (tokens)
     int max_tokens = 0;                         // 0 = auto-derive from context_limit / 4

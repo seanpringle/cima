@@ -72,7 +72,10 @@ class ChatSession {
 
     /// Return the effective API type (set by provider default or per-tab combo).
     const std::string& effective_api_type() const { return api_type_; }
-    void set_api_type(const std::string& t) { api_type_ = t; client_.set_api_type(t); }
+    void set_api_type(const std::string& t) {
+        api_type_ = t;
+        client_.set_api_type(t);
+    }
     const std::string& api_type() const { return api_type_; }
     int max_tokens() const { return max_tokens_; }
 
@@ -176,8 +179,8 @@ class ChatSession {
     /// the tool description with available names.
     /// The primary pointer and configs are stored so the tool can be re-registered
     /// with a different timeout later (see reregister_call_subagent_tool).
-    void register_call_subagent_tool(
-        PrimaryAgent& primary, const std::vector<SubagentConfig>& subagent_configs = {},
+    void register_call_subagent_tool(PrimaryAgent& primary,
+        const std::vector<SubagentConfig>& subagent_configs = {},
         int timeout_sec = kDefaultSubagentTimeout) {
         call_subagent_primary_ = &primary;
         call_subagent_configs_ = subagent_configs;
@@ -256,10 +259,10 @@ class ChatSession {
     std::string agent_name_;
     std::string provider_name_;
     std::shared_ptr<std::string> safe_dir_;
-    std::string api_base_;     // API base URL (for creating temp clients)
-    std::string api_key_;      // API key for authentication
-    std::string api_type_ = "openai"; // effective API type for current model
-    int max_tokens_ = 0;       // 0 = auto-derive from context_limit/4
+    std::string api_base_;                           // API base URL (for creating temp clients)
+    std::string api_key_;                            // API key for authentication
+    std::string api_type_ = "openai";                // effective API type for current model
+    int max_tokens_ = 0;                             // 0 = auto-derive from context_limit/4
     int max_iterations_ = kDefaultMaxToolIterations; // overridden by session knob
     std::shared_ptr<FileModifiedCallback> file_modified_cb_;
     std::string system_prompt_;

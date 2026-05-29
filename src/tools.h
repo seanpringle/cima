@@ -169,13 +169,15 @@ std::string extract_uddg_url(const std::string& ddg_url);
 // ---------------------------------------------------------------------------
 // Tool factory declarations (used by ToolRegistry::add_defaults)
 // ---------------------------------------------------------------------------
-Tool make_read_file_tool(std::shared_ptr<std::string> safe_dir_ptr,
-    const std::vector<std::string>& read_only_paths);
-Tool make_grep_files_tool(const Config& config, std::shared_ptr<std::string> safe_dir_ptr,
+Tool make_read_file_tool(
+    std::shared_ptr<std::string> safe_dir_ptr, const std::vector<std::string>& read_only_paths);
+Tool make_grep_files_tool(const Config& config,
+    std::shared_ptr<std::string> safe_dir_ptr,
     const std::vector<std::string>& read_only_paths,
     int timeout,
     CancellationToken cancelled = nullptr);
-Tool make_find_files_tool(const Config& config, std::shared_ptr<std::string> safe_dir_ptr,
+Tool make_find_files_tool(const Config& config,
+    std::shared_ptr<std::string> safe_dir_ptr,
     const std::vector<std::string>& read_only_paths,
     int timeout,
     CancellationToken cancelled = nullptr);
@@ -183,7 +185,8 @@ Tool make_write_file_tool(
     std::shared_ptr<std::string> safe_dir_ptr, FileModifiedCallback on_file_modified = nullptr);
 Tool make_edit_file_tool(
     std::shared_ptr<std::string> safe_dir_ptr, FileModifiedCallback on_file_modified = nullptr);
-Tool make_run_bwrap_tool(const Config& config, std::shared_ptr<std::string> safe_dir_ptr,
+Tool make_run_bwrap_tool(const Config& config,
+    std::shared_ptr<std::string> safe_dir_ptr,
     int timeout,
     CancellationToken cancelled = nullptr,
     bool read_only = false,
@@ -191,8 +194,7 @@ Tool make_run_bwrap_tool(const Config& config, std::shared_ptr<std::string> safe
 Tool make_web_search_tool(const Config& config, int timeout, CancellationToken cancelled = nullptr);
 Tool make_web_fetch_tool(const Config& config, int timeout, CancellationToken cancelled = nullptr);
 
-
-class ChatSession; // forward decl for SubagentLookup
+class ChatSession;   // forward decl for SubagentLookup
 class SkillRegistry; // forward decl for skill tool
 
 struct PrimaryAgent;

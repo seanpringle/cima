@@ -94,13 +94,20 @@ json SessionData::to_json() const {
 
     // Serialise knobs (sparse — only non-zero values)
     json k = json::object();
-    if (max_tool_iterations > 0)  k["max_tool_iterations"] = max_tool_iterations;
-    if (subagent_timeout > 0)     k["subagent_timeout"] = subagent_timeout;
-    if (bash_timeout > 0)         k["bash_timeout"] = bash_timeout;
-    if (grep_timeout > 0)         k["grep_timeout"] = grep_timeout;
-    if (web_search_timeout > 0)   k["web_search_timeout"] = web_search_timeout;
-    if (web_fetch_timeout > 0)    k["web_fetch_timeout"] = web_fetch_timeout;
-    if (!k.empty()) j["knobs"] = std::move(k);
+    if (max_tool_iterations > 0)
+        k["max_tool_iterations"] = max_tool_iterations;
+    if (subagent_timeout > 0)
+        k["subagent_timeout"] = subagent_timeout;
+    if (bash_timeout > 0)
+        k["bash_timeout"] = bash_timeout;
+    if (grep_timeout > 0)
+        k["grep_timeout"] = grep_timeout;
+    if (web_search_timeout > 0)
+        k["web_search_timeout"] = web_search_timeout;
+    if (web_fetch_timeout > 0)
+        k["web_fetch_timeout"] = web_fetch_timeout;
+    if (!k.empty())
+        j["knobs"] = std::move(k);
 
     return j;
 }
@@ -236,12 +243,12 @@ void SessionData::from_json(const json& j) {
     // Deserialise knobs (sparse — missing or zero means use code default)
     if (j.contains("knobs") && j["knobs"].is_object()) {
         auto& k = j["knobs"];
-        max_tool_iterations  = k.value("max_tool_iterations", 0);
-        subagent_timeout     = k.value("subagent_timeout", 0);
-        bash_timeout         = k.value("bash_timeout", 0);
-        grep_timeout         = k.value("grep_timeout", 0);
-        web_search_timeout   = k.value("web_search_timeout", 0);
-        web_fetch_timeout    = k.value("web_fetch_timeout", 0);
+        max_tool_iterations = k.value("max_tool_iterations", 0);
+        subagent_timeout = k.value("subagent_timeout", 0);
+        bash_timeout = k.value("bash_timeout", 0);
+        grep_timeout = k.value("grep_timeout", 0);
+        web_search_timeout = k.value("web_search_timeout", 0);
+        web_fetch_timeout = k.value("web_fetch_timeout", 0);
     }
 }
 

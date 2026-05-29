@@ -56,8 +56,9 @@ Tool make_write_plan_tool(PlanBoard& board) {
         {"required", {"content"}}};
 
     t.execute = [&board](const json& args) -> Result<std::string> {
-        for (auto& el: args.items()) {
-            if (el.key() == "content") continue;
+        for (auto& el : args.items()) {
+            if (el.key() == "content")
+                continue;
             return std::unexpected("unknown argument: " + el.key());
         }
         if (!args.contains("content")) {

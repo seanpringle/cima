@@ -220,7 +220,9 @@ static void render_frame(PrimaryAgent& primary, bool& done, PlanBoard& plan) {
         auto chatSize = ImVec2(-1, space.y);
         // Left panel: session tabs
         SetCursorPos(planPos);
-        BeginChild("##left-session-tabs", planSize, ImGuiChildFlags_None,
+        BeginChild("##left-session-tabs",
+            planSize,
+            ImGuiChildFlags_None,
             ImGuiWindowFlags_AlwaysVerticalScrollbar);
 
         if (BeginTabBar("##session-tabs")) {
@@ -340,7 +342,7 @@ int gui_main(const std::string& session_name, ConfigPtr cfg_ptr, PlanBoardPtr pl
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
 
-        PushStyleColor(ImGuiCol_ScrollbarBg, IM_COL32(40,40,40,255));
+        PushStyleColor(ImGuiCol_ScrollbarBg, IM_COL32(40, 40, 40, 255));
         render_frame(primary, done, *plan_ptr);
         PopStyleColor();
 

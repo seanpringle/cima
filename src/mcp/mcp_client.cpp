@@ -25,8 +25,10 @@ McpClient::~McpClient() {
         reader_stop_ = true;
         reader_thread_.join();
     }
-    if (read_fd_ >= 0) close(read_fd_);
-    if (write_fd_ >= 0) close(write_fd_);
+    if (read_fd_ >= 0)
+        close(read_fd_);
+    if (write_fd_ >= 0)
+        close(write_fd_);
 }
 
 // ===================================================================
@@ -34,10 +36,10 @@ McpClient::~McpClient() {
 // ===================================================================
 
 Result<void> McpClient::start_stdio(const std::string& command,
-                                     const std::vector<std::string>& args,
-                                     const std::string& cwd,
-                                     const std::map<std::string, std::string>& env,
-                                     int timeout_sec) {
+    const std::vector<std::string>& args,
+    const std::string& cwd,
+    const std::map<std::string, std::string>& env,
+    int timeout_sec) {
     // Store parameters for potential crash recovery.
     start_command_ = command;
     start_args_ = args;
@@ -63,8 +65,8 @@ Result<void> McpClient::start_stdio(const std::string& command,
 
     if (child_pid_ == 0) {
         // ── Child ──
-        close(stdin_pipe[1]);   // close write end of stdin pipe
-        close(stdout_pipe[0]);  // close read end of stdout pipe
+        close(stdin_pipe[1]);  // close write end of stdin pipe
+        close(stdout_pipe[0]); // close read end of stdout pipe
 
         dup2(stdin_pipe[0], STDIN_FILENO);
         close(stdin_pipe[0]);
@@ -98,8 +100,8 @@ Result<void> McpClient::start_stdio(const std::string& command,
     }
 
     // ── Parent ──
-    write_fd_ = stdin_pipe[1];   // write to child's stdin
-    read_fd_ = stdout_pipe[0];   // read from child's stdout
+    write_fd_ = stdin_pipe[1]; // write to child's stdin
+    read_fd_ = stdout_pipe[0]; // read from child's stdout
     close(stdin_pipe[0]);
     close(stdout_pipe[1]);
 
@@ -107,9 +109,8 @@ Result<void> McpClient::start_stdio(const std::string& command,
     return initialize();
 }
 
-Result<void> McpClient::start_http(const std::string& url,
-                                    const std::string& api_key,
-                                    int timeout_sec) {
+Result<void> McpClient::start_http(
+    const std::string& url, const std::string& api_key, int timeout_sec) {
     http_url_ = url;
     http_api_key_ = api_key;
     start_timeout_sec_ = timeout_sec;
@@ -126,8 +127,10 @@ Result<void> McpClient::connect(int read_fd, int write_fd) {
     if (reader_thread_.joinable()) {
         reader_thread_.join();
     }
-    if (read_fd_ >= 0) close(read_fd_);
-    if (write_fd_ >= 0) close(write_fd_);
+    if (read_fd_ >= 0)
+        close(read_fd_);
+    if (write_fd_ >= 0)
+        close(write_fd_);
     running_ = false;
 
     read_fd_ = read_fd;
@@ -143,14 +146,9 @@ Result<void> McpClient::connect(int read_fd, int write_fd) {
 Result<void> McpClient::initialize() {
     if (http_mode_) {
         // ── HTTP transport: POST the initialize request ──
-        json init_params = {
-            {"protocolVersion", "2025-11-25"},
+        json init_params = {{"protocolVersion", "2025-11-25"},
             {"capabilities", json::object()},
-            {"clientInfo", {
-                {"name", "cima"},
-                {"version", "1.0"}
-            }}
-        };
+            {"clientInfo", {{"name", "cima"}, {"version", "1.0"}}}};
 
         auto resp = http_request("initialize", std::move(init_params), start_timeout_sec_);
         if (!resp) {
@@ -181,14 +179,9 @@ Result<void> McpClient::initialize() {
     running_ = true;
     start_reader_thread();
 
-    json init_params = {
-        {"protocolVersion", "2025-11-25"},
+    json init_params = {{"protocolVersion", "2025-11-25"},
         {"capabilities", json::object()},
-        {"clientInfo", {
-            {"name", "cima"},
-            {"version", "1.0"}
-        }}
-    };
+        {"clientInfo", {{"name", "cima"}, {"version", "1.0"}}}};
 
     auto resp = send_request("initialize", std::move(init_params), start_timeout_sec_);
     if (!resp) {
@@ -241,11 +234,9 @@ Result<std::vector<Tool>> McpClient::list_tools() {
                     tool.parameters["type"] = "object";
                 }
             } else {
-                tool.parameters = json::object({
-                    {"type", "object"},
+                tool.parameters = json::object({{"type", "object"},
                     {"properties", json::object()},
-                    {"required", json::array()}
-                });
+                    {"required", json::array()}});
             }
             tools.push_back(std::move(tool));
         }
@@ -382,10 +373,12 @@ void McpClient::reader_thread_main() {
 
         int ret = poll(&pfd, 1, 200); // 200ms interval to check stop flag
         if (ret < 0) {
-            if (errno == EINTR) continue;
+            if (errno == EINTR)
+                continue;
             break; // error
         }
-        if (ret == 0) continue; // timeout, loop back to check stop
+        if (ret == 0)
+            continue; // timeout, loop back to check stop
 
         if (!(pfd.revents & POLLIN)) {
             if (pfd.revents & (POLLHUP | POLLERR)) {
@@ -496,8 +489,7 @@ static size_t mcp_http_header_cb(char* ptr, size_t size, size_t nmemb, void* use
     return size * nmemb;
 }
 
-Result<json> McpClient::http_request(const std::string& method, json params,
-                                      int timeout_sec) {
+Result<json> McpClient::http_request(const std::string& method, json params, int timeout_sec) {
     CURL* curl = curl_easy_init();
     if (!curl) {
         return std::unexpected(std::string("curl_easy_init failed"));
@@ -564,14 +556,12 @@ Result<json> McpClient::http_request(const std::string& method, json params,
     curl_easy_cleanup(curl);
 
     if (res != CURLE_OK) {
-        return std::unexpected(
-            std::string("MCP HTTP request failed: ") + curl_easy_strerror(res));
+        return std::unexpected(std::string("MCP HTTP request failed: ") + curl_easy_strerror(res));
     }
 
     if (http_code < 200 || http_code >= 300) {
         return std::unexpected(
-            std::string("MCP HTTP error: ") + std::to_string(http_code) +
-            " " + response_body);
+            std::string("MCP HTTP error: ") + std::to_string(http_code) + " " + response_body);
     }
 
     // Check for MCP-Session-Id in response headers.
@@ -613,8 +603,7 @@ Result<json> McpClient::http_request(const std::string& method, json params,
 // Request / Response (stdio transport)
 // ===================================================================
 
-Result<json> McpClient::send_request(const std::string& method, json params,
-                                      int timeout_sec) {
+Result<json> McpClient::send_request(const std::string& method, json params, int timeout_sec) {
     if (!running_) {
         return std::unexpected(std::string("MCP server is not running"));
     }
@@ -646,15 +635,17 @@ Result<json> McpClient::send_request(const std::string& method, json params,
         std::lock_guard<std::mutex> lock(pending_mutex_);
         auto it = pending_.find(id);
         if (it != pending_.end()) {
-            try { it->second.set_value(json()); } catch (...) {}
+            try {
+                it->second.set_value(json());
+            } catch (...) {
+            }
             pending_.erase(it);
         }
         return std::unexpected(std::string("failed to write to MCP server"));
     }
 
     // Wait for response with timeout, polling the cancellation token.
-    auto deadline = std::chrono::steady_clock::now() +
-                    std::chrono::seconds(timeout_sec);
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeout_sec);
     constexpr auto poll_interval = std::chrono::milliseconds(200);
 
     while (true) {
@@ -663,7 +654,10 @@ Result<json> McpClient::send_request(const std::string& method, json params,
             std::lock_guard<std::mutex> lock(pending_mutex_);
             auto it = pending_.find(id);
             if (it != pending_.end()) {
-                try { it->second.set_value(json()); } catch (...) {}
+                try {
+                    it->second.set_value(json());
+                } catch (...) {
+                }
                 pending_.erase(it);
             }
             return std::unexpected(
@@ -676,19 +670,21 @@ Result<json> McpClient::send_request(const std::string& method, json params,
             std::lock_guard<std::mutex> lock(pending_mutex_);
             auto it = pending_.find(id);
             if (it != pending_.end()) {
-                try { it->second.set_value(json()); } catch (...) {}
+                try {
+                    it->second.set_value(json());
+                } catch (...) {
+                }
                 pending_.erase(it);
             }
-            return std::unexpected(
-                std::string("MCP request timed out after ") +
+            return std::unexpected(std::string("MCP request timed out after ") +
                 std::to_string(timeout_sec) + "s (method: " + method + ")");
         }
 
         // Wait for the future with a short timeout so we can poll.
-        auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
-            deadline - now).count();
-        auto wait_time = std::min(poll_interval,
-                                  std::chrono::milliseconds(std::max(remaining, 1L)));
+        auto remaining =
+            std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
+        auto wait_time =
+            std::min(poll_interval, std::chrono::milliseconds(std::max(remaining, 1L)));
 
         auto status = future.wait_for(wait_time);
         if (status == std::future_status::ready) {
@@ -721,9 +717,7 @@ Result<json> McpClient::send_request(const std::string& method, json params,
 // Status
 // ===================================================================
 
-bool McpClient::is_running() const {
-    return running_;
-}
+bool McpClient::is_running() const { return running_; }
 
 // ===================================================================
 // I/O helpers — newline-delimited JSON
@@ -739,7 +733,8 @@ bool McpClient::write_line(const std::string& data) {
     while (remaining > 0) {
         ssize_t n = write(write_fd_, ptr, remaining);
         if (n <= 0) {
-            if (errno == EINTR) continue;
+            if (errno == EINTR)
+                continue;
             return false;
         }
         ptr += n;
@@ -764,13 +759,13 @@ std::optional<std::string> McpClient::read_line(int timeout_ms) {
     }
 
     // Read more data until we have a complete line or timeout.
-    auto deadline = std::chrono::steady_clock::now() +
-                    std::chrono::milliseconds(timeout_ms);
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
     char tmp[4096];
 
     while (true) {
         auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
-            deadline - std::chrono::steady_clock::now()).count();
+            deadline - std::chrono::steady_clock::now())
+                             .count();
         if (remaining < 0)
             return std::nullopt; // timeout
 

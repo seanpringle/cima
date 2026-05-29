@@ -22,8 +22,7 @@
 static bool binary_available(const std::string& name) {
     // Quick check common locations first.
     static const std::vector<std::string> prefixes = {
-        "/usr/bin/", "/usr/sbin/", "/usr/local/bin/", "/bin/", "/sbin/"
-    };
+        "/usr/bin/", "/usr/sbin/", "/usr/local/bin/", "/bin/", "/sbin/"};
     for (const auto& prefix : prefixes) {
         if (std::filesystem::exists(prefix + name))
             return true;
@@ -36,7 +35,8 @@ static bool binary_available(const std::string& name) {
     size_t start = 0;
     while (true) {
         auto colon = path.find(':', start);
-        std::string dir = (colon == std::string::npos) ? path.substr(start) : path.substr(start, colon - start);
+        std::string dir =
+            (colon == std::string::npos) ? path.substr(start) : path.substr(start, colon - start);
         if (!dir.empty()) {
             std::string full = dir + "/" + name;
             if (std::filesystem::exists(full))
@@ -190,7 +190,7 @@ static void render_provider_model_ui(Agent& tab, ChatSession& session) {
 void render_provider_model_inline(Agent& tab, ChatSession& session) {
     PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4, 4));
 
-    float width = GetContentRegionAvail().x/4 - GetStyle().ItemSpacing.x*2;
+    float width = GetContentRegionAvail().x / 4 - GetStyle().ItemSpacing.x * 2;
 
     // ── Provider combo ──
     {
@@ -219,7 +219,7 @@ void render_provider_model_inline(Agent& tab, ChatSession& session) {
 
     // ── Model combo ──
     {
-        SameLine(0,GetStyle().ItemSpacing.x);
+        SameLine(0, GetStyle().ItemSpacing.x);
         SetNextItemWidth(width);
         auto& cache_entry = g_provider_models[tab.provider_name];
 
@@ -238,7 +238,8 @@ void render_provider_model_inline(Agent& tab, ChatSession& session) {
             char buf[256];
             strncpy(buf, session.model().c_str(), sizeof(buf) - 1);
             buf[sizeof(buf) - 1] = '\0';
-            if (InputText("##model-manual", buf, sizeof(buf), ImGuiInputTextFlags_EnterReturnsTrue)) {
+            if (InputText(
+                    "##model-manual", buf, sizeof(buf), ImGuiInputTextFlags_EnterReturnsTrue)) {
                 std::string new_model(buf);
                 if (!new_model.empty()) {
                     session.set_model(new_model);
@@ -265,7 +266,7 @@ void render_provider_model_inline(Agent& tab, ChatSession& session) {
 
     // ── API type combo ──
     {
-        SameLine(0,GetStyle().ItemSpacing.x);
+        SameLine(0, GetStyle().ItemSpacing.x);
         SetNextItemWidth(width);
         std::string current = tab.api_type.empty() ? session.api_type() : tab.api_type;
         if (BeginCombo("##inline-apitype", current.c_str())) {
@@ -286,7 +287,7 @@ void render_provider_model_inline(Agent& tab, ChatSession& session) {
 
     // ── Reasoning effort combo ──
     {
-        SameLine(0,GetStyle().ItemSpacing.x);
+        SameLine(0, GetStyle().ItemSpacing.x);
         SetNextItemWidth(GetContentRegionAvail().x);
         std::string re =
             tab.reasoning_effort.empty() ? session.reasoning_effort() : tab.reasoning_effort;
@@ -385,13 +386,13 @@ void render_config_tab(PrimaryAgent& tab) {
 
                     // Categorisation helpers.
                     auto category_of = [](const std::string& name) -> const char* {
-                        if (name == "read_file" || name == "grep_files" ||
-                            name == "write_file" || name == "edit_file" ||
-                            name == "find_files")
+                        if (name == "read_file" || name == "grep_files" || name == "write_file" ||
+                            name == "edit_file" || name == "find_files")
                             return "File";
                         if (name == "web_search" || name == "web_fetch")
                             return "Web";
-                        if (name == "run_bwrap" || name == "run_bwrap_ro" || name == "call_subagent")
+                        if (name == "run_bwrap" || name == "run_bwrap_ro" ||
+                            name == "call_subagent")
                             return "Execution";
                         return "Other";
                     };
@@ -743,7 +744,8 @@ void render_config_tab(PrimaryAgent& tab) {
                                 session.stop_custom_mcp_server(tab.mcp_edit.original_name);
 
                                 // Find and replace in vector
-                                for (auto it = tab.session_.session_data().custom_mcp_servers.begin();
+                                for (auto it =
+                                         tab.session_.session_data().custom_mcp_servers.begin();
                                     it != tab.session_.session_data().custom_mcp_servers.end();
                                     ++it) {
                                     if (it->name == tab.mcp_edit.original_name) {
@@ -752,14 +754,16 @@ void render_config_tab(PrimaryAgent& tab) {
                                     }
                                 }
                             } else {
-                                tab.session_.session_data().custom_mcp_servers.push_back(std::move(mcp));
+                                tab.session_.session_data().custom_mcp_servers.push_back(
+                                    std::move(mcp));
                             }
 
                             // Start the server (find by name — works for both add and edit)
                             tab.mcp_enabled[name] = true;
                             {
                                 bool started = false;
-                                for (const auto& s : tab.session_.session_data().custom_mcp_servers) {
+                                for (const auto& s :
+                                    tab.session_.session_data().custom_mcp_servers) {
                                     if (s.name == name) {
                                         auto result = session.start_custom_mcp_server(s);
                                         if (!result) {
@@ -980,7 +984,8 @@ void render_config_tab(PrimaryAgent& tab) {
                             tab.snippet_edit.error = std::move(err);
                         } else {
                             if (!tab.snippet_edit.original_name.empty())
-                                tab.session_.session_data().snippets.erase(tab.snippet_edit.original_name);
+                                tab.session_.session_data().snippets.erase(
+                                    tab.snippet_edit.original_name);
                             tab.session_.session_data().snippets[name] =
                                 std::string(tab.snippet_edit.content_buf.data());
                             tab.snippet_edit.active = false;
@@ -1026,7 +1031,7 @@ void render_config_tab(PrimaryAgent& tab) {
                             tab.snippet_edit.name_buf.begin(), tab.snippet_edit.name_buf.end(), 0);
                         std::fill(tab.snippet_edit.content_buf.begin(),
                             tab.snippet_edit.content_buf.end(),
-                             0);
+                            0);
                         std::copy(
                             it->first.begin(), it->first.end(), tab.snippet_edit.name_buf.begin());
                         std::copy(it->second.begin(),
@@ -1054,7 +1059,8 @@ void render_config_tab(PrimaryAgent& tab) {
                     int display = sd_field > 0 ? sd_field : code_default;
                     PushID(label);
                     if (InputInt(label, &display)) {
-                        if (display < 0) display = 0;
+                        if (display < 0)
+                            display = 0;
                         sd_field = (display == code_default) ? 0 : display;
                         changed = true;
                     }
@@ -1065,11 +1071,13 @@ void render_config_tab(PrimaryAgent& tab) {
                     }
                 };
 
-                knob_int("Max Tool Iterations", knobs.max_tool_iterations, kDefaultMaxToolIterations);
+                knob_int(
+                    "Max Tool Iterations", knobs.max_tool_iterations, kDefaultMaxToolIterations);
                 knob_int("Subagent Timeout (s)", knobs.subagent_timeout, kDefaultSubagentTimeout);
                 knob_int("Bash Timeout (s)", knobs.bash_timeout, kDefaultBashTimeout);
                 knob_int("Grep Timeout (s)", knobs.grep_timeout, kDefaultGrepTimeout);
-                knob_int("Web Search Timeout (s)", knobs.web_search_timeout, kDefaultWebSearchTimeout);
+                knob_int(
+                    "Web Search Timeout (s)", knobs.web_search_timeout, kDefaultWebSearchTimeout);
                 knob_int("Web Fetch Timeout (s)", knobs.web_fetch_timeout, kDefaultWebFetchTimeout);
 
                 if (changed) {
@@ -1088,7 +1096,8 @@ void render_config_tab(PrimaryAgent& tab) {
                     std::string prompt = tab.session->effective_prompt();
                     BeginDisabled(true);
                     InputTextMultiline("##sysprompt",
-                        prompt.data(), prompt.size(),
+                        prompt.data(),
+                        prompt.size(),
                         ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 20),
                         ImGuiInputTextFlags_ReadOnly);
                     EndDisabled();
@@ -1104,7 +1113,8 @@ void render_config_tab(PrimaryAgent& tab) {
                     BeginDisabled(true);
                     PushFont(mono_font);
                     InputTextMultiline("##toolsjson",
-                        tools.data(), tools.size(),
+                        tools.data(),
+                        tools.size(),
                         ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 20),
                         ImGuiInputTextFlags_ReadOnly);
                     PopFont();

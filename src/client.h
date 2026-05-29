@@ -45,7 +45,8 @@ class ChatClient {
         // not a universal Anthropic convention — other providers
         // (opencode, ofox.ai) use different path prefixes. The user
         // sets api_base to include any path prefix they need.
-        if (api_type_ == "anthropic") return api_base_ + "/messages";
+        if (api_type_ == "anthropic")
+            return api_base_ + "/messages";
         return api_base_ + "/chat/completions";
     }
     std::string models_url() const { return api_base_ + "/models"; }
