@@ -126,9 +126,8 @@ static int enter_block_cb(MD_BLOCKTYPE type, void* detail, void* userdata) {
         // Each bar is positioned at bar*2*i (i.e. stacked with a gap equal to bar width)
         float bar = GetStyle().ItemSpacing.x / 4;
         for (int i = 0; i < h->level; i++) {
-            GetWindowDrawList()->AddRectFilled(GetCursorScreenPos() + ImVec2(bar * i * 2, 0),
-                GetCursorScreenPos() + ImVec2(bar * i * 2 + bar, GetFrameHeight()),
-                header_color());
+            GetWindowDrawList()->AddRectFilled(
+                GetCursorScreenPos() + ImVec2(bar * i * 2, 0), GetCursorScreenPos() + ImVec2(bar * i * 2 + bar, GetFrameHeight()), header_color());
         }
 
         // Indent text to the right of the colour bars, vertically centred

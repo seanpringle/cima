@@ -396,10 +396,9 @@ static void render_config_tool_calls_tab(PrimaryAgent& tab) {
         };
 
         // Filter and sort.
-        names.erase(
-            std::remove_if(names.begin(),
-                names.end(),
-                [](const std::string& name) { return name.rfind("mcp_", 0) == 0 || name == "read_plan" || name == "write_plan"; }),
+        names.erase(std::remove_if(names.begin(),
+                        names.end(),
+                        [](const std::string& name) { return name.rfind("mcp_", 0) == 0 || name == "read_plan" || name == "write_plan"; }),
             names.end());
         std::sort(names.begin(), names.end(), [&](const std::string& a, const std::string& b) {
             int ca = cat_order(category_of(a));
@@ -709,8 +708,7 @@ static void render_config_mcp_servers_tab(PrimaryAgent& tab) {
                     session.stop_custom_mcp_server(tab.mcp_edit.original_name);
 
                     // Find and replace in vector
-                    for (auto it = tab.session_.session_data().custom_mcp_servers.begin();
-                        it != tab.session_.session_data().custom_mcp_servers.end();
+                    for (auto it = tab.session_.session_data().custom_mcp_servers.begin(); it != tab.session_.session_data().custom_mcp_servers.end();
                         ++it) {
                         if (it->name == tab.mcp_edit.original_name) {
                             *it = std::move(mcp);
