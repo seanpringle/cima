@@ -4,6 +4,7 @@
 #include "session_data.h"
 #include "gui_chat.h"
 #include "gui_config.h"
+#include "gui_markdown.h"
 #include "agent.h"
 #include "plan.h"
 

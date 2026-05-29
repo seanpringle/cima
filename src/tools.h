@@ -2,7 +2,6 @@
 
 #include "config.h"
 
-#include <cstdlib>
 #include <curl/curl.h>
 #include <filesystem>
 #include <functional>

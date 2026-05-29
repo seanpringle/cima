@@ -16,7 +16,7 @@ json SessionData::to_json() const {
     j["model"] = model;
     j["api_type"] = api_type;
     j["reasoning_effort"] = reasoning_effort;
-    // workspace_path removed — safe_dir locked to cwd
+    // workspace_path was removed in v2 — safe_dir is now always the cwd at startup
     j["conversation"] = conversation;
     j["chat_log"] = chat_log;
     j["plan"] = plan;
@@ -122,7 +122,6 @@ void SessionData::from_json(const json& j) {
     model = j.value("model", std::string());
     api_type = j.value("api_type", "openai");
     reasoning_effort = j.value("reasoning_effort", std::string());
-    // workspace_path removed — safe_dir locked to cwd
     conversation = j.value("conversation", json::array());
     chat_log = j.value("chat_log", json::array());
     plan = j.value("plan", json::object());

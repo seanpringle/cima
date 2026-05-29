@@ -18,7 +18,7 @@ cmake --build build
 ```
 
 Configuration: `~/.config/cima/cima.json` — add your provider(s) on first run.
-Sessions stored in `~/.local/state/cima/`.
+Sessions stored in `~/.local/state/cima/<session>.json` (single JSON file per session).
 
 ## Features
 

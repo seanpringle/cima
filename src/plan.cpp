@@ -6,7 +6,6 @@
 
 Result<void> PlanBoard::write_plan(const std::string& markdown) {
     plan_ = markdown;
-    // Auto-save is no longer performed here — external persistence handles it.
     return {};
 }
 

@@ -1,6 +1,8 @@
 #pragma once
 
-#include "agent.h"
+struct PrimaryAgent;
+struct Agent;
+class ChatSession;
 
 /// Render the Config tab (left panel): tool gate table,
 /// MCP server management and snippets.

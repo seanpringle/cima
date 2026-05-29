@@ -65,7 +65,7 @@ struct ChatUIState {
     std::vector<char> input_buffer = {0};
     int cursor_pos = 0; // tracked by InputText callback for insert-at-cursor
 
-    // (workspace_path_buf removed — safe_dir locked to cwd)
+    // safe_dir is locked to the cwd at startup (workspace_path_buf removed)
 };
 
 int gui_main(const std::string& session_name, ConfigPtr cfg, PlanBoardPtr plan);

@@ -1,11 +1,7 @@
 #pragma once
 
-#include "config.h"
-#include "gui_app.h"
-#include "agent.h"
-#include "gui_markdown.h"
-
-#include <string>
+struct PrimaryAgent;
+struct SubAgent;
 
 void render_history_tab(PrimaryAgent& tab);
 void render_subagent_chat(SubAgent& tab);

@@ -230,7 +230,6 @@ void PrimaryAgent::restore_session_data() {
     // ── Read-only subagent gates: only read-only tools start ON ──
     ro_subagent_tool_gates.clear();
     ro_subagent_tool_gates["read_file"] = true;
-    ro_subagent_tool_gates["read_file_lines"] = true;
     ro_subagent_tool_gates["grep_files"] = true;
     ro_subagent_tool_gates["find_files"] = true;
     ro_subagent_tool_gates["web_search"] = true;

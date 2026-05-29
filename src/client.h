@@ -6,6 +6,7 @@
 #include <curl/curl.h>
 
 #include <string>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 

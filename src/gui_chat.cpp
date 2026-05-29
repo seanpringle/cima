@@ -1,4 +1,7 @@
 #include "gui_chat.h"
+#include "agent.h"
+#include "config.h"
+#include "gui_app.h"
 #include "gui_markdown.h"
 #include "plan.h"
 #include "tools.h"

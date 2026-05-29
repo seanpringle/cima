@@ -108,7 +108,6 @@ class ChatSession {
     const std::string& safe_dir() const { return *safe_dir_; }
 
     /// safe_dir is locked to the cwd at construction time and cannot change.
-    /// (set_safe_dir removed)
 
     /// Compact the conversation by asking the LLM to summarise.
     /// Replaces the entire history with a single summary message.
@@ -232,7 +231,7 @@ class ChatSession {
     std::set<std::string> filter_allowed_tools() const;
 
     /// Check whether a single tool is allowed by the current gates.
-    /// Reuses the same logic as filter_allowed_tools().
+    /// Used by filter_allowed_tools() to check individual tool gates.
     bool is_tool_allowed(const std::string& name) const;
 
     /// Assemble the OpenAI-compatible request payload.

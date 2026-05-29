@@ -21,7 +21,7 @@ struct SessionData {
     std::string model;            // model name
     std::string api_type;         // "openai" or "anthropic"
     std::string reasoning_effort; // reasoning effort override
-    // workspace_path removed — safe_dir is always the cwd at startup
+    // workspace_path was removed in v2 — safe_dir is always the cwd at startup
     json conversation;                                  // serialized Conversation (array of message objects)
     json chat_log;                                      // serialized chat log entries (array of entry objects)
     json plan;                                          // { "plan": "...", "comments": [...] }

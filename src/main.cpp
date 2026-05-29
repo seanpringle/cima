@@ -14,7 +14,7 @@ static void print_usage() {
     std::cout << "Usage: cima [<session>]\n\n"
               << "Arguments:\n"
               << "  <session>           Session name (default: \"default\")\n"
-              << "                      Stored in ~/.local/state/cima/<session>/\n\n"
+              << "                      Stored in ~/.local/state/cima/<session>.json\n\n"
               << "Options:\n"
               << "  -h, --help          Print this help\n\n"
               << "Configuration file: ~/.config/cima/cima.json\n"

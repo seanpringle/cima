@@ -196,9 +196,6 @@ TEST_CASE("read_file path traversal rejected", "[tools][read_file]") {
     fs::remove_all(sd);
 }
 
-// read_file_lines functionality has been merged into read_file.
-// See the read_file tests above for equivalent coverage.
-
 // ===================================================================
 // write_file
 // ===================================================================

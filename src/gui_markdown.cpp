@@ -1,4 +1,6 @@
 #include "gui_markdown.h"
+#include "config.h"
+#include "gui_app.h"
 #include "plan.h"
 #include "tools.h"
 #include <cassert>
