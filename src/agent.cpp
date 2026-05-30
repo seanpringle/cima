@@ -259,6 +259,9 @@ void PrimaryAgent::restore_session_data() {
 
     // Apply session knob overrides (if any)
     session_.apply_knobs_to(*session);
+
+    // Provide the commands map to the session for prompt building and tool registration.
+    session->set_commands(sd.commands);
 }
 
 const std::vector<SubagentConfig>& PrimaryAgent::builtin_subagent_configs() {
@@ -382,6 +385,9 @@ void PrimaryAgent::register_subagent_tools() {
 
     // Register the load_skill tool (available only if skills were discovered).
     session->register_load_skill_tool(skill_registry_);
+
+    // Register command tools from session data.
+    session->register_command_tools();
 }
 
 // ── ChatUIState methods ─────────────────────────────────────────────────────

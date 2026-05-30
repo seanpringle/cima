@@ -92,6 +92,17 @@ json SessionData::to_json() const {
     }
     j["loaded_skills"] = std::move(ls);
 
+    // Serialise commands map
+    json cmds = json::object();
+    for (const auto& [name, cmd] : commands) {
+        json cj;
+        cj["name"] = cmd.name;
+        cj["description"] = cmd.description;
+        cj["command"] = cmd.command;
+        cmds[name] = std::move(cj);
+    }
+    j["commands"] = std::move(cmds);
+
     // Serialise knobs (sparse — only non-zero values)
     json k = json::object();
     if (max_tool_iterations > 0)
@@ -233,6 +244,22 @@ void SessionData::from_json(const json& j) {
         for (const auto& item : j["loaded_skills"]) {
             if (item.is_string()) {
                 loaded_skills.push_back(item.get<std::string>());
+            }
+        }
+    }
+
+    // Deserialise commands map
+    commands.clear();
+    if (j.contains("commands") && j["commands"].is_object()) {
+        for (auto it = j["commands"].begin(); it != j["commands"].end(); ++it) {
+            if (it.value().is_object()) {
+                CommandDef cmd;
+                cmd.name = it.value().value("name", std::string());
+                cmd.description = it.value().value("description", std::string());
+                cmd.command = it.value().value("command", std::string());
+                if (!cmd.name.empty()) {
+                    commands[it.key()] = std::move(cmd);
+                }
             }
         }
     }

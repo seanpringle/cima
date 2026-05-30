@@ -46,6 +46,14 @@ struct McpEndpoint {
     int timeout_sec = 60;
 };
 
+/// A user-defined static command invoked via cmd_<name>() tool.
+/// Commands run outside the bwrap sandbox with full user permissions.
+struct CommandDef {
+    std::string name;        // unique identifier, used as tool name suffix
+    std::string description; // human-readable description (shown in prompt table)
+    std::string command;     // static bash command string
+};
+
 inline bool operator==(const McpEndpoint& a, const McpEndpoint& b) {
     return a.name == b.name && a.transport == b.transport && a.command == b.command && a.args == b.args && a.cwd == b.cwd && a.url == b.url &&
         a.api_key == b.api_key && a.description == b.description && a.env == b.env && a.timeout_sec == b.timeout_sec;

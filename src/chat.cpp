@@ -2,13 +2,22 @@
 #include "plan.h"
 #include "skill.h"
 
+#include <atomic>
+#include <chrono>
+#include <csignal>
+#include <cstdlib>
 #include <exception>
+#include <fcntl.h>
 #include <filesystem>
 #include <future>
 #include <mutex>
+#include <poll.h>
 #include <set>
+#include <sys/prctl.h>
+#include <sys/wait.h>
 #include <unordered_map>
 #include <unordered_set>
+#include <unistd.h>
 
 ChatSession::ChatSession(ConfigPtr config, const Provider& provider, CancellationToken cancelled, std::shared_ptr<GatingState> gates, PlanBoard* plan)
     : config_(std::move(config)), plan_(plan ? PlanBoardPtr(plan, [](PlanBoard*) {}) : std::make_shared<PlanBoard>()), model_(provider.model),
@@ -141,6 +150,16 @@ std::string ChatSession::build_effective_prompt() const {
         }
     }
 
+    // Escape pipe characters for markdown table cells
+    auto esc = [](std::string v) {
+        size_t p = 0;
+        while ((p = v.find('|', p)) != std::string::npos) {
+            v.replace(p, 1, "\\|");
+            p += 2;
+        }
+        return v;
+    };
+
     // ── Skills section (Level 1 progressive disclosure) ──
     if (skill_registry_ && skill_registry_->size() > 0) {
         prompt += "\n## Available Skills\n\n"
@@ -151,16 +170,21 @@ std::string ChatSession::build_effective_prompt() const {
                   "| Skill | Description |\n"
                   "| --- | --- |\n";
         for (const auto& s : skill_registry_->skills()) {
-            // Escape pipe characters in name/description to avoid breaking the table
-            auto esc = [](std::string v) {
-                size_t p = 0;
-                while ((p = v.find('|', p)) != std::string::npos) {
-                    v.replace(p, 1, "\\|");
-                    p += 2;
-                }
-                return v;
-            };
             prompt += "| " + esc(s.name) + " | " + esc(s.description) + " |\n";
+        }
+    }
+
+    // ── Commands section ──
+    if (commands_ && !commands_->empty()) {
+        prompt += "\n## Available Commands\n\n"
+                  "Commands are single-line static bash commands pre-defined "
+                  "by the user. Below is a list of available commands. "
+                  "Call one with the `cmd_<name>()` tool when its task matches your goal.\n\n"
+                  "| Command | Description |\n"
+                  "| --- | --- |\n";
+        for (const auto& [name, cmd] : *commands_) {
+            std::string desc = cmd.description.empty() ? "(no description)" : cmd.description;
+            prompt += "| " + esc("cmd_" + name) + " | " + esc(desc) + " |\n";
         }
     }
 
@@ -168,6 +192,152 @@ std::string ChatSession::build_effective_prompt() const {
     prompt += conversation_.get_appended_system();
 
     return prompt;
+}
+
+// ===================================================================
+// Command tool registration
+// ===================================================================
+
+void ChatSession::register_command_tools() {
+    if (!commands_)
+        return;
+    for (const auto& [name, cmd] : *commands_) {
+        Tool t;
+        t.name = "cmd_" + cmd.name;
+        t.description = cmd.description.empty() ? "(no description)" : cmd.description;
+        t.permission = ToolPermission::Write;
+        t.parameters = json::object();
+        t.timeout_sec = 30;
+        t.execute = [cmd_str = cmd.command, safe_dir = safe_dir_, cancelled = cancelled_](const json&) -> Result<std::string> {
+            // --- fork + exec with pipe and timeout ---
+            int pipefd[2];
+            if (pipe(pipefd) != 0) {
+                return std::unexpected(std::string("pipe() failed"));
+            }
+
+            pid_t pid = fork();
+            if (pid == -1) {
+                close(pipefd[0]);
+                close(pipefd[1]);
+                return std::unexpected(std::string("fork() failed"));
+            }
+
+            if (pid == 0) {
+                // ---- child ----
+                close(pipefd[0]);
+                dup2(pipefd[1], STDOUT_FILENO);
+                dup2(pipefd[1], STDERR_FILENO);
+                if (pipefd[1] > STDERR_FILENO)
+                    close(pipefd[1]);
+
+                // Redirect stdin from /dev/null
+                int devnull = open("/dev/null", O_RDONLY);
+                if (devnull != -1) {
+                    dup2(devnull, STDIN_FILENO);
+                    close(devnull);
+                }
+
+                // Ensure grandchildren are killed when this child dies
+                prctl(PR_SET_PDEATHSIG, SIGKILL);
+                setpgid(0, 0);
+
+                // Change to safe directory
+                if (!safe_dir->empty()) {
+                    chdir(safe_dir->c_str());
+                }
+
+                // Execute command via /bin/sh -c
+                execl("/bin/sh", "sh", "-c", cmd_str.c_str(), nullptr);
+
+                // If execl returns, something went wrong
+                static const char msg[] = "error: /bin/sh not found\n";
+                write(STDOUT_FILENO, msg, sizeof(msg) - 1);
+                _exit(127);
+            }
+
+            // ---- parent ----
+            close(pipefd[1]);
+            setpgid(pid, pid);
+
+            std::string output;
+            char buf[4096];
+            auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+
+            // Set read end to non-blocking
+            int flags = fcntl(pipefd[0], F_GETFL, 0);
+            if (flags != -1) {
+                fcntl(pipefd[0], F_SETFL, flags | O_NONBLOCK);
+            }
+
+            auto kill_child = [&] {
+                if (killpg(pid, SIGKILL) != 0) {
+                    kill(pid, SIGKILL);
+                }
+                int st;
+                waitpid(pid, &st, 0);
+            };
+
+            while (true) {
+                if (cancelled && *cancelled) {
+                    kill_child();
+                    close(pipefd[0]);
+                    return output + "\n(interrupted)";
+                }
+
+                auto now = std::chrono::steady_clock::now();
+                if (now >= deadline) {
+                    kill_child();
+                    close(pipefd[0]);
+                    return output + "\n(timed out)";
+                }
+
+                ssize_t n = read(pipefd[0], buf, sizeof(buf) - 1);
+
+                if (n > 0) {
+                    buf[n] = '\0';
+                    output += buf;
+                } else if (n == 0) {
+                    break; // EOF
+                } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    struct pollfd pfd = {pipefd[0], POLLIN, 0};
+                    auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
+                    if (remaining > 0) {
+                        poll(&pfd, 1, std::min(remaining, 100L));
+                    }
+                } else {
+                    break;
+                }
+            }
+
+            close(pipefd[0]);
+            int status;
+            waitpid(pid, &status, 0);
+
+            if (WIFEXITED(status)) {
+                int code = WEXITSTATUS(status);
+                if (code != 0) {
+                    output += "\n(exit code: " + std::to_string(code) + ")";
+                }
+            } else if (WIFSIGNALED(status)) {
+                int sig = WTERMSIG(status);
+                output += "\n(killed by signal: " + std::to_string(sig) + ")";
+            }
+
+            return output;
+        };
+        tools_.add(std::move(t));
+        registered_cmd_tools_.push_back("cmd_" + cmd.name);
+    }
+}
+
+void ChatSession::refresh_command_tools() {
+    // Remove all previously registered cmd_* tools
+    for (const auto& name : registered_cmd_tools_) {
+        tools_.remove(name);
+    }
+    registered_cmd_tools_.clear();
+    // Re-register from current commands map
+    register_command_tools();
 }
 
 bool ChatSession::is_tool_allowed(const std::string& name) const {

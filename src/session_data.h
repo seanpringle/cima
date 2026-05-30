@@ -33,6 +33,7 @@ struct SessionData {
     std::vector<McpEndpoint> custom_mcp_servers;        // session-local custom MCP servers (persisted)
     std::vector<std::string> input_history;             // per-tab input history (persisted)
     std::vector<std::string> loaded_skills;             // skills loaded via load_skill tool (persisted)
+    std::map<std::string, CommandDef> commands;          // session-local custom commands (persisted)
 
     // ── Knob overrides (0 = use code default from Config) ──
     int max_tool_iterations = 0;

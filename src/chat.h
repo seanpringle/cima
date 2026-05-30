@@ -201,6 +201,18 @@ class ChatSession {
         conversation_.set_skill_registry(&registry);
     }
 
+    /// Provide the commands map so build_effective_prompt() can list available
+    /// commands and register_command_tools() can register them.
+    void set_commands(const std::map<std::string, CommandDef>& cmds) { commands_ = &cmds; }
+
+    /// Register cmd_<name>() tools for each command in the commands map.
+    /// Removes any previously registered cmd_* tools first.
+    void register_command_tools();
+
+    /// Re-register all command tools from the current commands map.
+    /// Called by the CRUD UI after save/delete for live updates.
+    void refresh_command_tools();
+
     /// Register the load_skill tool in this session's tool registry.
     void register_load_skill_tool(SkillRegistry& registry) { tools_.add(make_load_skill_tool(registry, *this)); }
 
@@ -272,6 +284,8 @@ class ChatSession {
     bool is_read_only_ = false;
     McpRegistry mcp_registry_;
     const SkillRegistry* skill_registry_ = nullptr; // non-owning, set by set_skill_registry()
+    const std::map<std::string, CommandDef>* commands_ = nullptr; // non-owning, set by set_commands()
+    std::vector<std::string> registered_cmd_tools_; // tracks cmd_* tool names for refresh
 
     // Stored by register_call_subagent_tool; used by reregister_call_subagent_tool
     // to rebuild the call_subagent tool with a different timeout.
