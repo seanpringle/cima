@@ -7,6 +7,7 @@
 #include <csignal>
 #include <cstdlib>
 #include <exception>
+#include <iostream>
 #include <fcntl.h>
 #include <filesystem>
 #include <future>
@@ -829,6 +830,7 @@ Result<void> ChatSession::compact() {
 Result<void> ChatSession::start_mcp_server(const McpEndpoint& config) {
     auto result = mcp_registry_.start_server(config);
     if (!result) {
+        std::cerr << "Failed to start MCP server '" << config.name << "' (" << config.transport << "): " << result.error() << std::endl;
         return std::unexpected(std::string("Failed to start MCP server '") + config.name + "': " + result.error());
     }
 
