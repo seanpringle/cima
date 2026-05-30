@@ -164,6 +164,36 @@ TEST_CASE("ToolRegistry without write tools (Planner-style)", "[tools][registry]
     CHECK(names.find("run_bwrap_ro") != names.end());
 }
 
+TEST_CASE("ToolRegistry deduplicates tools by name", "[tools][registry]") {
+    ToolRegistry reg;
+
+    Tool t1;
+    t1.name = "my-tool";
+    t1.description = "first";
+    t1.parameters = {{"type", "object"}, {"properties", json::object()}};
+    t1.execute = [](const json&) -> Result<std::string> { return "first"; };
+
+    Tool t2;
+    t2.name = "my-tool"; // same name
+    t2.description = "second";
+    t2.parameters = {{"type", "object"}, {"properties", json::object()}};
+    t2.execute = [](const json&) -> Result<std::string> { return "second"; };
+
+    reg.add(std::move(t1));
+    reg.add(std::move(t2)); // should replace, not duplicate
+
+    const auto& tools = reg.tools();
+    REQUIRE(tools.size() == 1);
+    CHECK(tools[0].name == "my-tool");
+    CHECK(tools[0].description == "second"); // replaced with latest
+
+    // to_openai_tools should also produce exactly one entry
+    json j = reg.to_openai_tools();
+    REQUIRE(j.size() == 1);
+    CHECK(j[0]["function"]["name"] == "my-tool");
+    CHECK(j[0]["function"]["description"] == "second");
+}
+
 
 // ===================================================================
 // read_file

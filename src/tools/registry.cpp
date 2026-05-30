@@ -10,6 +10,12 @@
 
 void ToolRegistry::add(Tool tool) {
     std::lock_guard<std::mutex> lock(mutex_);
+    for (auto& t : tools_) {
+        if (t.name == tool.name) {
+            t = std::move(tool); // replace existing (e.g. with new execute lambda)
+            return;
+        }
+    }
     tools_.push_back(std::move(tool));
 }
 
@@ -84,9 +90,15 @@ json ToolRegistry::to_openai_tools() const { return to_openai_tools(nullptr); }
 json ToolRegistry::to_openai_tools(const std::set<std::string>* only_these) const {
     std::lock_guard<std::mutex> lock(mutex_);
     json arr = json::array();
+    std::set<std::string> seen;
     for (const auto& t : tools_) {
         if (only_these && !only_these->count(t.name))
             continue;
+        if (!seen.insert(t.name).second) {
+            // Safety net: skip duplicate tool names (shouldn't happen, but
+            // guards against API 400 errors if ToolRegistry has duplicates).
+            continue;
+        }
         arr.push_back({{"type", "function"}, {"function", {{"name", t.name}, {"description", t.description}, {"parameters", t.parameters}}}});
     }
     return arr;
@@ -97,9 +109,13 @@ json ToolRegistry::to_anthropic_tools() const { return to_anthropic_tools(nullpt
 json ToolRegistry::to_anthropic_tools(const std::set<std::string>* only_these) const {
     std::lock_guard<std::mutex> lock(mutex_);
     json arr = json::array();
+    std::set<std::string> seen;
     for (const auto& t : tools_) {
         if (only_these && !only_these->count(t.name))
             continue;
+        if (!seen.insert(t.name).second) {
+            continue;
+        }
         arr.push_back({{"name", t.name}, {"description", t.description}, {"input_schema", t.parameters}});
     }
     return arr;

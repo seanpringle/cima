@@ -5,6 +5,7 @@
 
 #include <map>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <string>
 #include <vector>
@@ -55,6 +56,10 @@ class McpRegistry {
     /// "mcp_<server>_<tool>".
     std::vector<Tool> all_tools() const;
 
+    /// Return tools for a specific server (by raw, unsanitized name).
+    /// Returns an empty vector if the server is not found or not running.
+    std::vector<Tool> tools_for_server(const std::string& raw_server_name) const;
+
     /// Execute a namespaced tool.  The name must be in the form
     /// "mcp_<servername>_<toolname>".
     Result<std::string> execute_tool(const std::string& namespaced_name, const json& args);
@@ -62,15 +67,6 @@ class McpRegistry {
     /// Re-discover tools from all running servers (re-issue tools/list).
     /// Returns the union of all tools (namespaced).
     Result<std::vector<Tool>> refresh_tools();
-
-  private:
-    struct McpServer {
-        McpEndpoint config;
-        std::unique_ptr<McpClient> client;
-        std::vector<Tool> tools; // currently-discovered tools (namespaced)
-        std::map<std::string, std::string> tool_original_names; // namespaced name -> original MCP tool name
-        bool running = false;
-    };
 
     /// Replace characters not allowed in OpenAI tool names with safe ones.
     /// Keeps [a-zA-Z0-9_-], replaces '.' and ' ', and also replaces '_'
@@ -83,6 +79,15 @@ class McpRegistry {
         }
         return s;
     }
+
+  private:
+    struct McpServer {
+        McpEndpoint config;
+        std::unique_ptr<McpClient> client;
+        std::vector<Tool> tools; // currently-discovered tools (namespaced)
+        std::map<std::string, std::string> tool_original_names; // namespaced name -> original MCP tool name
+        bool running = false;
+    };
 
     /// Build the namespaced name for a tool.
     /// Uses underscores so the result matches OpenAI's required pattern
@@ -109,5 +114,6 @@ class McpRegistry {
         return true;
     }
 
+    mutable std::mutex mutex_;
     std::map<std::string, McpServer> servers_;
 };

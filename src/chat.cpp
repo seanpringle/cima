@@ -133,20 +133,33 @@ void ChatSession::discover_context_limit() {
 
 std::string ChatSession::build_effective_prompt() const {
     std::string prompt = system_prompt_;
-    if (mcp_registry_.has_running_servers()) {
+
+    // Check for MCP tools in the ToolRegistry (works for both primary and subagents).
+    bool has_mcp_tools = false;
+    for (const auto& t : tools_.tools()) {
+        if (t.name.rfind("mcp_", 0) == 0) {
+            has_mcp_tools = true;
+            break;
+        }
+    }
+
+    if (has_mcp_tools) {
         prompt += "\n## MCP tools\n\n"
                   "Tools from external MCP servers are available.\n"
                   "These are listed among your tools with a \"mcp_<servername>_\" prefix.\n"
                   "Use them as you would any other tool.\n";
 
-        // Append a table showing running servers and their descriptions.
-        auto servers = mcp_registry_.running_servers();
-        if (!servers.empty()) {
-            prompt += "\n## MCP Servers\n\n"
-                      "| Server | Description |\n"
-                      "| --- | --- |\n";
-            for (const auto& s : servers) {
-                prompt += "| " + s.name + " | " + s.description + " |\n";
+        // Append a table showing running servers and their descriptions
+        // (only available on sessions with a local mcp_registry_ that has servers).
+        if (mcp_registry_.has_running_servers()) {
+            auto servers = mcp_registry_.running_servers();
+            if (!servers.empty()) {
+                prompt += "\n## MCP Servers\n\n"
+                          "| Server | Description |\n"
+                          "| --- | --- |\n";
+                for (const auto& s : servers) {
+                    prompt += "| " + s.name + " | " + s.description + " |\n";
+                }
             }
         }
     }
@@ -828,15 +841,18 @@ Result<void> ChatSession::compact() {
 // ===================================================================
 
 Result<void> ChatSession::start_mcp_server(const McpEndpoint& config) {
+    // Remove stale tools from a previous registration of this server first.
+    unregister_mcp_server_tools(config.name);
+
     auto result = mcp_registry_.start_server(config);
     if (!result) {
         std::cerr << "Failed to start MCP server '" << config.name << "' (" << config.transport << "): " << result.error() << std::endl;
         return std::unexpected(std::string("Failed to start MCP server '") + config.name + "': " + result.error());
     }
 
-    // Register all discovered tools in the ToolRegistry,
+    // Register only this server's tools in the ToolRegistry,
     // wiring execute to route through the McpRegistry.
-    auto tools = mcp_registry_.all_tools();
+    auto tools = mcp_registry_.tools_for_server(config.name);
     for (auto& tool : tools) {
         std::string namespaced_name = tool.name;
         tool.execute = [this, namespaced_name](const json& args) -> Result<std::string> { return mcp_registry_.execute_tool(namespaced_name, args); };
@@ -848,7 +864,8 @@ Result<void> ChatSession::start_mcp_server(const McpEndpoint& config) {
 
 void ChatSession::stop_mcp_server(const std::string& name) {
     // Remove all tools belonging to this server from ToolRegistry.
-    std::string prefix = "mcp_" + name + "_";
+    // Use sanitized name to match the namespacing in McpRegistry::tool_namespace().
+    std::string prefix = "mcp_" + McpRegistry::sanitize_name(name) + "_";
     std::vector<std::string> to_remove;
     for (const auto& t : tools_.tools()) {
         if (t.name.rfind(prefix, 0) == 0) {
@@ -860,6 +877,35 @@ void ChatSession::stop_mcp_server(const std::string& name) {
     }
 
     mcp_registry_.stop_server(name);
+}
+
+void ChatSession::register_mcp_server_tools(const std::string& server_name, McpRegistry& registry) {
+    // Remove any existing tools from this server first, so re-registration is idempotent.
+    unregister_mcp_server_tools(server_name);
+    // Use sanitized name to match the namespacing in McpRegistry::tool_namespace().
+    std::string prefix = "mcp_" + McpRegistry::sanitize_name(server_name) + "_";
+    auto tools = registry.all_tools();
+    for (auto& tool : tools) {
+        if (tool.name.rfind(prefix, 0) != 0)
+            continue;
+        std::string namespaced_name = tool.name;
+        tool.execute = [&registry, namespaced_name](const json& args) -> Result<std::string> {
+            return registry.execute_tool(namespaced_name, args);
+        };
+        tools_.add(std::move(tool));
+    }
+}
+
+void ChatSession::unregister_mcp_server_tools(const std::string& server_name) {
+    // Use sanitized name to match the namespacing in McpRegistry::tool_namespace().
+    std::string prefix = "mcp_" + McpRegistry::sanitize_name(server_name) + "_";
+    std::vector<std::string> to_remove;
+    for (const auto& t : tools_.tools()) {
+        if (t.name.rfind(prefix, 0) == 0)
+            to_remove.push_back(t.name);
+    }
+    for (const auto& tname : to_remove)
+        tools_.remove(tname);
 }
 
 Result<void> ChatSession::start_custom_mcp_server(const McpEndpoint& config) { return start_mcp_server(config); }

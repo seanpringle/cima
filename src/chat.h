@@ -213,6 +213,13 @@ class ChatSession {
     /// Called by the CRUD UI after save/delete for live updates.
     void refresh_command_tools();
 
+    /// Register tools from a single MCP server into this session's ToolRegistry,
+    /// routing execution through the given (primary's) McpRegistry.
+    void register_mcp_server_tools(const std::string& server_name, McpRegistry& registry);
+
+    /// Remove tools belonging to a single MCP server from this session's ToolRegistry.
+    void unregister_mcp_server_tools(const std::string& server_name);
+
     /// Register the load_skill tool in this session's tool registry.
     void register_load_skill_tool(SkillRegistry& registry) { tools_.add(make_load_skill_tool(registry, *this)); }
 

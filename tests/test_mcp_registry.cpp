@@ -189,6 +189,78 @@ TEST_CASE("McpRegistry tool names after start", "[mcp][registry]") {
 }
 
 // ---------------------------------------------------------------------------
+// Test: tools_for_server returns only tools for the named server
+// ---------------------------------------------------------------------------
+
+TEST_CASE("McpRegistry tools_for_server", "[mcp][registry]") {
+    auto make_handler = [](const std::string& server_name, const std::string& tool_name) {
+        return [server_name, tool_name](const std::string& req) -> std::string {
+            auto hdr_end = req.find("\r\n\r\n");
+            if (hdr_end == std::string::npos)
+                return R"({"jsonrpc":"2.0","id":1,"error":{"code":-32700}})";
+            std::string body = req.substr(hdr_end + 4);
+            json j;
+            try { j = json::parse(body); } catch (...) {
+                return R"({"jsonrpc":"2.0","id":1,"error":{"code":-32700}})";
+            }
+            if (!j.contains("id")) return "";
+            int id = j["id"];
+            std::string method = j.value("method", "");
+            json resp;
+            resp["jsonrpc"] = "2.0";
+            resp["id"] = id;
+            if (method == "initialize") {
+                resp["result"] = {
+                    {"protocolVersion", "2025-11-25"},
+                    {"capabilities", {{"tools", json::object()}}},
+                    {"serverInfo", {{"name", server_name}, {"version", "1.0"}}}
+                };
+            } else if (method == "tools/list") {
+                resp["result"] = {
+                    {"tools", json::array({
+                        {{"name", tool_name}, {"description", "Test tool"}, {"inputSchema", json::object()}}
+                    })}
+                };
+            } else if (method == "shutdown") {
+                resp["result"] = nullptr;
+            } else {
+                resp["error"] = {{"code", -32601}, {"message", "Unknown"}};
+            }
+            return resp.dump();
+        };
+    };
+
+    auto server1 = std::make_unique<MockServer>(make_handler("Srv1", "tool-a"));
+    auto server2 = std::make_unique<MockServer>(make_handler("Srv2", "tool-b"));
+
+    McpRegistry registry;
+
+    auto r1 = registry.start_server(
+        make_http_endpoint("server-a", "http://127.0.0.1:" + std::to_string(server1->port()) + "/mcp"));
+    REQUIRE(r1.has_value());
+
+    auto r2 = registry.start_server(
+        make_http_endpoint("server-b", "http://127.0.0.1:" + std::to_string(server2->port()) + "/mcp"));
+    REQUIRE(r2.has_value());
+
+    // tools_for_server should return only the requested server's tools.
+    auto tools_a = registry.tools_for_server("server-a");
+    REQUIRE(tools_a.size() == 1);
+    CHECK(tools_a[0].name == "mcp_server-a_tool-a");
+
+    auto tools_b = registry.tools_for_server("server-b");
+    REQUIRE(tools_b.size() == 1);
+    CHECK(tools_b[0].name == "mcp_server-b_tool-b");
+
+    // Unknown server returns empty.
+    auto tools_none = registry.tools_for_server("nonexistent");
+    CHECK(tools_none.empty());
+
+    registry.stop_server("server-a");
+    registry.stop_server("server-b");
+}
+
+// ---------------------------------------------------------------------------
 // Test: Execute tool
 // ---------------------------------------------------------------------------
 

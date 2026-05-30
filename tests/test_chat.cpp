@@ -626,15 +626,17 @@ TEST_CASE("ChatSession multiple MCP servers", "[chat][mcp]") {
     auto r2 = session.start_mcp_server(ep2);
     REQUIRE(r2.has_value());
 
-    // Both sets of tools should be registered.
+    // Both sets of tools should be registered, exactly once each (no duplicates).
+    // Total = 11 default tools (9 from add_defaults + 2 plan tools) + 2 MCP tools = 13.
     const auto& tools = session.tools_for_testing().tools();
-    bool found_a = false, found_b = false;
+    CHECK(tools.size() == 13);
+    int count_a = 0, count_b = 0;
     for (const auto& t : tools) {
-        if (t.name == "mcp_server-a_tool-a") found_a = true;
-        if (t.name == "mcp_server-b_tool-b") found_b = true;
+        if (t.name == "mcp_server-a_tool-a") count_a++;
+        if (t.name == "mcp_server-b_tool-b") count_b++;
     }
-    CHECK(found_a);
-    CHECK(found_b);
+    CHECK(count_a == 1);
+    CHECK(count_b == 1);
 
     session.stop_mcp_server("server-a");
     session.stop_mcp_server("server-b");
