@@ -55,15 +55,20 @@ Result<void> McpRegistry::start_server(const McpEndpoint& config) {
 
     // Namespace the tools.
     std::vector<Tool> namespaced_tools;
+    std::map<std::string, std::string> tool_original_names;
     for (auto& tool : *tools_result) {
-        tool.name = tool_namespace(config.name, tool.name);
+        std::string original_name = tool.name;
+        std::string namespaced = tool_namespace(config.name, original_name);
+        tool.name = namespaced;
         namespaced_tools.push_back(std::move(tool));
+        tool_original_names[namespaced] = std::move(original_name);
     }
 
     McpServer server;
     server.config = config;
     server.client = std::move(client);
     server.tools = std::move(namespaced_tools);
+    server.tool_original_names = std::move(tool_original_names);
     server.running = true;
     servers_[config.name] = std::move(server);
 
@@ -159,6 +164,12 @@ Result<std::string> McpRegistry::execute_tool(const std::string& namespaced_name
         return std::unexpected(std::string("MCP client not initialized for server: ") + server_name);
     }
 
+    // Look up the original (unsanitized) MCP tool name.
+    auto orig_it = it->second.tool_original_names.find(namespaced_name);
+    if (orig_it != it->second.tool_original_names.end()) {
+        tool_name = orig_it->second;
+    }
+
     return it->second.client->call_tool(tool_name, args);
 }
 
@@ -179,12 +190,17 @@ Result<std::vector<Tool>> McpRegistry::refresh_tools() {
 
         // Namespace the tools.
         std::vector<Tool> namespaced_tools;
+        std::map<std::string, std::string> tool_original_names;
         for (auto& tool : *tools_result) {
-            tool.name = tool_namespace(name, tool.name);
+            std::string original_name = tool.name;
+            std::string namespaced = tool_namespace(name, original_name);
+            tool.name = namespaced;
             namespaced_tools.push_back(std::move(tool));
+            tool_original_names[namespaced] = std::move(original_name);
         }
 
         server.tools = namespaced_tools;
+        server.tool_original_names = std::move(tool_original_names);
         all.insert(all.end(), namespaced_tools.begin(), namespaced_tools.end());
     }
 

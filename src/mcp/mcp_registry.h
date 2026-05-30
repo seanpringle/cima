@@ -68,6 +68,7 @@ class McpRegistry {
         McpEndpoint config;
         std::unique_ptr<McpClient> client;
         std::vector<Tool> tools; // currently-discovered tools (namespaced)
+        std::map<std::string, std::string> tool_original_names; // namespaced name -> original MCP tool name
         bool running = false;
     };
 
