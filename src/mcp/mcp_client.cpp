@@ -528,7 +528,7 @@ Result<json> McpClient::http_request(const std::string& method, json params, int
     // Build headers.
     struct curl_slist* headers = nullptr;
     headers = curl_slist_append(headers, "Content-Type: application/json");
-    headers = curl_slist_append(headers, "Accept: application/json");
+    headers = curl_slist_append(headers, "Accept: application/json, text/event-stream");
     headers = curl_slist_append(headers, "MCP-Protocol-Version: 2025-11-25");
 
     if (!http_api_key_.empty()) {
