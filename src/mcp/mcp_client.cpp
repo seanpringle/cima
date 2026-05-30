@@ -9,6 +9,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <sstream>
 #include <iostream>
 
 // ===================================================================
@@ -569,11 +570,38 @@ Result<json> McpClient::http_request(const std::string& method, json params, int
     }
 
     // Parse the JSON-RPC response.
+    // The server may return it directly as JSON, or wrapped in SSE
+    // (text/event-stream) format where the JSON is in "data:" fields.
     json response;
-    try {
-        response = json::parse(response_body);
-    } catch (...) {
-        return std::unexpected(std::string("MCP HTTP response is not valid JSON: ") + response_body);
+    {
+        std::string json_body;
+
+        // Check if response body is SSE format (has "data:" lines)
+        bool is_sse = (response_body.find("\ndata:") != std::string::npos ||
+                       response_body.rfind("data:", 0) == 0);
+
+        if (is_sse) {
+            // Extract JSON from SSE data fields (ignore "event:" lines).
+            std::istringstream stream(response_body);
+            std::string line;
+            while (std::getline(stream, line)) {
+                if (!line.empty() && line.back() == '\r')
+                    line.pop_back();
+                if (line.rfind("data:", 0) == 0) {
+                    json_body += (line.size() > 6 && line[5] == ' ')
+                                     ? line.substr(6)
+                                     : line.substr(5);
+                }
+            }
+        } else {
+            json_body = response_body;
+        }
+
+        try {
+            response = json::parse(json_body);
+        } catch (...) {
+            return std::unexpected(std::string("MCP HTTP response is not valid JSON: ") + response_body);
+        }
     }
 
     // Check for JSON-RPC error.
