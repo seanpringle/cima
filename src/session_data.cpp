@@ -97,7 +97,6 @@ json SessionData::to_json() const {
     for (const auto& [name, cmd] : commands) {
         json cj;
         cj["name"] = cmd.name;
-        cj["description"] = cmd.description;
         cj["command"] = cmd.command;
         cmds[name] = std::move(cj);
     }
@@ -255,7 +254,6 @@ void SessionData::from_json(const json& j) {
             if (it.value().is_object()) {
                 CommandDef cmd;
                 cmd.name = it.value().value("name", std::string());
-                cmd.description = it.value().value("description", std::string());
                 cmd.command = it.value().value("command", std::string());
                 if (!cmd.name.empty()) {
                     commands[it.key()] = std::move(cmd);

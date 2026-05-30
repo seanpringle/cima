@@ -49,9 +49,8 @@ struct McpEndpoint {
 /// A user-defined static command invoked via cmd_<name>() tool.
 /// Commands run outside the bwrap sandbox with full user permissions.
 struct CommandDef {
-    std::string name;        // unique identifier, used as tool name suffix
-    std::string description; // human-readable description (shown in prompt table)
-    std::string command;     // static bash command string
+    std::string name;    // unique identifier, used as tool name suffix
+    std::string command; // static bash command string
 };
 
 inline bool operator==(const McpEndpoint& a, const McpEndpoint& b) {

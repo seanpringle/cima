@@ -63,7 +63,6 @@ struct CommandEditState {
     bool active = false;                // true when editing/add is open
     std::string original_name;          // empty = new command, non-empty = editing existing
     std::array<char, 100> name_buf;     // name input buffer
-    std::array<char, 512> desc_buf;     // description input buffer
     std::array<char, 1024> cmd_buf;     // command string input buffer
     std::string error;                  // validation error to display
 };

@@ -977,7 +977,6 @@ static void render_config_commands_tab(PrimaryAgent& tab) {
     if (tab.command_edit.active) {
         PushID("command-edit");
         InputText("Name", tab.command_edit.name_buf.data(), tab.command_edit.name_buf.size());
-        InputText("Description", tab.command_edit.desc_buf.data(), tab.command_edit.desc_buf.size());
         InputText("Command", tab.command_edit.cmd_buf.data(), tab.command_edit.cmd_buf.size());
         if (!tab.command_edit.error.empty()) {
             PushStyleColor(ImGuiCol_Text, IM_COL32(255, 0, 0, 255));
@@ -994,7 +993,6 @@ static void render_config_commands_tab(PrimaryAgent& tab) {
                     tab.session_.session_data().commands.erase(tab.command_edit.original_name);
                 CommandDef cmd;
                 cmd.name = name;
-                cmd.description = std::string(tab.command_edit.desc_buf.data());
                 cmd.command = std::string(tab.command_edit.cmd_buf.data());
                 tab.session_.session_data().commands[name] = std::move(cmd);
                 tab.command_edit.active = false;
@@ -1014,7 +1012,6 @@ static void render_config_commands_tab(PrimaryAgent& tab) {
             tab.command_edit = {};
             tab.command_edit.active = true;
             std::fill(tab.command_edit.name_buf.begin(), tab.command_edit.name_buf.end(), 0);
-            std::fill(tab.command_edit.desc_buf.begin(), tab.command_edit.desc_buf.end(), 0);
             std::fill(tab.command_edit.cmd_buf.begin(), tab.command_edit.cmd_buf.end(), 0);
         }
         SameLine();
@@ -1031,13 +1028,10 @@ static void render_config_commands_tab(PrimaryAgent& tab) {
             continue;
         }
         SameLine();
-        std::string desc_preview = it->second.description.substr(0, 50);
-        if (it->second.description.size() > 50)
-            desc_preview += "\xe2\x80\xa6";
-        std::string cmd_preview = it->second.command.substr(0, 60);
-        if (it->second.command.size() > 60)
+        std::string cmd_preview = it->second.command.substr(0, 80);
+        if (it->second.command.size() > 80)
             cmd_preview += "\xe2\x80\xa6";
-        Text("%s: \"%s\" \xe2\x80\x94 %s", it->first.c_str(), desc_preview.c_str(), cmd_preview.c_str());
+        Text("%s: %s", it->first.c_str(), cmd_preview.c_str());
         if (IsItemHovered()) {
             BeginTooltip();
             Text("Command: %s", it->second.command.c_str());
@@ -1048,10 +1042,8 @@ static void render_config_commands_tab(PrimaryAgent& tab) {
             tab.command_edit.active = true;
             tab.command_edit.original_name = it->first;
             std::fill(tab.command_edit.name_buf.begin(), tab.command_edit.name_buf.end(), 0);
-            std::fill(tab.command_edit.desc_buf.begin(), tab.command_edit.desc_buf.end(), 0);
             std::fill(tab.command_edit.cmd_buf.begin(), tab.command_edit.cmd_buf.end(), 0);
             std::copy(it->first.begin(), it->first.end(), tab.command_edit.name_buf.begin());
-            std::copy(it->second.description.begin(), it->second.description.end(), tab.command_edit.desc_buf.begin());
             std::copy(it->second.command.begin(), it->second.command.end(), tab.command_edit.cmd_buf.begin());
             tab.command_edit.error.clear();
         }

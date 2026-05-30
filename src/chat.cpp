@@ -180,11 +180,10 @@ std::string ChatSession::build_effective_prompt() const {
                   "Commands are single-line static bash commands pre-defined "
                   "by the user. Below is a list of available commands. "
                   "Call one with the `cmd_<name>()` tool when its task matches your goal.\n\n"
-                  "| Command | Description |\n"
+                  "| Command | Bash Command |\n"
                   "| --- | --- |\n";
         for (const auto& [name, cmd] : *commands_) {
-            std::string desc = cmd.description.empty() ? "(no description)" : cmd.description;
-            prompt += "| " + esc("cmd_" + name) + " | " + esc(desc) + " |\n";
+            prompt += "| " + esc("cmd_" + name) + " | " + esc(cmd.command) + " |\n";
         }
     }
 
@@ -204,7 +203,7 @@ void ChatSession::register_command_tools() {
     for (const auto& [name, cmd] : *commands_) {
         Tool t;
         t.name = "cmd_" + cmd.name;
-        t.description = cmd.description.empty() ? "(no description)" : cmd.description;
+        t.description = "Runs the non-sandboxed command: " + cmd.command;
         t.permission = ToolPermission::Write;
         t.parameters = {{"type", "object"}, {"properties", json::object()}};
         t.timeout_sec = 0; // manages its own timeout internally (see poll loop below)
