@@ -206,7 +206,7 @@ void ChatSession::register_command_tools() {
         t.name = "cmd_" + cmd.name;
         t.description = cmd.description.empty() ? "(no description)" : cmd.description;
         t.permission = ToolPermission::Write;
-        t.parameters = json::object();
+        t.parameters = {{"type", "object"}, {"properties", json::object()}};
         t.timeout_sec = 0; // manages its own timeout internally (see poll loop below)
         t.execute = [cmd_str = cmd.command, safe_dir = safe_dir_, cancelled = cancelled_](const json&) -> Result<std::string> {
             // --- fork + exec with pipe and timeout ---
