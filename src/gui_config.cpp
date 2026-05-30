@@ -960,12 +960,16 @@ static void render_config_snippets_tab(PrimaryAgent& tab) {
 
 // ── Commands sub-tab (tab item must be active) ──
 static void render_config_commands_tab(PrimaryAgent& tab) {
-    auto validate_cmd_name = [](const std::string& name) -> std::string {
+    auto validate_cmd_name = [&tab](const std::string& name) -> std::string {
         if (name.empty())
             return "Name must not be empty";
         for (char c : name) {
             if (std::isspace(static_cast<unsigned char>(c)))
                 return "Name must not contain spaces";
+        }
+        // Check uniqueness (skip when editing the same name)
+        if (name != tab.command_edit.original_name && tab.session_.session_data().commands.count(name)) {
+            return "A command with this name already exists";
         }
         return {};
     };

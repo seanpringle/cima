@@ -207,7 +207,7 @@ void ChatSession::register_command_tools() {
         t.description = cmd.description.empty() ? "(no description)" : cmd.description;
         t.permission = ToolPermission::Write;
         t.parameters = json::object();
-        t.timeout_sec = 30;
+        t.timeout_sec = 0; // manages its own timeout internally (see poll loop below)
         t.execute = [cmd_str = cmd.command, safe_dir = safe_dir_, cancelled = cancelled_](const json&) -> Result<std::string> {
             // --- fork + exec with pipe and timeout ---
             int pipefd[2];
@@ -257,6 +257,8 @@ void ChatSession::register_command_tools() {
 
             // ---- parent ----
             close(pipefd[1]);
+            // Both parent and child call setpgid to avoid a race (whichever
+            // runs first succeeds; the other gets EACCES which we ignore).
             setpgid(pid, pid);
 
             std::string output;
@@ -302,7 +304,8 @@ void ChatSession::register_command_tools() {
                     struct pollfd pfd = {pipefd[0], POLLIN, 0};
                     auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
                     if (remaining > 0) {
-                        poll(&pfd, 1, std::min(remaining, 100L));
+                        long long poll_ms = std::min<long long>(remaining, 100);
+                        poll(&pfd, 1, static_cast<int>(poll_ms));
                     }
                 } else {
                     break;
