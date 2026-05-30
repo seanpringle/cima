@@ -591,7 +591,7 @@ static void render_config_mcp_servers_tab(PrimaryAgent& tab) {
                     std::copy(opt, opt + strlen(opt), tab.mcp_edit.transport_buf.begin());
                 }
                 if (selected)
-                    break;
+                    SetItemDefaultFocus();
             }
             EndCombo();
         }
