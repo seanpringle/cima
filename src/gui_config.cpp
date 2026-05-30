@@ -600,11 +600,14 @@ static void render_config_mcp_servers_tab(PrimaryAgent& tab) {
         std::string ctrl_label = (strcmp(tab.mcp_edit.transport_buf.data(), "streamable-http") == 0) ? "URL" : "Command";
         InputText(ctrl_label.c_str(), tab.mcp_edit.command_or_url_buf.data(), tab.mcp_edit.command_or_url_buf.size());
 
-        InputText("Args", tab.mcp_edit.args_buf.data(), tab.mcp_edit.args_buf.size());
-        InputText("CWD", tab.mcp_edit.cwd_buf.data(), tab.mcp_edit.cwd_buf.size());
+        // Args and CWD only apply to stdio transport
+        bool is_http = strcmp(tab.mcp_edit.transport_buf.data(), "streamable-http") == 0;
+        if (!is_http) {
+            InputText("Args", tab.mcp_edit.args_buf.data(), tab.mcp_edit.args_buf.size());
+            InputText("CWD", tab.mcp_edit.cwd_buf.data(), tab.mcp_edit.cwd_buf.size());
+        }
 
         // API Key shown only for HTTP transport
-        bool is_http = strcmp(tab.mcp_edit.transport_buf.data(), "streamable-http") == 0;
         if (is_http) {
             InputText("API Key", tab.mcp_edit.api_key_buf.data(), tab.mcp_edit.api_key_buf.size());
         }
